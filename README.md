@@ -30,6 +30,37 @@ $ cargo run -- "mods/Boxes (PD).gb"
                     |________...______,"
 ```
 
+# Implemented
+
+- [x] Item: GameBoy and GameBoy Color
+- [x] CPU: The sharp LR35902
+- [ ] GPU: Need time to learn more
+- [ ] APU: Need time to learn more
+- [x] Cartridge
+    - ROM ONLY
+    - MBC1
+    - MBC1+RAM
+    - MBC1+RAM+BATTERY
+    - MBC2
+    - MBC2+BATTERY
+    - ROM+RAM
+    - ROM+RAM+BATTERY
+    - MBC3+TIMER+BATTERY
+    - MBC3+TIMER+RAM+BATTERY
+    - MBC3
+    - MBC3+RAM
+    - MBC3+RAM+BATTERY
+    - MBC5
+    - MBC5+RAM
+    - MBC5+RAM+BATTERY
+    - MBC5+RUMBLE
+    - MBC5+RUMBLE+RAM
+    - MBC5+RUMBLE+RAM+BATTERY
+    - HuC1+RAM+BATTERY
+- [x] Joypad
+- [x] MotherBoard
+- [x] Timer
+
 # Reference
 - [https://github.com/gbdev/awesome-gbdev](https://github.com/gbdev/awesome-gbdev)
 - [http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html](http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
