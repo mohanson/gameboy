@@ -1,0 +1,12 @@
+[package]
+name = "gameboy"
+version = "0.1.0"
+authors = ["mohanson <mohanson@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+blip_buf = "0.1"
+podio = "0.1"
+glium = { version = "0.22", default_features = false, features = [ "glutin" ] }
+clap = { version = "2", default_features = false }
+cpal = "0.8"
