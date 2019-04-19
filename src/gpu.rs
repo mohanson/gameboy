@@ -420,7 +420,7 @@ impl Gpu {
 
         match self.stat.mode {
             0 => {
-                self.draw_scanline();
+                self.render_scan();
                 self.blanked = true;
                 if self.stat.enable_m0_interrupt {
                     self.interrupt |= 0x02
@@ -442,27 +442,28 @@ impl Gpu {
             _ => panic!(""),
         };
     }
-}
 
-impl Gpu {
-    fn draw_scanline(&mut self) {
+    fn render_scan(&mut self) {
         for x in 0..SCREEN_W {
             self.set_gre(x, 0xff);
             self.bgprio[x] = PrioType::Normal;
         }
-
-        if self.lcdc.bit0() {
-            self.draw_tile();
-        }
+        self.draw_bg();
         self.draw_sprites();
     }
 
-    fn draw_tile(&mut self) {
+    fn draw_bg(&mut self) {
+        let drawbg = self.term == Term::GBC || self.lcdc.bit0();
+
         let winy = if !self.lcdc.bit5() || (self.term != Term::GB && !self.lcdc.bit0()) {
             -1
         } else {
             self.ly as i32 - self.wy as i32
         };
+
+        if winy < 0 && drawbg == false {
+            return;
+        }
 
         let wintiley = (winy as u16 >> 3) & 31;
 
@@ -481,7 +482,7 @@ impl Gpu {
                     winy as u16 & 0x07,
                     winx as u8 & 0x07,
                 )
-            } else {
+            } else if drawbg {
                 (
                     if self.lcdc.bit3() { 0x9C00 } else { 0x9800 },
                     bgtiley,
@@ -489,6 +490,8 @@ impl Gpu {
                     bgy as u16 & 0x07,
                     bgx as u8 & 0x07,
                 )
+            } else {
+                continue;
             };
 
             let tilenr: u8 = self.get_ram0(tilemapbase + tiley * 32 + tilex);
