@@ -442,7 +442,9 @@ impl Gpu {
             _ => panic!(""),
         };
     }
+}
 
+impl Gpu {
     fn render_scan(&mut self) {
         for x in 0..SCREEN_W {
             self.set_gre(x, 0xff);
