@@ -431,7 +431,8 @@ impl Stable for RealTimeClock {
 // number of days, making your program Year-10000-Proof, provided that the cartridge gets used at least every 511 days.
 //
 // Delays
-// When accessing the RTC Registers it is recommended to execute a 4ms delay (4 Cycles in Normal Speed Mode) between the separate accesses.
+// When accessing the RTC Registers it is recommended to execute a 4ms delay (4 Cycles in Normal Speed Mode) between
+// the separate accesses.
 pub struct Mbc3 {
     rom: Vec<u8>,
     ram: Vec<u8>,
