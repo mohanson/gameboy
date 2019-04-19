@@ -1,7 +1,7 @@
 Full featured GameBoy emulator. Let's dance!
 
 ```s
-$ cargo run -- "mods/Boxes (PD).gb"
+$ cargo run -- "roms/Boxes (PD).gb"
 ```
 
 ![sample.gif](./docs/sample.gif)
