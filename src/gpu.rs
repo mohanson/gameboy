@@ -544,10 +544,11 @@ impl Gpu {
                 b2 = self.get_ram0(tile_location + u16::from(line) + 1);
             }
 
-            let xbit = if tile_attr.xflip { px % 8 } else { 7 - px % 8 };
-            let coly = if b1 & (1 << xbit) != 0 { 1 } else { 0 } | if b2 & (1 << xbit) != 0 { 2 } else { 0 };
+            let color_bit = if tile_attr.xflip { px % 8 } else { 7 - px % 8 };
+            let color_num =
+                if b1 & (1 << color_bit) != 0 { 1 } else { 0 } | if b2 & (1 << color_bit) != 0 { 2 } else { 0 };
 
-            self.bgprio[x] = if coly == 0 {
+            self.bgprio[x] = if color_num == 0 {
                 PrioType::Zero
             } else if tile_attr.priority {
                 PrioType::Priority
@@ -556,12 +557,12 @@ impl Gpu {
             };
 
             if self.term == Term::GBC {
-                let r = self.cbgpal[tile_attr.palette_number_1][coly][0];
-                let g = self.cbgpal[tile_attr.palette_number_1][coly][1];
-                let b = self.cbgpal[tile_attr.palette_number_1][coly][2];
+                let r = self.cbgpal[tile_attr.palette_number_1][color_num][0];
+                let g = self.cbgpal[tile_attr.palette_number_1][color_num][1];
+                let b = self.cbgpal[tile_attr.palette_number_1][color_num][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
-                let color = Self::get_gray_shades(self.bgp, coly) as u8;
+                let color = Self::get_gray_shades(self.bgp, color_num) as u8;
                 self.set_gre(x, color);
             }
         }
@@ -600,14 +601,13 @@ impl Gpu {
                 b2 = self.get_ram0(tile_location + 1);
             };
 
-            'xloop: for x in 0..8 {
+            for x in 0..8 {
                 if sprite_x + x < 0 || sprite_x + x >= (SCREEN_W as i32) {
                     continue;
                 }
-
-                let xbit = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
-                let colnr = (if b1 & xbit != 0 { 1 } else { 0 }) | (if b2 & xbit != 0 { 2 } else { 0 });
-                if colnr == 0 {
+                let color_bit = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
+                let color_mum = (if b1 & color_bit != 0 { 1 } else { 0 }) | (if b2 & color_bit != 0 { 2 } else { 0 });
+                if color_mum == 0 {
                     continue;
                 }
 
@@ -616,20 +616,20 @@ impl Gpu {
                         && (self.bgprio[(sprite_x + x) as usize] == PrioType::Priority
                             || (tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero))
                     {
-                        continue 'xloop;
+                        continue;
                     }
-                    let r = self.csprit[tile_attr.palette_number_1][colnr][0];
-                    let g = self.csprit[tile_attr.palette_number_1][colnr][1];
-                    let b = self.csprit[tile_attr.palette_number_1][colnr][2];
+                    let r = self.csprit[tile_attr.palette_number_1][color_mum][0];
+                    let g = self.csprit[tile_attr.palette_number_1][color_mum][1];
+                    let b = self.csprit[tile_attr.palette_number_1][color_mum][2];
                     self.set_rgb((sprite_x + x) as usize, r, g, b);
                 } else {
                     if tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero {
-                        continue 'xloop;
+                        continue;
                     }
                     let color = if tile_attr.palette_number_0 == 1 {
-                        Self::get_gray_shades(self.op1, colnr) as u8
+                        Self::get_gray_shades(self.op1, color_mum) as u8
                     } else {
-                        Self::get_gray_shades(self.op0, colnr) as u8
+                        Self::get_gray_shades(self.op0, color_mum) as u8
                     };
                     self.set_gre((sprite_x + x) as usize, color);
                 }

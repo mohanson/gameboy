@@ -34,7 +34,7 @@ $ cargo run -- "roms/Boxes (PD).gb"
 
 - [x] Item: GameBoy and GameBoy Color
 - [x] CPU: The sharp LR35902
-- [ ] GPU: Need time to learn more
+- [x] GPU
 - [ ] APU: Need time to learn more
 - [x] Cartridge
     - ROM ONLY

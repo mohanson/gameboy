@@ -19,6 +19,7 @@ pub enum Speed {
 
 pub struct MemoryManagementUnit {
     pub cartridge: Box<Cartridge>,
+    pub gpu: Gpu,
     pub joypad: Joypad,
     pub serial: Serial,
     pub shift: bool,
@@ -32,7 +33,6 @@ pub struct MemoryManagementUnit {
     wram_bank: usize,
 
     pub intf: u8,
-    pub gpu: Gpu,
     pub sound: Option<Sound>,
 }
 
@@ -40,6 +40,7 @@ impl MemoryManagementUnit {
     pub fn power_up(term: Term, path: impl AsRef<Path>) -> Self {
         let mut r = Self {
             cartridge: cartridge::power_up(path),
+            gpu: Gpu::power_up(),
             joypad: Joypad::power_up(),
             serial: Serial::power_up(),
             shift: false,
@@ -53,7 +54,6 @@ impl MemoryManagementUnit {
             wram_bank: 0x01,
 
             intf: 0,
-            gpu: Gpu::power_up(),
             sound: None,
         };
         match term {
