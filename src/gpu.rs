@@ -453,7 +453,9 @@ impl Gpu {
         if self.lcdc.bit0() {
             self.draw_bg();
         }
-        self.draw_sprites();
+        if self.lcdc.bit1() {
+            self.draw_sprites();
+        }
     }
 
     fn draw_bg(&mut self) {
@@ -498,6 +500,22 @@ impl Gpu {
                 } else {
                     (tile_num as i8 as i16 + 128) as u16
                 }) * 16;
+            let tile_attr = self.get_ram1(tile_address);
+
+            let line = if self.term == Term::GBC && tile_attr & (1 << 6) != 0 {
+                ((7u8.wrapping_sub(py)) % 8) * 2
+            } else {
+                (py % 8) * 2
+            };
+            let mut b1: u8 = 0x00;
+            let mut b2: u8 = 0x00;
+            if self.term == Term::GBC && tile_attr & (1 << 3) != 0 {
+                b1 = self.get_ram1(tile_location + u16::from(line));
+                b2 = self.get_ram1(tile_location + u16::from(line) + 1);
+            } else {
+                b1 = self.get_ram0(tile_location + u16::from(line));
+                b2 = self.get_ram0(tile_location + u16::from(line) + 1);
+            }
 
             let (palnr, vram1, xflip, yflip, prio) = if self.term == Term::GBC {
                 let flags = self.get_ram1(tile_address) as usize;
@@ -512,15 +530,15 @@ impl Gpu {
                 (0, false, false, false, false)
             };
 
-            let a0 = match yflip {
-                false => tile_location + ((py % 8) * 2) as u16,
-                true => tile_location + (14 - ((py % 8) * 2)) as u16,
-            };
+            // let a0 = match yflip {
+            //     false => tile_location + ((py % 8) * 2) as u16,
+            //     true => tile_location + (14 - ((py % 8) * 2)) as u16,
+            // };
 
-            let (b1, b2) = match vram1 {
-                false => (self.get_ram0(a0), self.get_ram0(a0 + 1)),
-                true => (self.get_ram1(a0), self.get_ram1(a0 + 1)),
-            };
+            // let (b1, b2) = match vram1 {
+            //     false => (self.get_ram0(a0), self.get_ram0(a0 + 1)),
+            //     true => (self.get_ram1(a0), self.get_ram1(a0 + 1)),
+            // };
 
             let xbit = match xflip {
                 true => px % 8,
@@ -548,10 +566,6 @@ impl Gpu {
     }
 
     fn draw_sprites(&mut self) {
-        if !self.lcdc.bit1() {
-            return;
-        }
-
         // TODO: limit of 10 sprites per line
 
         for index in 0..40 {
