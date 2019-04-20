@@ -1,4 +1,3 @@
-use super::convention::Term;
 use super::cpu::Cpu;
 use super::joypad::JoypadKey;
 use super::memory::Memory;
@@ -12,11 +11,10 @@ pub struct MotherBoard {
 }
 
 impl MotherBoard {
-    pub fn power_up(term: Term, path: impl AsRef<Path>) -> Self {
-        Self {
-            mmu: MemoryManagementUnit::power_up(term, path),
-            cpu: Cpu::power_up(term),
-        }
+    pub fn power_up(path: impl AsRef<Path>) -> Self {
+        let mmu = MemoryManagementUnit::power_up(path);
+        let cpu = Cpu::power_up(mmu.term);
+        Self { mmu, cpu }
     }
 
     pub fn do_cycle(&mut self) -> u32 {

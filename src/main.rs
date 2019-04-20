@@ -290,8 +290,8 @@ fn warn(message: &'static str) {
 
 fn construct_cpu(filename: &str, classic_mode: bool) -> Option<Box<MotherBoard>> {
     let c = match classic_mode {
-        true => MotherBoard::power_up(Term::GB, filename),
-        false => MotherBoard::power_up(Term::GBC, filename),
+        true => MotherBoard::power_up(filename),
+        false => MotherBoard::power_up(filename),
     };
     Some(Box::new(c))
 }

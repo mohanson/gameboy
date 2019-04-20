@@ -19,10 +19,12 @@ pub enum Speed {
 
 pub struct MemoryManagementUnit {
     pub cartridge: Box<Cartridge>,
+    pub interrupt: u8,
     pub gpu: Gpu,
     pub joypad: Joypad,
     pub serial: Serial,
     pub shift: bool,
+    pub sound: Option<Sound>,
     pub speed: Speed,
     pub term: Term,
     pub timer: Timer,
@@ -31,19 +33,23 @@ pub struct MemoryManagementUnit {
     hram: [u8; 0x7f],
     wram: [u8; 0x8000],
     wram_bank: usize,
-
-    pub intf: u8,
-    pub sound: Option<Sound>,
 }
 
 impl MemoryManagementUnit {
-    pub fn power_up(term: Term, path: impl AsRef<Path>) -> Self {
+    pub fn power_up(path: impl AsRef<Path>) -> Self {
+        let cart = cartridge::power_up(path);
+        let term = match cart.get(0x0143) & 0x80 {
+            0x80 => Term::GBC,
+            _ => Term::GB,
+        };
         let mut r = Self {
-            cartridge: cartridge::power_up(path),
-            gpu: Gpu::power_up(),
+            cartridge: cart,
+            interrupt: 0x00,
+            gpu: Gpu::power_up(term),
             joypad: Joypad::power_up(),
             serial: Serial::power_up(),
             shift: false,
+            sound: None,
             speed: Speed::Normal,
             term: term,
             timer: Timer::power_up(),
@@ -52,70 +58,43 @@ impl MemoryManagementUnit {
             hram: [0x00; 0x7f],
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
-
-            intf: 0,
-            sound: None,
         };
-        match term {
-            Term::GBC => {
-                r.determine_mode();
-                r.set_initial();
-            }
-            _ => {
-                if r.get(0x0143) == 0xC0 {
-                    panic!("This game does not work in Classic mode");
-                }
-                r.set_initial();
-            }
-        }
+        r.set(0xff05, 0x00);
+        r.set(0xff06, 0x00);
+        r.set(0xff07, 0x00);
+        r.set(0xff10, 0x80);
+        r.set(0xff11, 0xbf);
+        r.set(0xff12, 0xf3);
+        r.set(0xff14, 0xbf);
+        r.set(0xff16, 0x3f);
+        r.set(0xff16, 0x3f);
+        r.set(0xff17, 0x00);
+        r.set(0xff19, 0xbf);
+        r.set(0xff1a, 0x7f);
+        r.set(0xff1b, 0xff);
+        r.set(0xff1c, 0x9f);
+        r.set(0xff1e, 0xff);
+        r.set(0xff20, 0xff);
+        r.set(0xff21, 0x00);
+        r.set(0xff22, 0x00);
+        r.set(0xff23, 0xbf);
+        r.set(0xff24, 0x77);
+        r.set(0xff25, 0xf3);
+        r.set(0xff26, 0xf1);
+        r.set(0xff40, 0x91);
+        r.set(0xff42, 0x00);
+        r.set(0xff43, 0x00);
+        r.set(0xff45, 0x00);
+        r.set(0xff47, 0xfc);
+        r.set(0xff48, 0xff);
+        r.set(0xff49, 0xff);
+        r.set(0xff4a, 0x00);
+        r.set(0xff4b, 0x00);
         r
     }
 }
 
 impl MemoryManagementUnit {
-    fn set_initial(&mut self) {
-        self.set(0xff05, 0x00);
-        self.set(0xff06, 0x00);
-        self.set(0xff07, 0x00);
-        self.set(0xff10, 0x80);
-        self.set(0xff11, 0xbf);
-        self.set(0xff12, 0xf3);
-        self.set(0xff14, 0xbf);
-        self.set(0xff16, 0x3f);
-        self.set(0xff16, 0x3f);
-        self.set(0xff17, 0x00);
-        self.set(0xff19, 0xbf);
-        self.set(0xff1a, 0x7f);
-        self.set(0xff1b, 0xff);
-        self.set(0xff1c, 0x9f);
-        self.set(0xff1e, 0xff);
-        self.set(0xff20, 0xff);
-        self.set(0xff21, 0x00);
-        self.set(0xff22, 0x00);
-        self.set(0xff23, 0xbf);
-        self.set(0xff24, 0x77);
-        self.set(0xff25, 0xf3);
-        self.set(0xff26, 0xf1);
-        self.set(0xff40, 0x91);
-        self.set(0xff42, 0x00);
-        self.set(0xff43, 0x00);
-        self.set(0xff45, 0x00);
-        self.set(0xff47, 0xfc);
-        self.set(0xff48, 0xff);
-        self.set(0xff49, 0xff);
-        self.set(0xff4a, 0x00);
-        self.set(0xff4b, 0x00);
-    }
-
-    fn determine_mode(&mut self) {
-        let mode = match self.get(0x0143) & 0x80 {
-            0x80 => Term::GBC,
-            _ => Term::GB,
-        };
-        self.term = mode;
-        self.gpu.term = mode;
-    }
-
     pub fn do_cycle(&mut self, ticks: u32) -> u32 {
         let cpudivider = self.speed as u32;
         let vramticks = self.perform_vramdma();
@@ -123,19 +102,19 @@ impl MemoryManagementUnit {
         let cputicks = ticks + vramticks * cpudivider;
 
         self.timer.next(cputicks as usize);
-        self.intf |= self.timer.interrupt;
+        self.interrupt |= self.timer.interrupt;
         self.timer.interrupt = 0;
 
-        self.intf |= self.joypad.interrupt;
+        self.interrupt |= self.joypad.interrupt;
         self.joypad.interrupt = 0;
 
         self.gpu.next(gputicks);
-        self.intf |= self.gpu.interrupt;
+        self.interrupt |= self.gpu.interrupt;
         self.gpu.interrupt = 0;
 
         self.sound.as_mut().map_or((), |s| s.do_cycle(gputicks));
 
-        self.intf |= self.serial.interrupt;
+        self.interrupt |= self.serial.interrupt;
         self.serial.interrupt = 0;
 
         return gputicks;
@@ -217,7 +196,7 @@ impl Memory for MemoryManagementUnit {
             0xff00 => self.joypad.get(a),
             0xff01...0xff02 => self.serial.get(a),
             0xff04...0xff07 => self.timer.get(a),
-            0xff0F => self.intf,
+            0xff0F => self.interrupt,
             0xff10...0xff3f => match &self.sound {
                 Some(some) => some.rb(a),
                 None => 0x00,
@@ -266,7 +245,7 @@ impl Memory for MemoryManagementUnit {
             0xff40...0xff4F => self.gpu.set(a, v),
             0xff51...0xff55 => self.hdma.set(a, v),
             0xff68...0xff6B => self.gpu.set(a, v),
-            0xff0F => self.intf = v,
+            0xff0F => self.interrupt = v,
             0xff70 => {
                 self.wram_bank = match v & 0x7 {
                     0 => 1,

@@ -309,12 +309,12 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub fn power_up() -> Self {
+    pub fn power_up(term: Term) -> Self {
         Self {
             blanked: false,
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
             interrupt: 0,
-            term: Term::GB,
+            term: term,
             updated: false,
 
             bgp: 0x00,
