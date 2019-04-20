@@ -518,22 +518,24 @@ impl Gpu {
             }
 
             let xbit = if tile_attr & (1 << 5) != 0 { px % 8 } else { 7 - px % 8 };
-            let colnr = if b1 & (1 << xbit) != 0 { 1 } else { 0 } | if b2 & (1 << xbit) != 0 { 2 } else { 0 };
+            let coly = if b1 & (1 << xbit) != 0 { 1 } else { 0 } | if b2 & (1 << xbit) != 0 { 2 } else { 0 };
 
-            self.bgprio[x] = if colnr == 0 {
+            self.bgprio[x] = if coly == 0 {
                 PrioType::Color0
             } else if tile_attr & (1 << 7) != 0 {
                 PrioType::PrioFlag
             } else {
                 PrioType::Normal
             };
+
             if self.term == Term::GBC {
-                let r = self.cbgpal[tile_attr as usize & 0x07][colnr][0];
-                let g = self.cbgpal[tile_attr as usize & 0x07][colnr][1];
-                let b = self.cbgpal[tile_attr as usize & 0x07][colnr][2];
+                let colx = tile_attr as usize & 0x07;
+                let r = self.cbgpal[colx][coly][0];
+                let g = self.cbgpal[colx][coly][1];
+                let b = self.cbgpal[colx][coly][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
-                let color = Self::get_gray_shades(self.bgp, colnr) as u8;
+                let color = Self::get_gray_shades(self.bgp, coly) as u8;
                 self.set_gre(x, color);
             }
         }
