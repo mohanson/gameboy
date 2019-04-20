@@ -577,22 +577,27 @@ impl Gpu {
             let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
             let line = self.ly as i32;
+            // If this is true the scanline is out of the area we care about
             if line < sprite_y || line >= sprite_y + sprite_size {
                 continue;
             }
             if sprite_x < -7 || sprite_x >= (SCREEN_W as i32) {
                 continue;
             }
-            let tiley: u16 = if tile_attr.yflip {
+            let line: u16 = if tile_attr.yflip {
                 (sprite_size - 1 - (line - sprite_y)) as u16
             } else {
                 (line - sprite_y) as u16
             };
-            let tile_location = 0x8000u16 + tile_location * 16 + tiley * 2;
-            let (b1, b2) = if tile_attr.bank && self.term == Term::GBC {
-                (self.get_ram1(tile_location), self.get_ram1(tile_location + 1))
+            let tile_location = 0x8000u16 + tile_location * 16 + line * 2;
+            let b1: u8;
+            let b2: u8
+            if tile_attr.bank && self.term == Term::GBC {
+                b1 = self.get_ram1(tile_location)
+                b2 = self.get_ram1(tile_location + 1)
             } else {
-                (self.get_ram0(tile_location), self.get_ram0(tile_location + 1))
+                b1 = self.get_ram0(tile_location)
+                b2 = self.get_ram0(tile_location + 1))
             };
 
             'xloop: for x in 0..8 {
