@@ -474,18 +474,18 @@ impl Gpu {
             };
             let tx = (px as u16 >> 3) & 31;
 
-            let (tilemapbase, pixely, pixelx) = if using_window && x as u8 >= self.wx {
-                (
-                    if self.lcdc.bit6() { 0x9c00 } else { 0x9800 },
-                    py as u16 & 0x07,
-                    px as u8 & 0x07,
-                )
+            let tilemapbase = if using_window && x as u8 >= self.wx {
+                if self.lcdc.bit6() {
+                    0x9c00
+                } else {
+                    0x9800
+                }
             } else {
-                (
-                    if self.lcdc.bit3() { 0x9C00 } else { 0x9800 },
-                    py as u16 & 0x07,
-                    px as u8 & 0x07,
-                )
+                if self.lcdc.bit3() {
+                    0x9C00
+                } else {
+                    0x9800
+                }
             };
 
             let tilenr: u8 = self.get_ram0(tilemapbase + ty * 32 + tx);
@@ -512,8 +512,8 @@ impl Gpu {
                 }) * 16;
 
             let a0 = match yflip {
-                false => tileaddress + (pixely * 2),
-                true => tileaddress + (14 - (pixely * 2)),
+                false => tileaddress + ((py % 8) * 2) as u16,
+                true => tileaddress + (14 - ((py % 8) * 2)) as u16,
             };
 
             let (b1, b2) = match vram1 {
@@ -522,8 +522,8 @@ impl Gpu {
             };
 
             let xbit = match xflip {
-                true => pixelx,
-                false => 7 - pixelx,
+                true => px % 8,
+                false => 7 - px % 8,
             } as u32;
             let colnr = if b1 & (1 << xbit) != 0 { 1 } else { 0 } | if b2 & (1 << xbit) != 0 { 2 } else { 0 };
 
