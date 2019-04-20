@@ -591,13 +591,13 @@ impl Gpu {
             };
             let tile_location = 0x8000u16 + tile_location * 16 + line * 2;
             let b1: u8;
-            let b2: u8
+            let b2: u8;
             if tile_attr.bank && self.term == Term::GBC {
-                b1 = self.get_ram1(tile_location)
-                b2 = self.get_ram1(tile_location + 1)
+                b1 = self.get_ram1(tile_location);
+                b2 = self.get_ram1(tile_location + 1);
             } else {
-                b1 = self.get_ram0(tile_location)
-                b2 = self.get_ram0(tile_location + 1))
+                b1 = self.get_ram0(tile_location);
+                b2 = self.get_ram0(tile_location + 1);
             };
 
             'xloop: for x in 0..8 {
