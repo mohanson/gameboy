@@ -185,15 +185,44 @@ pub enum GrayShades {
     Black = 0x00,
 }
 
-pub const SCREEN_W: usize = 160;
-pub const SCREEN_H: usize = 144;
-
 #[derive(PartialEq, Copy, Clone)]
 enum PrioType {
-    Color0,
-    PrioFlag,
-    Normal,
+    Priority,
+    Zero,
+    Else,
 }
+
+// Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
+//     (Used for both BG and Window. BG color 0 is always behind OBJ)
+// Bit6   Y flip          (0=Normal, 1=Vertically mirrored)
+// Bit5   X flip          (0=Normal, 1=Horizontally mirrored)
+// Bit4   Palette number  **Non CGB Mode Only** (0=OBP0, 1=OBP1)
+// Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
+// Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
+struct Attr {
+    priority: bool,
+    yflip: bool,
+    xflip: bool,
+    palette_number_0: usize,
+    bank: bool,
+    palette_number_1: usize,
+}
+
+impl From<u8> for Attr {
+    fn from(u: u8) -> Self {
+        Self {
+            priority: u & (1 << 7) != 0,
+            yflip: u & (1 << 6) != 0,
+            xflip: u & (1 << 5) != 0,
+            palette_number_0: u as usize & (1 << 4),
+            bank: u & (1 << 3) != 0,
+            palette_number_1: u as usize & 0x07,
+        }
+    }
+}
+
+pub const SCREEN_W: usize = 160;
+pub const SCREEN_H: usize = 144;
 
 pub struct Gpu {
     pub blanked: bool,
@@ -210,6 +239,7 @@ pub struct Gpu {
 
     // This register assigns gray shades to the color numbers of the BG and Window tiles.
     bgp: u8,
+    bgprio: [PrioType; SCREEN_W],
     cbgpal_inc: bool,
     cbgpal_ind: u8,
     cbgpal: [[[u8; 3]; 4]; 8],
@@ -276,8 +306,6 @@ pub struct Gpu {
     // Window Y Position (R/W), Window X Position minus 7 (R/W)
     wx: u8,
     wy: u8,
-
-    bgprio: [PrioType; SCREEN_W],
 }
 
 impl Gpu {
@@ -290,6 +318,7 @@ impl Gpu {
             updated: false,
 
             bgp: 0x00,
+            bgprio: [PrioType::Else; SCREEN_W],
             cbgpal_inc: false,
             cbgpal_ind: 0,
             cbgpal: [[[0u8; 3]; 4]; 8],
@@ -310,8 +339,6 @@ impl Gpu {
             stat: Stat::power_up(),
             wx: 0x00,
             wy: 0x00,
-
-            bgprio: [PrioType::Normal; SCREEN_W],
         }
     }
 
@@ -448,7 +475,7 @@ impl Gpu {
     fn render_scan(&mut self) {
         for x in 0..SCREEN_W {
             self.set_gre(x, 0xff);
-            self.bgprio[x] = PrioType::Normal;
+            self.bgprio[x] = PrioType::Else;
         }
         if self.lcdc.bit0() {
             self.draw_bg();
@@ -500,16 +527,16 @@ impl Gpu {
                 } else {
                     (tile_num as i8 as i16 + 128) as u16
                 }) * 16;
-            let tile_attr = self.get_ram1(tile_address);
+            let tile_attr = Attr::from(self.get_ram1(tile_address));
 
-            let line = if self.term == Term::GBC && tile_attr & (1 << 6) != 0 {
+            let line = if self.term == Term::GBC && tile_attr.yflip {
                 ((7u8.wrapping_sub(py)) % 8) * 2
             } else {
                 (py % 8) * 2
             };
             let b1: u8;
             let b2: u8;
-            if self.term == Term::GBC && tile_attr & (1 << 3) != 0 {
+            if self.term == Term::GBC && tile_attr.bank {
                 b1 = self.get_ram1(tile_location + u16::from(line));
                 b2 = self.get_ram1(tile_location + u16::from(line) + 1);
             } else {
@@ -517,22 +544,21 @@ impl Gpu {
                 b2 = self.get_ram0(tile_location + u16::from(line) + 1);
             }
 
-            let xbit = if tile_attr & (1 << 5) != 0 { px % 8 } else { 7 - px % 8 };
+            let xbit = if tile_attr.xflip { px % 8 } else { 7 - px % 8 };
             let coly = if b1 & (1 << xbit) != 0 { 1 } else { 0 } | if b2 & (1 << xbit) != 0 { 2 } else { 0 };
 
             self.bgprio[x] = if coly == 0 {
-                PrioType::Color0
-            } else if tile_attr & (1 << 7) != 0 {
-                PrioType::PrioFlag
+                PrioType::Zero
+            } else if tile_attr.priority {
+                PrioType::Priority
             } else {
-                PrioType::Normal
+                PrioType::Else
             };
 
             if self.term == Term::GBC {
-                let colx = tile_attr as usize & 0x07;
-                let r = self.cbgpal[colx][coly][0];
-                let g = self.cbgpal[colx][coly][1];
-                let b = self.cbgpal[colx][coly][2];
+                let r = self.cbgpal[tile_attr.palette_number_1][coly][0];
+                let g = self.cbgpal[tile_attr.palette_number_1][coly][1];
+                let b = self.cbgpal[tile_attr.palette_number_1][coly][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
                 let color = Self::get_gray_shades(self.bgp, coly) as u8;
@@ -542,51 +568,39 @@ impl Gpu {
     }
 
     fn draw_sprites(&mut self) {
-        // TODO: limit of 10 sprites per line
-
-        for index in 0..40 {
-            let i = 39 - index;
-            let spriteaddr = 0xFE00 + (i as u16) * 4;
-            let spritey = self.get(spriteaddr + 0) as u16 as i32 - 16;
-            let spritex = self.get(spriteaddr + 1) as u16 as i32 - 8;
-            let tilenum = (self.get(spriteaddr + 2) & (if self.lcdc.bit2() { 0xFE } else { 0xFF })) as u16;
-            let flags = self.get(spriteaddr + 3) as usize;
-            let usepal1: bool = flags & (1 << 4) != 0;
-            let xflip: bool = flags & (1 << 5) != 0;
-            let yflip: bool = flags & (1 << 6) != 0;
-            let belowbg: bool = flags & (1 << 7) != 0;
-            let c_palnr = flags & 0x07;
-            let c_vram1: bool = flags & (1 << 3) != 0;
+        let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
+        for i in 0..40 {
+            let sprite_addr = 0xFE00 + (i as u16) * 4;
+            let sprite_y = self.get(sprite_addr + 0) as u16 as i32 - 16;
+            let sprite_x = self.get(sprite_addr + 1) as u16 as i32 - 8;
+            let tile_location = (self.get(sprite_addr + 2) & (if self.lcdc.bit2() { 0xFE } else { 0xFF })) as u16;
+            let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
             let line = self.ly as i32;
-            let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
-
-            if line < spritey || line >= spritey + sprite_size {
+            if line < sprite_y || line >= sprite_y + sprite_size {
                 continue;
             }
-            if spritex < -7 || spritex >= (SCREEN_W as i32) {
+            if sprite_x < -7 || sprite_x >= (SCREEN_W as i32) {
                 continue;
             }
-
-            let tiley: u16 = if yflip {
-                (sprite_size - 1 - (line - spritey)) as u16
+            let tiley: u16 = if tile_attr.yflip {
+                (sprite_size - 1 - (line - sprite_y)) as u16
             } else {
-                (line - spritey) as u16
+                (line - sprite_y) as u16
             };
-
-            let tile_location = 0x8000u16 + tilenum * 16 + tiley * 2;
-            let (b1, b2) = if c_vram1 && self.term == Term::GBC {
+            let tile_location = 0x8000u16 + tile_location * 16 + tiley * 2;
+            let (b1, b2) = if tile_attr.bank && self.term == Term::GBC {
                 (self.get_ram1(tile_location), self.get_ram1(tile_location + 1))
             } else {
                 (self.get_ram0(tile_location), self.get_ram0(tile_location + 1))
             };
 
             'xloop: for x in 0..8 {
-                if spritex + x < 0 || spritex + x >= (SCREEN_W as i32) {
+                if sprite_x + x < 0 || sprite_x + x >= (SCREEN_W as i32) {
                     continue;
                 }
 
-                let xbit = 1 << (if xflip { x } else { 7 - x } as u32);
+                let xbit = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
                 let colnr = (if b1 & xbit != 0 { 1 } else { 0 }) | (if b2 & xbit != 0 { 2 } else { 0 });
                 if colnr == 0 {
                     continue;
@@ -594,25 +608,25 @@ impl Gpu {
 
                 if self.term == Term::GBC {
                     if self.lcdc.bit0()
-                        && (self.bgprio[(spritex + x) as usize] == PrioType::PrioFlag
-                            || (belowbg && self.bgprio[(spritex + x) as usize] != PrioType::Color0))
+                        && (self.bgprio[(sprite_x + x) as usize] == PrioType::Priority
+                            || (tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero))
                     {
                         continue 'xloop;
                     }
-                    let r = self.csprit[c_palnr][colnr][0];
-                    let g = self.csprit[c_palnr][colnr][1];
-                    let b = self.csprit[c_palnr][colnr][2];
-                    self.set_rgb((spritex + x) as usize, r, g, b);
+                    let r = self.csprit[tile_attr.palette_number_1][colnr][0];
+                    let g = self.csprit[tile_attr.palette_number_1][colnr][1];
+                    let b = self.csprit[tile_attr.palette_number_1][colnr][2];
+                    self.set_rgb((sprite_x + x) as usize, r, g, b);
                 } else {
-                    if belowbg && self.bgprio[(spritex + x) as usize] != PrioType::Color0 {
+                    if tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero {
                         continue 'xloop;
                     }
-                    let color = if usepal1 {
+                    let color = if tile_attr.palette_number_0 == 1 {
                         Self::get_gray_shades(self.op1, colnr) as u8
                     } else {
                         Self::get_gray_shades(self.op0, colnr) as u8
                     };
-                    self.set_gre((spritex + x) as usize, color);
+                    self.set_gre((sprite_x + x) as usize, color);
                 }
             }
         }
