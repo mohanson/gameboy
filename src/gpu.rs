@@ -507,8 +507,8 @@ impl Gpu {
             } else {
                 (py % 8) * 2
             };
-            let mut b1: u8 = 0x00;
-            let mut b2: u8 = 0x00;
+            let b1: u8;
+            let b2: u8;
             if self.term == Term::GBC && tile_attr & (1 << 3) != 0 {
                 b1 = self.get_ram1(tile_location + u16::from(line));
                 b2 = self.get_ram1(tile_location + u16::from(line) + 1);
@@ -517,46 +517,20 @@ impl Gpu {
                 b2 = self.get_ram0(tile_location + u16::from(line) + 1);
             }
 
-            let (palnr, vram1, xflip, yflip, prio) = if self.term == Term::GBC {
-                let flags = self.get_ram1(tile_address) as usize;
-                (
-                    flags & 0x07,
-                    flags & (1 << 3) != 0,
-                    flags & (1 << 5) != 0,
-                    flags & (1 << 6) != 0,
-                    flags & (1 << 7) != 0,
-                )
-            } else {
-                (0, false, false, false, false)
-            };
-
-            // let a0 = match yflip {
-            //     false => tile_location + ((py % 8) * 2) as u16,
-            //     true => tile_location + (14 - ((py % 8) * 2)) as u16,
-            // };
-
-            // let (b1, b2) = match vram1 {
-            //     false => (self.get_ram0(a0), self.get_ram0(a0 + 1)),
-            //     true => (self.get_ram1(a0), self.get_ram1(a0 + 1)),
-            // };
-
-            let xbit = match xflip {
-                true => px % 8,
-                false => 7 - px % 8,
-            } as u32;
+            let xbit = if tile_attr & (1 << 5) != 0 { px % 8 } else { 7 - px % 8 };
             let colnr = if b1 & (1 << xbit) != 0 { 1 } else { 0 } | if b2 & (1 << xbit) != 0 { 2 } else { 0 };
 
             self.bgprio[x] = if colnr == 0 {
                 PrioType::Color0
-            } else if prio {
+            } else if tile_attr & (1 << 7) != 0 {
                 PrioType::PrioFlag
             } else {
                 PrioType::Normal
             };
             if self.term == Term::GBC {
-                let r = self.cbgpal[palnr][colnr][0];
-                let g = self.cbgpal[palnr][colnr][1];
-                let b = self.cbgpal[palnr][colnr][2];
+                let r = self.cbgpal[tile_attr as usize & 0x07][colnr][0];
+                let g = self.cbgpal[tile_attr as usize & 0x07][colnr][1];
+                let b = self.cbgpal[tile_attr as usize & 0x07][colnr][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
                 let color = Self::get_gray_shades(self.bgp, colnr) as u8;
