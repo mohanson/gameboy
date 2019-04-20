@@ -270,7 +270,7 @@ pub struct Gpu {
     // Specifies the position in the 256x256 pixels BG map (32x32 tiles) which is to be displayed at the upper/left LCD
     // display position. Values in range from 0-255 may be used for X/Y each, the video controller automatically wraps
     // back to the upper (left) position in BG map when drawing exceeds the lower (right) border of the BG map area.
-    sc: u8,
+    sx: u8,
     sy: u8,
     stat: Stat,
     // Window Y Position (R/W), Window X Position minus 7 (R/W)
@@ -305,7 +305,7 @@ impl Gpu {
             op1: 0x01,
             ram: [[0x00; 0x2000]; 0x02],
             ram_bank: 0x00,
-            sc: 0x00,
+            sx: 0x00,
             sy: 0x00,
             stat: Stat::power_up(),
             wx: 0x00,
@@ -450,56 +450,48 @@ impl Gpu {
             self.set_gre(x, 0xff);
             self.bgprio[x] = PrioType::Normal;
         }
-        self.draw_bg();
+        if self.lcdc.bit0() {
+            self.draw_bg();
+        }
         self.draw_sprites();
     }
 
     fn draw_bg(&mut self) {
-        let drawbg = self.term == Term::GBC || self.lcdc.bit0();
-
-        let winy = if !self.lcdc.bit5() || (self.term != Term::GB && !self.lcdc.bit0()) {
-            -1
+        let using_window = self.lcdc.bit5() && self.wy <= self.ly;
+        let py = if using_window {
+            self.ly.wrapping_sub(self.wy)
         } else {
-            self.ly as i32 - self.wy as i32
+            self.sy.wrapping_add(self.ly)
         };
-
-        if winy < 0 && drawbg == false {
-            return;
-        }
-
-        let wintiley = (winy as u16 >> 3) & 31;
-
-        let bgy = self.sy.wrapping_add(self.ly);
-        let bgtiley = (bgy as u16 >> 3) & 31;
+        let ty = (py as u16 >> 3) & 31;
 
         for x in 0..SCREEN_W {
-            let winx = -((self.wx as i32) - 7) + (x as i32);
-            let bgx = self.sc as u32 + x as u32;
+            // Translate the current x pos to window space if necessary
+            let px = if using_window && x as u8 >= self.wx {
+                x as u8 - self.wx
+            } else {
+                self.sx.wrapping_add(x as u8)
+            };
+            let tx = (px as u16 >> 3) & 31;
 
-            let (tilemapbase, tiley, tilex, pixely, pixelx) = if winy >= 0 && winx >= 0 {
+            let (tilemapbase, pixely, pixelx) = if using_window && x as u8 >= self.wx {
                 (
                     if self.lcdc.bit6() { 0x9c00 } else { 0x9800 },
-                    wintiley,
-                    (winx as u16 >> 3),
-                    winy as u16 & 0x07,
-                    winx as u8 & 0x07,
-                )
-            } else if drawbg {
-                (
-                    if self.lcdc.bit3() { 0x9C00 } else { 0x9800 },
-                    bgtiley,
-                    (bgx as u16 >> 3) & 31,
-                    bgy as u16 & 0x07,
-                    bgx as u8 & 0x07,
+                    py as u16 & 0x07,
+                    px as u8 & 0x07,
                 )
             } else {
-                continue;
+                (
+                    if self.lcdc.bit3() { 0x9C00 } else { 0x9800 },
+                    py as u16 & 0x07,
+                    px as u8 & 0x07,
+                )
             };
 
-            let tilenr: u8 = self.get_ram0(tilemapbase + tiley * 32 + tilex);
+            let tilenr: u8 = self.get_ram0(tilemapbase + ty * 32 + tx);
 
             let (palnr, vram1, xflip, yflip, prio) = if self.term == Term::GBC {
-                let flags = self.get_ram1(tilemapbase + tiley * 32 + tilex) as usize;
+                let flags = self.get_ram1(tilemapbase + ty * 32 + tx) as usize;
                 (
                     flags & 0x07,
                     flags & (1 << 3) != 0,
@@ -651,7 +643,7 @@ impl Memory for Gpu {
                 bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
             0xff42 => self.sy,
-            0xff43 => self.sc,
+            0xff43 => self.sx,
             0xff44 => self.ly,
             0xff45 => self.ly_compare,
             0xff46 => 0,
@@ -715,7 +707,7 @@ impl Memory for Gpu {
                 self.stat.enable_m0_interrupt = v & 0x08 != 0x00;
             }
             0xff42 => self.sy = v,
-            0xff43 => self.sc = v,
+            0xff43 => self.sx = v,
             0xff44 => {}
             0xff45 => self.ly_compare = v,
             0xff46 => {}

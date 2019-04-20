@@ -42,7 +42,7 @@ def test():
 
 def main():
     make()
-    call(f'target\\debug\\gameboy.exe -a "{path_mbc3_timer_ram_battery}"')
+    call(f'target\\debug\\gameboy.exe -a "{path_mbc1_ram_battery}"')
 
 
 if __name__ == '__main__':
