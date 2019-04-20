@@ -185,15 +185,44 @@ pub enum GrayShades {
     Black = 0x00,
 }
 
-pub const SCREEN_W: usize = 160;
-pub const SCREEN_H: usize = 144;
-
 #[derive(PartialEq, Copy, Clone)]
 enum PrioType {
-    Color0,
-    PrioFlag,
-    Normal,
+    Priority,
+    Zero,
+    Else,
 }
+
+// Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
+//     (Used for both BG and Window. BG color 0 is always behind OBJ)
+// Bit6   Y flip          (0=Normal, 1=Vertically mirrored)
+// Bit5   X flip          (0=Normal, 1=Horizontally mirrored)
+// Bit4   Palette number  **Non CGB Mode Only** (0=OBP0, 1=OBP1)
+// Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
+// Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
+struct Attr {
+    priority: bool,
+    yflip: bool,
+    xflip: bool,
+    palette_number_0: usize,
+    bank: bool,
+    palette_number_1: usize,
+}
+
+impl From<u8> for Attr {
+    fn from(u: u8) -> Self {
+        Self {
+            priority: u & (1 << 7) != 0,
+            yflip: u & (1 << 6) != 0,
+            xflip: u & (1 << 5) != 0,
+            palette_number_0: u as usize & (1 << 4),
+            bank: u & (1 << 3) != 0,
+            palette_number_1: u as usize & 0x07,
+        }
+    }
+}
+
+pub const SCREEN_W: usize = 160;
+pub const SCREEN_H: usize = 144;
 
 pub struct Gpu {
     pub blanked: bool,
@@ -210,6 +239,7 @@ pub struct Gpu {
 
     // This register assigns gray shades to the color numbers of the BG and Window tiles.
     bgp: u8,
+    bgprio: [PrioType; SCREEN_W],
     cbgpal_inc: bool,
     cbgpal_ind: u8,
     cbgpal: [[[u8; 3]; 4]; 8],
@@ -270,26 +300,25 @@ pub struct Gpu {
     // Specifies the position in the 256x256 pixels BG map (32x32 tiles) which is to be displayed at the upper/left LCD
     // display position. Values in range from 0-255 may be used for X/Y each, the video controller automatically wraps
     // back to the upper (left) position in BG map when drawing exceeds the lower (right) border of the BG map area.
-    scx: u8,
-    scy: u8,
+    sx: u8,
+    sy: u8,
     stat: Stat,
     // Window Y Position (R/W), Window X Position minus 7 (R/W)
     wx: u8,
     wy: u8,
-
-    bgprio: [PrioType; SCREEN_W],
 }
 
 impl Gpu {
-    pub fn power_up() -> Self {
+    pub fn power_up(term: Term) -> Self {
         Self {
             blanked: false,
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
             interrupt: 0,
-            term: Term::GB,
+            term: term,
             updated: false,
 
             bgp: 0x00,
+            bgprio: [PrioType::Else; SCREEN_W],
             cbgpal_inc: false,
             cbgpal_ind: 0,
             cbgpal: [[[0u8; 3]; 4]; 8],
@@ -305,13 +334,11 @@ impl Gpu {
             op1: 0x01,
             ram: [[0x00; 0x2000]; 0x02],
             ram_bank: 0x00,
-            scx: 0x00,
-            scy: 0x00,
+            sx: 0x00,
+            sy: 0x00,
             stat: Stat::power_up(),
             wx: 0x00,
             wy: 0x00,
-
-            bgprio: [PrioType::Normal; SCREEN_W],
         }
     }
 
@@ -442,192 +469,169 @@ impl Gpu {
             _ => panic!(""),
         };
     }
+}
 
+impl Gpu {
     fn render_scan(&mut self) {
         for x in 0..SCREEN_W {
             self.set_gre(x, 0xff);
-            self.bgprio[x] = PrioType::Normal;
+            self.bgprio[x] = PrioType::Else;
         }
-        self.draw_bg();
-        self.draw_sprites();
+        if self.lcdc.bit0() {
+            self.draw_bg();
+        }
+        if self.lcdc.bit1() {
+            self.draw_sprites();
+        }
     }
 
     fn draw_bg(&mut self) {
-        let drawbg = self.term == Term::GBC || self.lcdc.bit0();
+        let using_window = self.lcdc.bit5() && self.wy <= self.ly;
+        let tile_base = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };
 
-        let winy = if !self.lcdc.bit5() || (self.term != Term::GB && !self.lcdc.bit0()) {
-            -1
+        let py = if using_window {
+            self.ly.wrapping_sub(self.wy)
         } else {
-            self.ly as i32 - self.wy as i32
+            self.sy.wrapping_add(self.ly)
         };
-
-        if winy < 0 && drawbg == false {
-            return;
-        }
-
-        let wintiley = (winy as u16 >> 3) & 31;
-
-        let bgy = self.scy.wrapping_add(self.ly);
-        let bgtiley = (bgy as u16 >> 3) & 31;
+        let ty = (py as u16 >> 3) & 31;
 
         for x in 0..SCREEN_W {
-            let winx = -((self.wx as i32) - 7) + (x as i32);
-            let bgx = self.scx as u32 + x as u32;
-
-            let (tilemapbase, tiley, tilex, pixely, pixelx) = if winy >= 0 && winx >= 0 {
-                (
-                    if self.lcdc.bit6() { 0x9c00 } else { 0x9800 },
-                    wintiley,
-                    (winx as u16 >> 3),
-                    winy as u16 & 0x07,
-                    winx as u8 & 0x07,
-                )
-            } else if drawbg {
-                (
-                    if self.lcdc.bit3() { 0x9C00 } else { 0x9800 },
-                    bgtiley,
-                    (bgx as u16 >> 3) & 31,
-                    bgy as u16 & 0x07,
-                    bgx as u8 & 0x07,
-                )
+            // Translate the current x pos to window space if necessary
+            let px = if using_window && x as u8 >= self.wx {
+                x as u8 - self.wx
             } else {
-                continue;
+                self.sx.wrapping_add(x as u8)
             };
+            let tx = (px as u16 >> 3) & 31;
 
-            let tilenr: u8 = self.get_ram0(tilemapbase + tiley * 32 + tilex);
-
-            let (palnr, vram1, xflip, yflip, prio) = if self.term == Term::GBC {
-                let flags = self.get_ram1(tilemapbase + tiley * 32 + tilex) as usize;
-                (
-                    flags & 0x07,
-                    flags & (1 << 3) != 0,
-                    flags & (1 << 5) != 0,
-                    flags & (1 << 6) != 0,
-                    flags & (1 << 7) != 0,
-                )
-            } else {
-                (0, false, false, false, false)
-            };
-
-            let tilebase = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };
-            let tileaddress = tilebase
-                + (if tilebase == 0x8000 {
-                    tilenr as u16
+            let bg = if using_window && x as u8 >= self.wx {
+                if self.lcdc.bit6() {
+                    0x9c00
                 } else {
-                    (tilenr as i8 as i16 + 128) as u16
-                }) * 16;
-
-            let a0 = match yflip {
-                false => tileaddress + (pixely * 2),
-                true => tileaddress + (14 - (pixely * 2)),
-            };
-
-            let (b1, b2) = match vram1 {
-                false => (self.get_ram0(a0), self.get_ram0(a0 + 1)),
-                true => (self.get_ram1(a0), self.get_ram1(a0 + 1)),
-            };
-
-            let xbit = match xflip {
-                true => pixelx,
-                false => 7 - pixelx,
-            } as u32;
-            let colnr = if b1 & (1 << xbit) != 0 { 1 } else { 0 } | if b2 & (1 << xbit) != 0 { 2 } else { 0 };
-
-            self.bgprio[x] = if colnr == 0 {
-                PrioType::Color0
-            } else if prio {
-                PrioType::PrioFlag
+                    0x9800
+                }
             } else {
-                PrioType::Normal
+                if self.lcdc.bit3() {
+                    0x9C00
+                } else {
+                    0x9800
+                }
             };
+
+            let tile_address = bg + ty * 32 + tx;
+            let tile_num = self.get_ram0(tile_address);
+            let tile_location = tile_base
+                + (if self.lcdc.bit4() {
+                    tile_num as u16
+                } else {
+                    (tile_num as i8 as i16 + 128) as u16
+                }) * 16;
+            let tile_attr = Attr::from(self.get_ram1(tile_address));
+
+            let line = if self.term == Term::GBC && tile_attr.yflip {
+                ((7u8.wrapping_sub(py)) % 8) * 2
+            } else {
+                (py % 8) * 2
+            };
+            let b1: u8;
+            let b2: u8;
+            if self.term == Term::GBC && tile_attr.bank {
+                b1 = self.get_ram1(tile_location + u16::from(line));
+                b2 = self.get_ram1(tile_location + u16::from(line) + 1);
+            } else {
+                b1 = self.get_ram0(tile_location + u16::from(line));
+                b2 = self.get_ram0(tile_location + u16::from(line) + 1);
+            }
+
+            let color_bit = if tile_attr.xflip { px % 8 } else { 7 - px % 8 };
+            let color_num =
+                if b1 & (1 << color_bit) != 0 { 1 } else { 0 } | if b2 & (1 << color_bit) != 0 { 2 } else { 0 };
+
+            self.bgprio[x] = if color_num == 0 {
+                PrioType::Zero
+            } else if tile_attr.priority {
+                PrioType::Priority
+            } else {
+                PrioType::Else
+            };
+
             if self.term == Term::GBC {
-                let r = self.cbgpal[palnr][colnr][0];
-                let g = self.cbgpal[palnr][colnr][1];
-                let b = self.cbgpal[palnr][colnr][2];
+                let r = self.cbgpal[tile_attr.palette_number_1][color_num][0];
+                let g = self.cbgpal[tile_attr.palette_number_1][color_num][1];
+                let b = self.cbgpal[tile_attr.palette_number_1][color_num][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
-                let color = Self::get_gray_shades(self.bgp, colnr) as u8;
+                let color = Self::get_gray_shades(self.bgp, color_num) as u8;
                 self.set_gre(x, color);
             }
         }
     }
 
     fn draw_sprites(&mut self) {
-        if !self.lcdc.bit1() {
-            return;
-        }
-
-        // TODO: limit of 10 sprites per line
-
-        for index in 0..40 {
-            let i = 39 - index;
-            let spriteaddr = 0xFE00 + (i as u16) * 4;
-            let spritey = self.get(spriteaddr + 0) as u16 as i32 - 16;
-            let spritex = self.get(spriteaddr + 1) as u16 as i32 - 8;
-            let tilenum = (self.get(spriteaddr + 2) & (if self.lcdc.bit2() { 0xFE } else { 0xFF })) as u16;
-            let flags = self.get(spriteaddr + 3) as usize;
-            let usepal1: bool = flags & (1 << 4) != 0;
-            let xflip: bool = flags & (1 << 5) != 0;
-            let yflip: bool = flags & (1 << 6) != 0;
-            let belowbg: bool = flags & (1 << 7) != 0;
-            let c_palnr = flags & 0x07;
-            let c_vram1: bool = flags & (1 << 3) != 0;
+        let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
+        for i in 0..40 {
+            let sprite_addr = 0xFE00 + (i as u16) * 4;
+            let sprite_y = self.get(sprite_addr + 0) as u16 as i32 - 16;
+            let sprite_x = self.get(sprite_addr + 1) as u16 as i32 - 8;
+            let tile_location = (self.get(sprite_addr + 2) & (if self.lcdc.bit2() { 0xFE } else { 0xFF })) as u16;
+            let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
             let line = self.ly as i32;
-            let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
-
-            if line < spritey || line >= spritey + sprite_size {
+            // If this is true the scanline is out of the area we care about
+            if line < sprite_y || line >= sprite_y + sprite_size {
                 continue;
             }
-            if spritex < -7 || spritex >= (SCREEN_W as i32) {
+            if sprite_x < -7 || sprite_x >= (SCREEN_W as i32) {
                 continue;
             }
-
-            let tiley: u16 = if yflip {
-                (sprite_size - 1 - (line - spritey)) as u16
+            let line: u16 = if tile_attr.yflip {
+                (sprite_size - 1 - (line - sprite_y)) as u16
             } else {
-                (line - spritey) as u16
+                (line - sprite_y) as u16
+            };
+            let tile_location = 0x8000u16 + tile_location * 16 + line * 2;
+            let b1: u8;
+            let b2: u8;
+            if tile_attr.bank && self.term == Term::GBC {
+                b1 = self.get_ram1(tile_location);
+                b2 = self.get_ram1(tile_location + 1);
+            } else {
+                b1 = self.get_ram0(tile_location);
+                b2 = self.get_ram0(tile_location + 1);
             };
 
-            let tileaddress = 0x8000u16 + tilenum * 16 + tiley * 2;
-            let (b1, b2) = if c_vram1 && self.term == Term::GBC {
-                (self.get_ram1(tileaddress), self.get_ram1(tileaddress + 1))
-            } else {
-                (self.get_ram0(tileaddress), self.get_ram0(tileaddress + 1))
-            };
-
-            'xloop: for x in 0..8 {
-                if spritex + x < 0 || spritex + x >= (SCREEN_W as i32) {
+            for x in 0..8 {
+                if sprite_x + x < 0 || sprite_x + x >= (SCREEN_W as i32) {
                     continue;
                 }
-
-                let xbit = 1 << (if xflip { x } else { 7 - x } as u32);
-                let colnr = (if b1 & xbit != 0 { 1 } else { 0 }) | (if b2 & xbit != 0 { 2 } else { 0 });
-                if colnr == 0 {
+                let color_bit = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
+                let color_mum = (if b1 & color_bit != 0 { 1 } else { 0 }) | (if b2 & color_bit != 0 { 2 } else { 0 });
+                if color_mum == 0 {
                     continue;
                 }
 
                 if self.term == Term::GBC {
                     if self.lcdc.bit0()
-                        && (self.bgprio[(spritex + x) as usize] == PrioType::PrioFlag
-                            || (belowbg && self.bgprio[(spritex + x) as usize] != PrioType::Color0))
+                        && (self.bgprio[(sprite_x + x) as usize] == PrioType::Priority
+                            || (tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero))
                     {
-                        continue 'xloop;
+                        continue;
                     }
-                    let r = self.csprit[c_palnr][colnr][0];
-                    let g = self.csprit[c_palnr][colnr][1];
-                    let b = self.csprit[c_palnr][colnr][2];
-                    self.set_rgb((spritex + x) as usize, r, g, b);
+                    let r = self.csprit[tile_attr.palette_number_1][color_mum][0];
+                    let g = self.csprit[tile_attr.palette_number_1][color_mum][1];
+                    let b = self.csprit[tile_attr.palette_number_1][color_mum][2];
+                    self.set_rgb((sprite_x + x) as usize, r, g, b);
                 } else {
-                    if belowbg && self.bgprio[(spritex + x) as usize] != PrioType::Color0 {
-                        continue 'xloop;
+                    if tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero {
+                        continue;
                     }
-                    let color = if usepal1 {
-                        Self::get_gray_shades(self.op1, colnr) as u8
+                    let color = if tile_attr.palette_number_0 == 1 {
+                        Self::get_gray_shades(self.op1, color_mum) as u8
                     } else {
-                        Self::get_gray_shades(self.op0, colnr) as u8
+                        Self::get_gray_shades(self.op0, color_mum) as u8
                     };
-                    self.set_gre((spritex + x) as usize, color);
+                    self.set_gre((sprite_x + x) as usize, color);
                 }
             }
         }
@@ -648,8 +652,8 @@ impl Memory for Gpu {
                 let bit2 = if self.ly == self.ly_compare { 0x04 } else { 0x00 };
                 bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
-            0xff42 => self.scy,
-            0xff43 => self.scx,
+            0xff42 => self.sy,
+            0xff43 => self.sx,
             0xff44 => self.ly,
             0xff45 => self.ly_compare,
             0xff46 => 0,
@@ -712,8 +716,8 @@ impl Memory for Gpu {
                 self.stat.enable_m1_interrupt = v & 0x10 != 0x00;
                 self.stat.enable_m0_interrupt = v & 0x08 != 0x00;
             }
-            0xff42 => self.scy = v,
-            0xff43 => self.scx = v,
+            0xff42 => self.sy = v,
+            0xff43 => self.sx = v,
             0xff44 => {}
             0xff45 => self.ly_compare = v,
             0xff46 => {}

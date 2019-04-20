@@ -1,7 +1,7 @@
 Full featured GameBoy emulator. Let's dance!
 
 ```s
-$ cargo run -- "mods/Boxes (PD).gb"
+$ cargo run -- "roms/Boxes (PD).gb"
 ```
 
 ![sample.gif](./docs/sample.gif)
@@ -34,7 +34,7 @@ $ cargo run -- "mods/Boxes (PD).gb"
 
 - [x] Item: GameBoy and GameBoy Color
 - [x] CPU: The sharp LR35902
-- [ ] GPU: Need time to learn more
+- [x] GPU
 - [ ] APU: Need time to learn more
 - [x] Cartridge
     - ROM ONLY
