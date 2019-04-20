@@ -458,6 +458,8 @@ impl Gpu {
 
     fn draw_bg(&mut self) {
         let using_window = self.lcdc.bit5() && self.wy <= self.ly;
+        let tile_base = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };
+
         let py = if using_window {
             self.ly.wrapping_sub(self.wy)
         } else {
@@ -474,7 +476,7 @@ impl Gpu {
             };
             let tx = (px as u16 >> 3) & 31;
 
-            let tilemapbase = if using_window && x as u8 >= self.wx {
+            let bg = if using_window && x as u8 >= self.wx {
                 if self.lcdc.bit6() {
                     0x9c00
                 } else {
@@ -488,10 +490,17 @@ impl Gpu {
                 }
             };
 
-            let tilenr: u8 = self.get_ram0(tilemapbase + ty * 32 + tx);
+            let tile_address = bg + ty * 32 + tx;
+            let tile_num = self.get_ram0(tile_address);
+            let tile_location = tile_base
+                + (if self.lcdc.bit4() {
+                    tile_num as u16
+                } else {
+                    (tile_num as i8 as i16 + 128) as u16
+                }) * 16;
 
             let (palnr, vram1, xflip, yflip, prio) = if self.term == Term::GBC {
-                let flags = self.get_ram1(tilemapbase + ty * 32 + tx) as usize;
+                let flags = self.get_ram1(tile_address) as usize;
                 (
                     flags & 0x07,
                     flags & (1 << 3) != 0,
@@ -503,17 +512,9 @@ impl Gpu {
                 (0, false, false, false, false)
             };
 
-            let tilebase = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };
-            let tileaddress = tilebase
-                + (if tilebase == 0x8000 {
-                    tilenr as u16
-                } else {
-                    (tilenr as i8 as i16 + 128) as u16
-                }) * 16;
-
             let a0 = match yflip {
-                false => tileaddress + ((py % 8) * 2) as u16,
-                true => tileaddress + (14 - ((py % 8) * 2)) as u16,
+                false => tile_location + ((py % 8) * 2) as u16,
+                true => tile_location + (14 - ((py % 8) * 2)) as u16,
             };
 
             let (b1, b2) = match vram1 {
@@ -583,11 +584,11 @@ impl Gpu {
                 (line - spritey) as u16
             };
 
-            let tileaddress = 0x8000u16 + tilenum * 16 + tiley * 2;
+            let tile_location = 0x8000u16 + tilenum * 16 + tiley * 2;
             let (b1, b2) = if c_vram1 && self.term == Term::GBC {
-                (self.get_ram1(tileaddress), self.get_ram1(tileaddress + 1))
+                (self.get_ram1(tile_location), self.get_ram1(tile_location + 1))
             } else {
-                (self.get_ram0(tileaddress), self.get_ram0(tileaddress + 1))
+                (self.get_ram0(tile_location), self.get_ram0(tile_location + 1))
             };
 
             'xloop: for x in 0..8 {
