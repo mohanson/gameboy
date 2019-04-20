@@ -270,8 +270,8 @@ pub struct Gpu {
     // Specifies the position in the 256x256 pixels BG map (32x32 tiles) which is to be displayed at the upper/left LCD
     // display position. Values in range from 0-255 may be used for X/Y each, the video controller automatically wraps
     // back to the upper (left) position in BG map when drawing exceeds the lower (right) border of the BG map area.
-    scx: u8,
-    scy: u8,
+    sc: u8,
+    sy: u8,
     stat: Stat,
     // Window Y Position (R/W), Window X Position minus 7 (R/W)
     wx: u8,
@@ -305,8 +305,8 @@ impl Gpu {
             op1: 0x01,
             ram: [[0x00; 0x2000]; 0x02],
             ram_bank: 0x00,
-            scx: 0x00,
-            scy: 0x00,
+            sc: 0x00,
+            sy: 0x00,
             stat: Stat::power_up(),
             wx: 0x00,
             wy: 0x00,
@@ -469,12 +469,12 @@ impl Gpu {
 
         let wintiley = (winy as u16 >> 3) & 31;
 
-        let bgy = self.scy.wrapping_add(self.ly);
+        let bgy = self.sy.wrapping_add(self.ly);
         let bgtiley = (bgy as u16 >> 3) & 31;
 
         for x in 0..SCREEN_W {
             let winx = -((self.wx as i32) - 7) + (x as i32);
-            let bgx = self.scx as u32 + x as u32;
+            let bgx = self.sc as u32 + x as u32;
 
             let (tilemapbase, tiley, tilex, pixely, pixelx) = if winy >= 0 && winx >= 0 {
                 (
@@ -650,8 +650,8 @@ impl Memory for Gpu {
                 let bit2 = if self.ly == self.ly_compare { 0x04 } else { 0x00 };
                 bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
-            0xff42 => self.scy,
-            0xff43 => self.scx,
+            0xff42 => self.sy,
+            0xff43 => self.sc,
             0xff44 => self.ly,
             0xff45 => self.ly_compare,
             0xff46 => 0,
@@ -714,8 +714,8 @@ impl Memory for Gpu {
                 self.stat.enable_m1_interrupt = v & 0x10 != 0x00;
                 self.stat.enable_m0_interrupt = v & 0x08 != 0x00;
             }
-            0xff42 => self.scy = v,
-            0xff43 => self.scx = v,
+            0xff42 => self.sy = v,
+            0xff43 => self.sc = v,
             0xff44 => {}
             0xff45 => self.ly_compare = v,
             0xff46 => {}
