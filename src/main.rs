@@ -1,6 +1,5 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
-use gameboy::convention::Term;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::joypad::JoypadKey;
 use gameboy::motherboard::MotherBoard;
@@ -35,7 +34,7 @@ fn main() {
 fn real_main() -> i32 {
     let matches = clap::App::new("gameboy")
         .version("0.1")
-        .author("Mathijs van de Nes")
+        .author("Mohanson")
         .about("A Gameboy Colour emulator written in Rust")
         .arg(
             clap::Arg::with_name("filename")
@@ -53,12 +52,6 @@ fn real_main() -> i32 {
                 .help("Emulates a gameboy printer")
                 .short("p")
                 .long("printer"),
-        )
-        .arg(
-            clap::Arg::with_name("classic")
-                .help("Forces the emulator to run in classic Gameboy mode")
-                .short("c")
-                .long("classic"),
         )
         .arg(
             clap::Arg::with_name("scale")
@@ -81,12 +74,11 @@ fn real_main() -> i32 {
         )
         .get_matches();
 
-    let opt_classic = matches.is_present("classic");
     let opt_audio = matches.is_present("audio");
     let filename = matches.value_of("filename").unwrap();
     let scale = matches.value_of("scale").unwrap_or("2").parse::<u32>().unwrap();
 
-    let cpu = construct_cpu(filename, opt_classic);
+    let cpu = construct_cpu(filename);
     if cpu.is_none() {
         return EXITCODE_CPULOADFAILS;
     }
@@ -140,8 +132,8 @@ fn real_main() -> i32 {
             use glium::glutin::VirtualKeyCode;
             use glium::glutin::{Event, KeyboardInput, WindowEvent};
 
-            match ev {
-                Event::WindowEvent { event, .. } => match event {
+            if let Event::WindowEvent { event, .. } = ev {
+                match event {
                     WindowEvent::CloseRequested => stop = true,
                     WindowEvent::KeyboardInput { input, .. } => match input {
                         KeyboardInput {
@@ -201,12 +193,11 @@ fn real_main() -> i32 {
                         _ => (),
                     },
                     _ => (),
-                },
-                _ => (),
+                }
             }
         });
 
-        if stop == true {
+        if stop {
             break;
         }
 
@@ -285,14 +276,11 @@ fn recalculate_screen(
 
 fn warn(message: &'static str) {
     use std::io::Write;
-    let _ = write!(&mut std::io::stderr(), "{}\n", message);
+    let _ = writeln!(&mut std::io::stderr(), "{}", message);
 }
 
-fn construct_cpu(filename: &str, classic_mode: bool) -> Option<Box<MotherBoard>> {
-    let c = match classic_mode {
-        true => MotherBoard::power_up(filename),
-        false => MotherBoard::power_up(filename),
-    };
+fn construct_cpu(filename: &str) -> Option<Box<MotherBoard>> {
+    let c = MotherBoard::power_up(filename);
     Some(Box::new(c))
 }
 
@@ -300,7 +288,7 @@ fn run_cpu(mut cpu: Box<MotherBoard>, sender: SyncSender<Vec<u8>>, receiver: Rec
     let periodic = timer_periodic(16);
     let mut limit_speed = true;
 
-    let waitticks = (4194304f64 / 1000.0 * 16.0).round() as u32;
+    let waitticks = (4_194_304f64 / 1000.0 * 16.0).round() as u32;
     let mut ticks = 0;
 
     'outer: loop {
@@ -383,7 +371,7 @@ impl CpalPlayer {
         for f in supported_formats {
             match wanted_samplerate {
                 None => wanted_samplerate = Some(f.max_sample_rate),
-                Some(cpal::SampleRate(r)) if r < f.max_sample_rate.0 && r < 192000 => {
+                Some(cpal::SampleRate(r)) if r < f.max_sample_rate.0 && r < 192_000 => {
                     wanted_samplerate = Some(f.max_sample_rate)
                 }
                 _ => {}
@@ -425,32 +413,29 @@ impl CpalPlayer {
 fn cpal_thread(event_loop: cpal::EventLoop, audio_buffer: Arc<Mutex<Vec<(f32, f32)>>>) -> ! {
     event_loop.run(move |_stream_id, stream_data| {
         let mut inbuffer = audio_buffer.lock().unwrap();
-        match stream_data {
-            cpal::StreamData::Output { buffer } => {
-                let outlen = ::std::cmp::min(buffer.len() / 2, inbuffer.len());
-                match buffer {
-                    cpal::UnknownTypeOutputBuffer::F32(mut outbuffer) => {
-                        for (i, (in_l, in_r)) in inbuffer.drain(..outlen).enumerate() {
-                            outbuffer[i * 2] = in_l;
-                            outbuffer[i * 2 + 1] = in_r;
-                        }
+        if let cpal::StreamData::Output { buffer } = stream_data {
+            let outlen = ::std::cmp::min(buffer.len() / 2, inbuffer.len());
+            match buffer {
+                cpal::UnknownTypeOutputBuffer::F32(mut outbuffer) => {
+                    for (i, (in_l, in_r)) in inbuffer.drain(..outlen).enumerate() {
+                        outbuffer[i * 2] = in_l;
+                        outbuffer[i * 2 + 1] = in_r;
                     }
-                    cpal::UnknownTypeOutputBuffer::U16(mut outbuffer) => {
-                        for (i, (in_l, in_r)) in inbuffer.drain(..outlen).enumerate() {
-                            outbuffer[i * 2] = (in_l * (std::i16::MAX as f32) + (std::u16::MAX as f32) / 2.0) as u16;
-                            outbuffer[i * 2 + 1] =
-                                (in_r * (std::i16::MAX as f32) + (std::u16::MAX as f32) / 2.0) as u16;
-                        }
+                }
+                cpal::UnknownTypeOutputBuffer::U16(mut outbuffer) => {
+                    for (i, (in_l, in_r)) in inbuffer.drain(..outlen).enumerate() {
+                        outbuffer[i * 2] = (in_l * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
+                        outbuffer[i * 2 + 1] =
+                            (in_r * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
                     }
-                    cpal::UnknownTypeOutputBuffer::I16(mut outbuffer) => {
-                        for (i, (in_l, in_r)) in inbuffer.drain(..outlen).enumerate() {
-                            outbuffer[i * 2] = (in_l * (std::i16::MAX as f32)) as i16;
-                            outbuffer[i * 2 + 1] = (in_r * (std::i16::MAX as f32)) as i16;
-                        }
+                }
+                cpal::UnknownTypeOutputBuffer::I16(mut outbuffer) => {
+                    for (i, (in_l, in_r)) in inbuffer.drain(..outlen).enumerate() {
+                        outbuffer[i * 2] = (in_l * f32::from(std::i16::MAX)) as i16;
+                        outbuffer[i * 2 + 1] = (in_r * f32::from(std::i16::MAX)) as i16;
                     }
                 }
             }
-            _ => (),
         }
     });
 }
@@ -476,6 +461,6 @@ impl AudioPlayer for CpalPlayer {
     }
 
     fn underflowed(&self) -> bool {
-        (*self.buffer.lock().unwrap()).len() == 0
+        (*self.buffer.lock().unwrap()).is_empty()
     }
 }

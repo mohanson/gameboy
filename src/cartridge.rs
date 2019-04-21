@@ -207,8 +207,11 @@ impl Stable for Mbc1 {
 // The suggested address range to use for MBC2 ram enable/disable is 0000-00FF.
 //
 // 2000-3FFF - ROM Bank Number (Write Only)
-// Writing a value (XXXXBBBB - X = Don't cares, B = bank select bits) into 2000-3FFF area will select an appropriate ROM bank at 4000-7FFF.
-// The least significant bit of the upper address byte must be one to select a ROM bank. For example the following addresses can be used to select a ROM bank: 2100-21FF, 2300-23FF, 2500-25FF, ..., 3F00-3FFF. The suggested address range to use for MBC2 rom bank selection is 2100-21FF.
+// Writing a value (XXXXBBBB - X = Don't cares, B = bank select bits) into 2000-3FFF area will select an appropriate ROM
+// bank at 4000-7FFF.
+// The least significant bit of the upper address byte must be one to select a ROM bank. For example the following
+// addresses can be used to select a ROM bank: 2100-21FF, 2300-23FF, 2500-25FF, ..., 3F00-3FFF. The suggested address
+// range to use for MBC2 rom bank selection is 2100-21FF.
 pub struct Mbc2 {
     rom: Vec<u8>,
     ram: Vec<u8>,
