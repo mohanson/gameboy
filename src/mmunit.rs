@@ -51,7 +51,7 @@ impl MemoryManagementUnit {
             shift: false,
             sound: None,
             speed: Speed::Normal,
-            term: term,
+            term,
             timer: Timer::power_up(),
             enable_interrupts: 0x00,
             hdma: Hdma::power_up(),
@@ -117,7 +117,7 @@ impl MemoryManagementUnit {
         self.interrupt |= self.serial.interrupt;
         self.serial.interrupt = 0;
 
-        return gputicks;
+        gputicks
     }
 
     pub fn switch_speed(&mut self) {
@@ -151,7 +151,7 @@ impl MemoryManagementUnit {
             self.hdma.active = false;
         }
 
-        return 8;
+        8
     }
 
     fn perform_gdma(&mut self) -> u32 {
@@ -161,7 +161,7 @@ impl MemoryManagementUnit {
         }
 
         self.hdma.active = false;
-        return len * 8;
+        len * 8
     }
 
     fn perform_vramdma_row(&mut self) {
@@ -196,7 +196,7 @@ impl Memory for MemoryManagementUnit {
             0xff00 => self.joypad.get(a),
             0xff01...0xff02 => self.serial.get(a),
             0xff04...0xff07 => self.timer.get(a),
-            0xff0F => self.interrupt,
+            0xff0f => self.interrupt,
             0xff10...0xff3f => match &self.sound {
                 Some(some) => some.rb(a),
                 None => 0x00,
@@ -206,9 +206,9 @@ impl Memory for MemoryManagementUnit {
                 let b = if self.shift { 0x01 } else { 0x00 };
                 a | b
             }
-            0xff40...0xff4F => self.gpu.get(a),
+            0xff40...0xff4f => self.gpu.get(a),
             0xff51...0xff55 => self.hdma.get(a),
-            0xff68...0xff6B => self.gpu.get(a),
+            0xff68...0xff6b => self.gpu.get(a),
             0xff70 => self.wram_bank as u8,
             0xff80...0xfffe => self.hram[a as usize - 0xff80],
             0xffff => self.enable_interrupts,
@@ -230,7 +230,7 @@ impl Memory for MemoryManagementUnit {
             0xff00 => self.joypad.set(a, v),
             0xff01...0xff02 => self.serial.set(a, v),
             0xff04...0xff07 => self.timer.set(a, v),
-            0xff10...0xff3F => self.sound.as_mut().map_or((), |s| s.wb(a, v)),
+            0xff10...0xff3f => self.sound.as_mut().map_or((), |s| s.wb(a, v)),
             0xff46 => {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
                 // table).
@@ -242,10 +242,10 @@ impl Memory for MemoryManagementUnit {
                 }
             }
             0xff4d => self.shift = (v & 0x01) == 0x01,
-            0xff40...0xff4F => self.gpu.set(a, v),
+            0xff40...0xff4f => self.gpu.set(a, v),
             0xff51...0xff55 => self.hdma.set(a, v),
-            0xff68...0xff6B => self.gpu.set(a, v),
-            0xff0F => self.interrupt = v,
+            0xff68...0xff6b => self.gpu.set(a, v),
+            0xff0f => self.interrupt = v,
             0xff70 => {
                 self.wram_bank = match v & 0x7 {
                     0 => 1,

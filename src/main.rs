@@ -4,13 +4,10 @@ use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::joypad::JoypadKey;
 use gameboy::motherboard::MotherBoard;
 use gameboy::sound::AudioPlayer;
-use std::error::Error;
+use std::env;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-
-const EXITCODE_SUCCESS: i32 = 0;
-const EXITCODE_CPULOADFAILS: i32 = 2;
 
 #[derive(Default)]
 struct RenderOptions {
@@ -25,81 +22,38 @@ enum GBEvent {
 }
 
 fn main() {
-    let exit_status = real_main();
-    if exit_status != EXITCODE_SUCCESS {
-        std::process::exit(exit_status);
+    let mut rom = String::from("");
+    let mut c_audio = false;
+    let mut c_scale = 2;
+    {
+        let mut ap = argparse::ArgumentParser::new();
+        ap.set_description("Gameboy emulator");
+        ap.refer(&mut c_audio)
+            .add_option(&["-a"], argparse::StoreTrue, "Enable audio");
+        ap.refer(&mut c_scale)
+            .add_option(&["-x"], argparse::Store, "Scale the video");
+        ap.refer(&mut rom).add_argument("rom", argparse::Store, "Rom name");
+        ap.parse_args_or_exit();
     }
-}
 
-fn real_main() -> i32 {
-    let matches = clap::App::new("gameboy")
-        .version("0.1")
-        .author("Mohanson")
-        .about("A Gameboy Colour emulator written in Rust")
-        .arg(
-            clap::Arg::with_name("filename")
-                .help("Sets the ROM file to load")
-                .required(true),
-        )
-        .arg(
-            clap::Arg::with_name("serial")
-                .help("Prints the data from the serial port to stdout")
-                .short("s")
-                .long("serial"),
-        )
-        .arg(
-            clap::Arg::with_name("printer")
-                .help("Emulates a gameboy printer")
-                .short("p")
-                .long("printer"),
-        )
-        .arg(
-            clap::Arg::with_name("scale")
-                .help("Sets the scale of the interface. Default: 2")
-                .short("x")
-                .long("scale")
-                .validator(|s| match s.parse::<u32>() {
-                    Err(e) => Err(format!("Could not parse scale: {}", e.description())),
-                    Ok(s) if s < 1 => Err("Scale must be at least 1".to_owned()),
-                    Ok(s) if s > 8 => Err("Scale may be at most 8".to_owned()),
-                    Ok(..) => Ok(()),
-                })
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("audio")
-                .help("Enables audio")
-                .short("a")
-                .long("audio"),
-        )
-        .get_matches();
+    let mut mother_board = MotherBoard::power_up(rom);
+    let rom_name = mother_board.mmu.cartridge.rom_name();
 
-    let opt_audio = matches.is_present("audio");
-    let filename = matches.value_of("filename").unwrap();
-    let scale = matches.value_of("scale").unwrap_or("2").parse::<u32>().unwrap();
-
-    let cpu = construct_cpu(filename);
-    if cpu.is_none() {
-        return EXITCODE_CPULOADFAILS;
-    }
-    let mut cpu = cpu.unwrap();
-    if opt_audio {
+    if c_audio {
         let player = CpalPlayer::get();
         match player {
-            Some(v) => cpu.enable_audio(Box::new(v) as Box<AudioPlayer>),
+            Some(v) => mother_board.enable_audio(Box::new(v) as Box<AudioPlayer>),
             None => {
-                warn("Could not open audio device");
-                return EXITCODE_CPULOADFAILS;
+                panic!("Could not open audio device");
             }
         }
     }
-    let romname = cpu.romname();
 
     let (sender1, receiver1) = mpsc::channel();
     let (sender2, receiver2) = mpsc::sync_channel(1);
 
     // Force winit to use x11 instead of wayland, wayland is not fully supported yet by winit.
-    std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+    env::set_var("WINIT_UNIX_BACKEND", "x11");
 
     let mut eventsloop = glium::glutin::EventsLoop::new();
     let window_builder = glium::glutin::WindowBuilder::new()
@@ -107,10 +61,10 @@ fn real_main() -> i32 {
             SCREEN_W as u32,
             SCREEN_H as u32,
         )))
-        .with_title("RBoy - ".to_owned() + &romname);
+        .with_title("RBoy - ".to_owned() + &rom_name);
     let context_builder = glium::glutin::ContextBuilder::new();
     let display = glium::backend::glutin::Display::new(window_builder, context_builder, &eventsloop).unwrap();
-    set_window_size(&**display.gl_window(), scale);
+    set_window_size(&**display.gl_window(), c_scale);
 
     let mut texture = glium::texture::texture2d::Texture2d::empty_with_format(
         &display,
@@ -123,7 +77,7 @@ fn real_main() -> i32 {
 
     let mut renderoptions = <RenderOptions as Default>::default();
 
-    let cputhread = thread::spawn(move || run_cpu(cpu, sender2, receiver1));
+    let cputhread = thread::spawn(move || run_cpu(mother_board, sender2, receiver1));
 
     loop {
         let mut stop = false;
@@ -150,7 +104,7 @@ fn real_main() -> i32 {
                             state: Pressed,
                             virtual_keycode: Some(VirtualKeyCode::R),
                             ..
-                        } => set_window_size(&**display.gl_window(), scale),
+                        } => set_window_size(&**display.gl_window(), c_scale),
                         KeyboardInput {
                             state: Pressed,
                             virtual_keycode: Some(VirtualKeyCode::LShift),
@@ -209,8 +163,6 @@ fn real_main() -> i32 {
 
     drop(sender1);
     let _ = cputhread.join();
-
-    EXITCODE_SUCCESS
 }
 
 fn glutin_to_keypad(key: glium::glutin::VirtualKeyCode) -> Option<JoypadKey> {
@@ -274,17 +226,7 @@ fn recalculate_screen(
     target.finish().unwrap();
 }
 
-fn warn(message: &'static str) {
-    use std::io::Write;
-    let _ = writeln!(&mut std::io::stderr(), "{}", message);
-}
-
-fn construct_cpu(filename: &str) -> Option<Box<MotherBoard>> {
-    let c = MotherBoard::power_up(filename);
-    Some(Box::new(c))
-}
-
-fn run_cpu(mut cpu: Box<MotherBoard>, sender: SyncSender<Vec<u8>>, receiver: Receiver<GBEvent>) {
+fn run_cpu(mut cpu: MotherBoard, sender: SyncSender<Vec<u8>>, receiver: Receiver<GBEvent>) {
     let periodic = timer_periodic(16);
     let mut limit_speed = true;
 

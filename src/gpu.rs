@@ -314,7 +314,7 @@ impl Gpu {
             blanked: false,
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
             interrupt: 0,
-            term: term,
+            term,
             updated: false,
 
             bgp: 0x00,
@@ -361,7 +361,7 @@ impl Gpu {
     // 2  Dark gray
     // 3  Black
     fn get_gray_shades(v: u8, i: usize) -> GrayShades {
-        match (v >> 2 * i) & 0x03 {
+        match v >> (2 * i) & 0x03 {
             0x00 => GrayShades::White,
             0x01 => GrayShades::Light,
             0x02 => GrayShades::Dark,
@@ -511,12 +511,10 @@ impl Gpu {
                 } else {
                     0x9800
                 }
+            } else if self.lcdc.bit3() {
+                0x9C00
             } else {
-                if self.lcdc.bit3() {
-                    0x9C00
-                } else {
-                    0x9800
-                }
+                0x9800
             };
 
             let tile_address = bg + ty * 32 + tx;

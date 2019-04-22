@@ -59,8 +59,4 @@ impl MotherBoard {
     pub fn keydown(&mut self, key: JoypadKey) {
         self.mmu.joypad.keydown(key);
     }
-
-    pub fn romname(&self) -> String {
-        self.mmu.cartridge.rom_name()
-    }
 }

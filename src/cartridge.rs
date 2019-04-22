@@ -310,7 +310,7 @@ impl RealTimeClock {
                 .as_secs(),
         };
         Self {
-            zero: zero,
+            zero,
             s: 0,
             m: 0,
             h: 0,

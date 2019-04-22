@@ -105,7 +105,7 @@ impl SquareChannel {
             sweep_shift: 0,
             sweep_frequency_increase: false,
             volume_envelope: VolumeEnvelope::new(),
-            blip: blip,
+            blip,
         }
     }
 
@@ -220,12 +220,10 @@ impl SquareChannel {
                 } else {
                     self.sweep_frequency -= offset;
                 }
+            } else if self.sweep_frequency >= 2048 - offset {
+                self.sweep_frequency = 2048;
             } else {
-                if self.sweep_frequency >= 2048 - offset {
-                    self.sweep_frequency = 2048;
-                } else {
-                    self.sweep_frequency += offset;
-                }
+                self.sweep_frequency += offset;
             }
         }
     }
@@ -262,7 +260,7 @@ impl WaveChannel {
             volume_shift: 0,
             waveram: [0; 32],
             current_wave: 0,
-            blip: blip,
+            blip,
         }
     }
 
@@ -383,7 +381,7 @@ impl NoiseChannel {
             state: 1,
             delay: 0,
             last_amp: 0,
-            blip: blip,
+            blip,
         }
     }
 
@@ -499,7 +497,7 @@ impl Sound {
             volume_left: 7,
             volume_right: 7,
             need_sync: false,
-            player: player,
+            player,
         }
     }
 

@@ -5,8 +5,7 @@ authors = ["mohanson <mohanson@outlook.com>"]
 edition = "2018"
 
 [dependencies]
+argparse = "0.2"
 blip_buf = "0.1"
-podio = "0.1"
-glium = { version = "0.22", default_features = false, features = [ "glutin" ] }
-clap = { version = "2", default_features = false }
 cpal = "0.8"
+glium = { version = "0.22", default_features = false, features = [ "glutin" ] }

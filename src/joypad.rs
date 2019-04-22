@@ -66,7 +66,7 @@ impl Memory for Joypad {
         if (self.select & 0b0010_0000) == 0x00 {
             return self.select | (self.matrix >> 4);
         }
-        return self.select;
+        self.select
     }
 
     fn set(&mut self, a: u16, v: u8) {
