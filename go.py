@@ -9,6 +9,15 @@ def call(command):
         sys.exit(r)
 
 
+def clippy():
+    deny = ['clippy::cast_lossless']
+    call(f'cargo clippy -- -D {"".join(deny)}')
+
+
+def make():
+    call('cargo build')
+
+
 path_rom_only = r"/tmp/gb/3D Wireframe Demo (PD) [C].gbc"
 path_mbc1 = r"/tmp/gb/175 Sprite Parallax Starfield Demo (PD) [C].gb"
 path_mbc1_ram = r"/tmp/gb/AGO Realtime Demo (LCP2000) (PD) [C].gbc"
@@ -19,10 +28,6 @@ path_mbc3_timer_ram_battery = r"/tmp/gb/Pokemon - Crystal Version (US).gbc"
 path_mbc5_ram_battery = r"/tmp/gb/Alice in Wonderland (U) [C][!].gbc"
 path_cpu_instrs = r"/tmp/gb/cpu_instrs.gb"
 path_cpu_instr_timing = r"/tmp/gb/instr_timing.gb"
-
-
-def make():
-    call('cargo build')
 
 
 def test():
