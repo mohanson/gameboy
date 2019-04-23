@@ -142,7 +142,7 @@ impl MemoryManagementUnit {
     }
 
     fn perform_hdma(&mut self) -> u32 {
-        if self.gpu.blanked == false {
+        if !self.gpu.blanked {
             return 0;
         }
 

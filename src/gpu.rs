@@ -386,9 +386,9 @@ impl Gpu {
         assert!(r <= 0x1f);
         assert!(g <= 0x1f);
         assert!(b <= 0x1f);
-        let r = r as u32;
-        let g = g as u32;
-        let b = b as u32;
+        let r = u32::from(r);
+        let g = u32::from(g);
+        let b = u32::from(b);
         let lr = ((r * 13 + g * 2 + b) >> 1) as u8;
         let lg = ((g * 3 + b) << 1) as u8;
         let lb = ((r * 3 + g * 2 + b * 11) >> 1) as u8;

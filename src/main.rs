@@ -61,7 +61,7 @@ fn main() {
             SCREEN_W as u32,
             SCREEN_H as u32,
         )))
-        .with_title("RBoy - ".to_owned() + &rom_name);
+        .with_title("Gameboy - ".to_owned() + &rom_name);
     let context_builder = glium::glutin::ContextBuilder::new();
     let display = glium::backend::glutin::Display::new(window_builder, context_builder, &eventsloop).unwrap();
     set_window_size(&**display.gl_window(), c_scale);

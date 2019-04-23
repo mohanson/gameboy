@@ -562,7 +562,7 @@ impl Cpu {
             return 0;
         }
         self.halted = false;
-        if self.enable_interrupts == false {
+        if !self.enable_interrupts {
             return 0;
         }
         self.enable_interrupts = false;

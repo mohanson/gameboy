@@ -9,11 +9,6 @@ def call(command):
         sys.exit(r)
 
 
-def clippy():
-    deny = ['clippy::cast_lossless']
-    call(f'cargo clippy -- -D {"".join(deny)}')
-
-
 def make():
     call('cargo build')
 
