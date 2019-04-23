@@ -80,7 +80,7 @@ impl Timer {
         }
         if (self.ff07 & 0x04) != 0x00 {
             self.tmp2 += cycles;
-            if self.tmp2 >= self.freq {
+            while self.tmp2 >= self.freq {
                 self.ff05 = self.ff05.wrapping_add(1);
                 if self.ff05 == 0x00 {
                     self.ff05 = self.ff06;

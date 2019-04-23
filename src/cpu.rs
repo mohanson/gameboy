@@ -1478,37 +1478,59 @@ impl Cpu {
         };
 
         let ecycle = match opcode {
-            0x20 | 0x28 | 0x30 | 0x38 => {
-                if !self.reg.get_flag(Z) {
+            0x20 | 0x30 => {
+                if self.reg.get_flag(Z) {
+                    0x00
+                } else {
+                    0x01
+                }
+            }
+            0x28 | 0x38 => {
+                if self.reg.get_flag(Z) {
                     0x01
                 } else {
                     0x00
                 }
             }
-            0xc0 | 0xc8 | 0xd0 | 0xd8 => {
-                if !self.reg.get_flag(Z) {
+
+            0xc0 | 0xd0 => {
+                if self.reg.get_flag(Z) {
+                    0x00
+                } else {
+                    0x03
+                }
+            }
+            0xc8 | 0xcc | 0xd8 | 0xdc => {
+                if self.reg.get_flag(Z) {
                     0x03
                 } else {
                     0x00
                 }
             }
-            0xc2 | 0xca | 0xd2 | 0xda => {
-                if !self.reg.get_flag(Z) {
+            0xc2 | 0xd2 => {
+                if self.reg.get_flag(Z) {
+                    0x00
+                } else {
+                    0x01
+                }
+            }
+            0xca | 0xda => {
+                if self.reg.get_flag(Z) {
                     0x01
                 } else {
                     0x00
                 }
             }
-            0xc4 | 0xcc | 0xd4 | 0xdc => {
-                if !self.reg.get_flag(Z) {
-                    0x03
-                } else {
+            0xc4 | 0xd4 => {
+                if self.reg.get_flag(Z) {
                     0x00
+                } else {
+                    0x03
                 }
             }
             _ => 0x00,
         };
-        if cbcode != 0 {
+        if opcode == 0xcb {
             CB_CYCLES[cbcode as usize]
         } else {
             OP_CYCLES[opcode as usize] + ecycle
