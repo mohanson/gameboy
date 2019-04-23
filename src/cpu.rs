@@ -241,7 +241,7 @@ impl Cpu {
     // C - Not affected
     fn alu_dec(&mut self, a: u8) -> u8 {
         let r = a.wrapping_sub(1);
-        self.reg.set_flag(H, (a & 0x0f) == 0);
+        self.reg.set_flag(H, a.trailing_zeros() >= 4);
         self.reg.set_flag(N, true);
         self.reg.set_flag(Z, r == 0);
         r
@@ -274,7 +274,7 @@ impl Cpu {
     // C - Set or reset according to operation.
     fn alu_add_sp(&mut self, mem: &mut Memory) {
         let a = self.reg.sp;
-        let b = self.imm(mem) as i8 as i16 as u16;
+        let b = i16::from(self.imm(mem) as i8) as u16;
         self.reg.set_flag(C, (a & 0x00ff) + (b & 0x00ff) > 0x00ff);
         self.reg.set_flag(H, (a & 0x000f) + (b & 0x000f) > 0x000f);
         self.reg.set_flag(N, false);
@@ -527,7 +527,7 @@ impl Cpu {
     fn alu_jr(&mut self, mem: &mut Memory) {
         let n = mem.get(self.reg.pc) as i8;
         self.reg.pc += 1;
-        self.reg.pc = ((self.reg.pc as u32 as i32) + (n as i32)) as u16;
+        self.reg.pc = ((u32::from(self.reg.pc) as i32) + i32::from(n)) as u16;
     }
 }
 
@@ -1452,7 +1452,7 @@ impl Cpu {
             }
             0xf8 => {
                 let a = self.reg.sp;
-                let b = self.imm(mem) as i8 as i16 as u16;
+                let b = i16::from(self.imm(mem) as i8) as u16;
                 self.reg.set_flag(C, (a & 0x00ff) + (b & 0x00ff) > 0x00ff);
                 self.reg.set_flag(H, (a & 0x000f) + (b & 0x000f) > 0x000f);
                 self.reg.set_flag(N, false);
