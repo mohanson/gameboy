@@ -1476,10 +1476,42 @@ impl Cpu {
                 self.reg.pc = 0x38;
             }
         };
+
+        let ecycle = match opcode {
+            0x20 | 0x28 | 0x30 | 0x38 => {
+                if !self.reg.get_flag(Z) {
+                    0x01
+                } else {
+                    0x00
+                }
+            }
+            0xc0 | 0xc8 | 0xd0 | 0xd8 => {
+                if !self.reg.get_flag(Z) {
+                    0x03
+                } else {
+                    0x00
+                }
+            }
+            0xc2 | 0xca | 0xd2 | 0xda => {
+                if !self.reg.get_flag(Z) {
+                    0x01
+                } else {
+                    0x00
+                }
+            }
+            0xc4 | 0xcc | 0xd4 | 0xdc => {
+                if !self.reg.get_flag(Z) {
+                    0x03
+                } else {
+                    0x00
+                }
+            }
+            _ => 0x00,
+        };
         if cbcode != 0 {
             CB_CYCLES[cbcode as usize]
         } else {
-            OP_CYCLES[opcode as usize]
+            OP_CYCLES[opcode as usize] + ecycle
         }
     }
 }
