@@ -575,7 +575,7 @@ impl Gpu {
             let tile_location = (self.get(sprite_addr + 2) & (if self.lcdc.bit2() { 0xFE } else { 0xFF })) as u16;
             let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
-            let line = self.ly as i32;
+            let line = i32::from(self.ly);
             // If this is true the scanline is out of the area we care about
             if line < sprite_y || line >= sprite_y + sprite_size {
                 continue;
@@ -654,7 +654,6 @@ impl Memory for Gpu {
             0xff43 => self.sx,
             0xff44 => self.ly,
             0xff45 => self.ly_compare,
-            0xff46 => 0,
             0xff47 => self.bgp,
             0xff48 => self.op0,
             0xff49 => self.op1,
@@ -718,7 +717,6 @@ impl Memory for Gpu {
             0xff43 => self.sx = v,
             0xff44 => {}
             0xff45 => self.ly_compare = v,
-            0xff46 => {}
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,
             0xff49 => self.op1 = v,

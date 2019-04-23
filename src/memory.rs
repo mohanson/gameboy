@@ -19,7 +19,7 @@ pub trait Memory {
     fn set(&mut self, a: u16, v: u8);
 
     fn get_halfword(&self, a: u16) -> u16 {
-        (self.get(a) as u16) | ((self.get(a + 1) as u16) << 8)
+        u16::from(self.get(a)) | (u16::from(self.get(a + 1)) << 8)
     }
 
     fn set_halfword(&mut self, a: u16, v: u16) {

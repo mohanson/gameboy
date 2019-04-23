@@ -155,7 +155,7 @@ impl MemoryManagementUnit {
     }
 
     fn perform_gdma(&mut self) -> u32 {
-        let len = self.hdma.remain as u32 + 1;
+        let len = u32::from(self.hdma.remain) + 1;
         for _i in 0..len {
             self.perform_vramdma_row();
         }
@@ -206,7 +206,7 @@ impl Memory for MemoryManagementUnit {
                 let b = if self.shift { 0x01 } else { 0x00 };
                 a | b
             }
-            0xff40...0xff4f => self.gpu.get(a),
+            0xff40...0xff45 | 0xff47...0xff4b | 0xff4f => self.gpu.get(a),
             0xff51...0xff55 => self.hdma.get(a),
             0xff68...0xff6b => self.gpu.get(a),
             0xff70 => self.wram_bank as u8,
@@ -235,14 +235,14 @@ impl Memory for MemoryManagementUnit {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
                 // table).
                 // See: http://gbdev.gg8.se/wiki/articles/Video_Display#FF46_-_DMA_-_DMA_Transfer_and_Start_Address_.28R.2FW.29
-                let base = (v as u16) << 8;
+                let base = u16::from(v) << 8;
                 for i in 0..0xa0 {
                     let b = self.get(base + i);
                     self.set(0xfe00 + i, b);
                 }
             }
             0xff4d => self.shift = (v & 0x01) == 0x01,
-            0xff40...0xff4f => self.gpu.set(a, v),
+            0xff40...0xff45 | 0xff47...0xff4b | 0xff4f => self.gpu.set(a, v),
             0xff51...0xff55 => self.hdma.set(a, v),
             0xff68...0xff6b => self.gpu.set(a, v),
             0xff0f => self.interrupt = v,
