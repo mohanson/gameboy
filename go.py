@@ -1,3 +1,4 @@
+import os.path
 import subprocess
 import sys
 
@@ -9,13 +10,15 @@ def call(command):
         sys.exit(r)
 
 
-def clippy():
-    deny = ['clippy::cast_lossless']
-    call(f'cargo clippy -- -D {"".join(deny)}')
-
-
 def make():
     call('cargo build')
+
+
+def test():
+    if not os.path.exists('/tmp/gb-test-roms'):
+        call('git clone --depth=1 https://github.com/retrio/gb-test-roms /tmp/gb-test-roms')
+    call(f'cargo run -- /tmp/gb-test-roms/instr_timing/instr_timing.gb')
+    call(f'cargo run -- /tmp/gb-test-roms/cpu_instrs/cpu_instrs.gb')
 
 
 path_rom_only = r"/tmp/gb/3D Wireframe Demo (PD) [C].gbc"
@@ -30,7 +33,7 @@ path_cpu_instrs = r"/tmp/gb/cpu_instrs.gb"
 path_cpu_instr_timing = r"/tmp/gb/instr_timing.gb"
 
 
-def test():
+def test_roms():
     make()
     for p in [
         path_rom_only,
@@ -47,7 +50,6 @@ def test():
 
 def main():
     make()
-    call(f'target\\debug\\gameboy.exe -a "{path_mbc1_ram_battery}"')
 
 
 if __name__ == '__main__':

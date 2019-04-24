@@ -125,12 +125,12 @@ impl SquareChannel {
                 self.new_length = 64 - (v & 0x3F);
             }
             0xFF13 | 0xFF18 => {
-                self.frequency = (self.frequency & 0x0700) | (v as u16);
+                self.frequency = (self.frequency & 0x0700) | u16::from(v);
                 self.length = self.new_length;
                 self.calculate_period();
             }
             0xFF14 | 0xFF19 => {
-                self.frequency = (self.frequency & 0x00FF) | (((v & 0b0000_0111) as u16) << 8);
+                self.frequency = (self.frequency & 0x00FF) | (u16::from(v & 0b0000_0111) << 8);
                 self.calculate_period();
                 self.length_enabled = v & 0x40 == 0x40;
 
@@ -154,7 +154,7 @@ impl SquareChannel {
         if self.frequency > 2048 {
             self.period = 0;
         } else {
-            self.period = (2048 - self.frequency as u32) * 4;
+            self.period = (2048 - u32::from(self.frequency)) * 4;
         }
     }
 
@@ -169,7 +169,7 @@ impl SquareChannel {
         } else {
             let mut time = start_time + self.delay;
             let pattern = WAVE_PATTERN[self.duty as usize];
-            let vol = self.volume_envelope.volume as i32;
+            let vol = i32::from(self.volume_envelope.volume);
 
             while time < end_time {
                 let amp = vol * pattern[self.phase as usize];
@@ -270,14 +270,14 @@ impl WaveChannel {
                 self.enabled_flag = true;
                 self.enabled = self.enabled && self.enabled_flag;
             }
-            0xFF1B => self.new_length = 256 - (v as u16),
+            0xFF1B => self.new_length = 256 - u16::from(v),
             0xFF1C => self.volume_shift = (v >> 5) & 0b11,
             0xFF1D => {
-                self.frequency = (self.frequency & 0x0700) | (v as u16);
+                self.frequency = (self.frequency & 0x0700) | u16::from(v);
                 self.calculate_period();
             }
             0xFF1E => {
-                self.frequency = (self.frequency & 0x00FF) | (((v & 0b111) as u16) << 8);
+                self.frequency = (self.frequency & 0x00FF) | ((u16::from(v & 0b111)) << 8);
                 self.calculate_period();
                 self.length_enabled = v & 0x40 == 0x40;
                 if v & 0x80 == 0x80 && self.enabled_flag {
@@ -299,7 +299,7 @@ impl WaveChannel {
         if self.frequency > 2048 {
             self.period = 0;
         } else {
-            self.period = (2048 - self.frequency as u32) * 2;
+            self.period = (2048 - u32::from(self.frequency)) * 2;
         }
     }
 
@@ -328,7 +328,7 @@ impl WaveChannel {
             while time < end_time {
                 let sample = self.waveram[self.current_wave as usize];
 
-                let amp = (sample >> volshift) as i32;
+                let amp = i32::from(sample >> volshift);
 
                 if amp != self.last_amp {
                     self.blip.add_delta(time, amp - self.last_amp);
@@ -393,7 +393,7 @@ impl NoiseChannel {
                 self.shift_width = if v & 8 == 8 { 6 } else { 14 };
                 let freq_div = match v & 7 {
                     0 => 8,
-                    n => (n as u32 + 1) * 16,
+                    n => (u32::from(n) + 1) * 16,
                 };
                 self.period = freq_div << (v >> 4);
             }
@@ -430,8 +430,8 @@ impl NoiseChannel {
                 self.state |= bit;
 
                 let amp = match (oldstate >> self.shift_width) & 1 {
-                    0 => -(self.volume_envelope.volume as i32),
-                    _ => self.volume_envelope.volume as i32,
+                    0 => -i32::from(self.volume_envelope.volume),
+                    _ => i32::from(self.volume_envelope.volume),
                 };
 
                 if self.last_amp != amp {
@@ -480,7 +480,8 @@ impl Sound {
         let blipbuf3 = create_blipbuf(player.samples_rate());
         let blipbuf4 = create_blipbuf(player.samples_rate());
 
-        let output_period = (OUTPUT_SAMPLE_COUNT as u64 * CLOCKS_PER_SECOND as u64) / player.samples_rate() as u64;
+        let output_period =
+            (OUTPUT_SAMPLE_COUNT as u64 * u64::from(CLOCKS_PER_SECOND)) / u64::from(player.samples_rate());
 
         Sound {
             on: false,
@@ -614,6 +615,7 @@ impl Sound {
         }
     }
 
+    #[allow(clippy::cyclomatic_complexity)]
     fn mix_buffers(&mut self) {
         let sample_count = self.channel1.blip.samples_avail() as usize;
         debug_assert!(sample_count == self.channel2.blip.samples_avail() as usize);
@@ -622,8 +624,8 @@ impl Sound {
 
         let mut outputted = 0;
 
-        let left_vol = (self.volume_left as f32 / 7.0) * (1.0 / 15.0) * 0.25;
-        let right_vol = (self.volume_right as f32 / 7.0) * (1.0 / 15.0) * 0.25;
+        let left_vol = (f32::from(self.volume_left) / 7.0) * (1.0 / 15.0) * 0.25;
+        let right_vol = (f32::from(self.volume_right) / 7.0) * (1.0 / 15.0) * 0.25;
 
         while outputted < sample_count {
             let buf_left = &mut [0f32; OUTPUT_SAMPLE_COUNT + 10];
@@ -633,40 +635,40 @@ impl Sound {
             let count1 = self.channel1.blip.read_samples(buf, false);
             for (i, v) in buf[..count1].iter().enumerate() {
                 if self.registerdata[0x15] & 0x01 == 0x01 {
-                    buf_left[i] += *v as f32 * left_vol;
+                    buf_left[i] += f32::from(*v) * left_vol;
                 }
                 if self.registerdata[0x15] & 0x10 == 0x10 {
-                    buf_right[i] += *v as f32 * right_vol;
+                    buf_right[i] += f32::from(*v) * right_vol;
                 }
             }
 
             let count2 = self.channel2.blip.read_samples(buf, false);
             for (i, v) in buf[..count2].iter().enumerate() {
                 if self.registerdata[0x15] & 0x02 == 0x02 {
-                    buf_left[i] += *v as f32 * left_vol;
+                    buf_left[i] += f32::from(*v) * left_vol;
                 }
                 if self.registerdata[0x15] & 0x20 == 0x20 {
-                    buf_right[i] += *v as f32 * right_vol;
+                    buf_right[i] += f32::from(*v) * right_vol;
                 }
             }
 
             let count3 = self.channel3.blip.read_samples(buf, false);
             for (i, v) in buf[..count3].iter().enumerate() {
                 if self.registerdata[0x15] & 0x04 == 0x04 {
-                    buf_left[i] += *v as f32 * left_vol;
+                    buf_left[i] += f32::from(*v) * left_vol;
                 }
                 if self.registerdata[0x15] & 0x40 == 0x40 {
-                    buf_right[i] += *v as f32 * right_vol;
+                    buf_right[i] += f32::from(*v) * right_vol;
                 }
             }
 
             let count4 = self.channel4.blip.read_samples(buf, false);
             for (i, v) in buf[..count4].iter().enumerate() {
                 if self.registerdata[0x15] & 0x08 == 0x08 {
-                    buf_left[i] += *v as f32 * left_vol;
+                    buf_left[i] += f32::from(*v) * left_vol;
                 }
                 if self.registerdata[0x15] & 0x80 == 0x80 {
-                    buf_right[i] += *v as f32 * right_vol;
+                    buf_right[i] += f32::from(*v) * right_vol;
                 }
             }
 
@@ -690,6 +692,6 @@ impl Sound {
 
 fn create_blipbuf(samples_rate: u32) -> BlipBuf {
     let mut blipbuf = BlipBuf::new(samples_rate);
-    blipbuf.set_rates(CLOCKS_PER_SECOND as f64, samples_rate as f64);
+    blipbuf.set_rates(f64::from(CLOCKS_PER_SECOND), f64::from(samples_rate));
     blipbuf
 }

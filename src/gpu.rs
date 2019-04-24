@@ -75,8 +75,8 @@ impl Memory for Hdma {
                     return;
                 }
                 self.active = true;
-                self.src = ((self.data[0] as u16) << 8) | (self.data[1] as u16);
-                self.dst = ((self.data[2] as u16) << 8) | (self.data[3] as u16) | 0x8000;
+                self.src = (u16::from(self.data[0]) << 8) | u16::from(self.data[1]);
+                self.dst = (u16::from(self.data[2]) << 8) | u16::from(self.data[3]) | 0x8000;
                 self.remain = v & 0x7f;
                 self.mode = if v & 0x80 == 0x80 {
                     HdmaMode::Hdma
@@ -386,9 +386,9 @@ impl Gpu {
         assert!(r <= 0x1f);
         assert!(g <= 0x1f);
         assert!(b <= 0x1f);
-        let r = r as u32;
-        let g = g as u32;
-        let b = b as u32;
+        let r = u32::from(r);
+        let g = u32::from(g);
+        let b = u32::from(b);
         let lr = ((r * 13 + g * 2 + b) >> 1) as u8;
         let lg = ((g * 3 + b) << 1) as u8;
         let lb = ((r * 3 + g * 2 + b * 11) >> 1) as u8;
@@ -494,7 +494,7 @@ impl Gpu {
         } else {
             self.sy.wrapping_add(self.ly)
         };
-        let ty = (py as u16 >> 3) & 31;
+        let ty = (u16::from(py) >> 3) & 31;
 
         for x in 0..SCREEN_W {
             // Translate the current x pos to window space if necessary
@@ -503,7 +503,7 @@ impl Gpu {
             } else {
                 self.sx.wrapping_add(x as u8)
             };
-            let tx = (px as u16 >> 3) & 31;
+            let tx = (u16::from(px) >> 3) & 31;
 
             let bg = if using_window && x as u8 >= self.wx {
                 if self.lcdc.bit6() {
@@ -521,9 +521,9 @@ impl Gpu {
             let tile_num = self.get_ram0(tile_address);
             let tile_location = tile_base
                 + (if self.lcdc.bit4() {
-                    tile_num as u16
+                    u16::from(tile_num)
                 } else {
-                    (tile_num as i8 as i16 + 128) as u16
+                    (i16::from(tile_num as i8) + 128) as u16
                 }) * 16;
             let tile_attr = Attr::from(self.get_ram1(tile_address));
 
@@ -532,16 +532,15 @@ impl Gpu {
             } else {
                 (py % 8) * 2
             };
-            let b1: u8;
-            let b2: u8;
-            if self.term == Term::GBC && tile_attr.bank {
-                b1 = self.get_ram1(tile_location + u16::from(line));
-                b2 = self.get_ram1(tile_location + u16::from(line) + 1);
+            let (b1, b2) = if self.term == Term::GBC && tile_attr.bank {
+                let a = self.get_ram1(tile_location + u16::from(line));
+                let b = self.get_ram1(tile_location + u16::from(line) + 1);
+                (a, b)
             } else {
-                b1 = self.get_ram0(tile_location + u16::from(line));
-                b2 = self.get_ram0(tile_location + u16::from(line) + 1);
-            }
-
+                let a = self.get_ram0(tile_location + u16::from(line));
+                let b = self.get_ram0(tile_location + u16::from(line) + 1);
+                (a, b)
+            };
             let color_bit = if tile_attr.xflip { px % 8 } else { 7 - px % 8 };
             let color_num =
                 if b1 & (1 << color_bit) != 0 { 1 } else { 0 } | if b2 & (1 << color_bit) != 0 { 2 } else { 0 };
@@ -570,12 +569,12 @@ impl Gpu {
         let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
         for i in 0..40 {
             let sprite_addr = 0xFE00 + (i as u16) * 4;
-            let sprite_y = self.get(sprite_addr + 0) as u16 as i32 - 16;
-            let sprite_x = self.get(sprite_addr + 1) as u16 as i32 - 8;
-            let tile_location = (self.get(sprite_addr + 2) & (if self.lcdc.bit2() { 0xFE } else { 0xFF })) as u16;
+            let sprite_y = i32::from(self.get(sprite_addr)) - 16;
+            let sprite_x = i32::from(self.get(sprite_addr + 1)) - 8;
+            let tile_location = u16::from(self.get(sprite_addr + 2)) & (if self.lcdc.bit2() { 0xfe } else { 0xff });
             let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
-            let line = self.ly as i32;
+            let line = i32::from(self.ly);
             // If this is true the scanline is out of the area we care about
             if line < sprite_y || line >= sprite_y + sprite_size {
                 continue;
@@ -654,7 +653,6 @@ impl Memory for Gpu {
             0xff43 => self.sx,
             0xff44 => self.ly,
             0xff45 => self.ly_compare,
-            0xff46 => 0,
             0xff47 => self.bgp,
             0xff48 => self.op0,
             0xff49 => self.op1,
@@ -718,7 +716,6 @@ impl Memory for Gpu {
             0xff43 => self.sx = v,
             0xff44 => {}
             0xff45 => self.ly_compare = v,
-            0xff46 => {}
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,
             0xff49 => self.op1 = v,

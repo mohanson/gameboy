@@ -241,7 +241,7 @@ impl Cpu {
     // C - Not affected
     fn alu_dec(&mut self, a: u8) -> u8 {
         let r = a.wrapping_sub(1);
-        self.reg.set_flag(H, (a & 0x0f) == 0);
+        self.reg.set_flag(H, a.trailing_zeros() >= 4);
         self.reg.set_flag(N, true);
         self.reg.set_flag(Z, r == 0);
         r
@@ -274,7 +274,7 @@ impl Cpu {
     // C - Set or reset according to operation.
     fn alu_add_sp(&mut self, mem: &mut Memory) {
         let a = self.reg.sp;
-        let b = self.imm(mem) as i8 as i16 as u16;
+        let b = i16::from(self.imm(mem) as i8) as u16;
         self.reg.set_flag(C, (a & 0x00ff) + (b & 0x00ff) > 0x00ff);
         self.reg.set_flag(H, (a & 0x000f) + (b & 0x000f) > 0x000f);
         self.reg.set_flag(N, false);
@@ -527,7 +527,7 @@ impl Cpu {
     fn alu_jr(&mut self, mem: &mut Memory) {
         let n = mem.get(self.reg.pc) as i8;
         self.reg.pc += 1;
-        self.reg.pc = ((self.reg.pc as u32 as i32) + (n as i32)) as u16;
+        self.reg.pc = ((u32::from(self.reg.pc) as i32) + i32::from(n)) as u16;
     }
 }
 
@@ -562,7 +562,7 @@ impl Cpu {
             return 0;
         }
         self.halted = false;
-        if self.enable_interrupts == false {
+        if !self.enable_interrupts {
             return 0;
         }
         self.enable_interrupts = false;
@@ -1452,7 +1452,7 @@ impl Cpu {
             }
             0xf8 => {
                 let a = self.reg.sp;
-                let b = self.imm(mem) as i8 as i16 as u16;
+                let b = i16::from(self.imm(mem) as i8) as u16;
                 self.reg.set_flag(C, (a & 0x00ff) + (b & 0x00ff) > 0x00ff);
                 self.reg.set_flag(H, (a & 0x000f) + (b & 0x000f) > 0x000f);
                 self.reg.set_flag(N, false);
@@ -1476,10 +1476,64 @@ impl Cpu {
                 self.reg.pc = 0x38;
             }
         };
-        if cbcode != 0 {
+
+        let ecycle = match opcode {
+            0x20 | 0x30 => {
+                if self.reg.get_flag(Z) {
+                    0x00
+                } else {
+                    0x01
+                }
+            }
+            0x28 | 0x38 => {
+                if self.reg.get_flag(Z) {
+                    0x01
+                } else {
+                    0x00
+                }
+            }
+
+            0xc0 | 0xd0 => {
+                if self.reg.get_flag(Z) {
+                    0x00
+                } else {
+                    0x03
+                }
+            }
+            0xc8 | 0xcc | 0xd8 | 0xdc => {
+                if self.reg.get_flag(Z) {
+                    0x03
+                } else {
+                    0x00
+                }
+            }
+            0xc2 | 0xd2 => {
+                if self.reg.get_flag(Z) {
+                    0x00
+                } else {
+                    0x01
+                }
+            }
+            0xca | 0xda => {
+                if self.reg.get_flag(Z) {
+                    0x01
+                } else {
+                    0x00
+                }
+            }
+            0xc4 | 0xd4 => {
+                if self.reg.get_flag(Z) {
+                    0x00
+                } else {
+                    0x03
+                }
+            }
+            _ => 0x00,
+        };
+        if opcode == 0xcb {
             CB_CYCLES[cbcode as usize]
         } else {
-            OP_CYCLES[opcode as usize]
+            OP_CYCLES[opcode as usize] + ecycle
         }
     }
 }
