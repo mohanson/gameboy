@@ -30,6 +30,7 @@ pub struct Timer {
     tac: u8,
 
     freq: usize,
+    // Count the number of cycles and set 0 each 256 cycles
     tmp1: usize,
     tmp2: usize,
 }
