@@ -60,18 +60,18 @@ impl Cpu {
     }
 
     fn imm_halfword(&mut self, mem: &mut Memory) -> u16 {
-        let v = mem.get_halfword(self.reg.pc);
+        let v = mem.get_word(self.reg.pc);
         self.reg.pc += 2;
         v
     }
 
     fn stack_add(&mut self, mem: &mut Memory, v: u16) {
         self.reg.sp -= 2;
-        mem.set_halfword(self.reg.sp, v);
+        mem.set_word(self.reg.sp, v);
     }
 
     fn stack_pop(&mut self, mem: &mut Memory) -> u16 {
-        let r = mem.get_halfword(self.reg.sp);
+        let r = mem.get_word(self.reg.sp);
         self.reg.sp += 2;
         r
     }
@@ -597,7 +597,7 @@ impl Cpu {
             }
             0x08 => {
                 let a = self.imm_halfword(mem);
-                mem.set_halfword(a, self.reg.sp);
+                mem.set_word(a, self.reg.sp);
             }
             0x09 => self.alu_add_hl(self.reg.get_bc()),
             0x0a => self.reg.a = mem.get(self.reg.get_bc()),
@@ -885,11 +885,11 @@ impl Cpu {
                     self.reg.pc = pc;
                 }
             }
-            0xc3 => self.reg.pc = mem.get_halfword(self.reg.pc),
+            0xc3 => self.reg.pc = mem.get_word(self.reg.pc),
             0xc4 => {
                 if !self.reg.get_flag(Z) {
                     self.stack_add(mem, self.reg.pc + 2);
-                    self.reg.pc = mem.get_halfword(self.reg.pc);
+                    self.reg.pc = mem.get_word(self.reg.pc);
                 } else {
                     self.reg.pc += 2;
                 }
@@ -1310,14 +1310,14 @@ impl Cpu {
             0xcc => {
                 if self.reg.get_flag(Z) {
                     self.stack_add(mem, self.reg.pc + 2);
-                    self.reg.pc = mem.get_halfword(self.reg.pc);
+                    self.reg.pc = mem.get_word(self.reg.pc);
                 } else {
                     self.reg.pc += 2;
                 }
             }
             0xcd => {
                 self.stack_add(mem, self.reg.pc + 2);
-                self.reg.pc = mem.get_halfword(self.reg.pc);
+                self.reg.pc = mem.get_word(self.reg.pc);
             }
             0xce => {
                 let v = self.imm(mem);
@@ -1346,7 +1346,7 @@ impl Cpu {
             0xd4 => {
                 if !self.reg.get_flag(C) {
                     self.stack_add(mem, self.reg.pc + 2);
-                    self.reg.pc = mem.get_halfword(self.reg.pc);
+                    self.reg.pc = mem.get_word(self.reg.pc);
                 } else {
                     self.reg.pc += 2;
                 }
@@ -1379,7 +1379,7 @@ impl Cpu {
             0xdc => {
                 if self.reg.get_flag(C) {
                     self.stack_add(mem, self.reg.pc + 2);
-                    self.reg.pc = mem.get_halfword(self.reg.pc);
+                    self.reg.pc = mem.get_word(self.reg.pc);
                 } else {
                     self.reg.pc += 2;
                 }
