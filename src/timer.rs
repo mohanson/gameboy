@@ -32,6 +32,7 @@ pub struct Timer {
     freq: usize,
     // Count the number of cycles and set 0 each 256 cycles
     tmp1: usize,
+    // Count the number of cycles and set 0 each "freq" cycles
     tmp2: usize,
 }
 
@@ -73,7 +74,7 @@ impl Timer {
     }
 
     pub fn next(&mut self, cycles: usize) {
-        // Incremented div at rate of 16384Hz. Because the clock cycles is 4194304, so div increment every 256 cycles.
+        // Increment div at rate of 16384Hz. Because the clock cycles is 4194304, so div increment every 256 cycles.
         let c = 256;
         self.tmp1 += cycles;
         if self.tmp1 >= c {
@@ -81,6 +82,7 @@ impl Timer {
             self.tmp1 -= c;
         }
 
+        // Increment tima at rate of Clock / freq
         if (self.tac & 0x04) != 0x00 {
             self.tmp2 += cycles;
             while self.tmp2 >= self.freq {
