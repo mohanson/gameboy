@@ -95,29 +95,30 @@ impl MemoryManagementUnit {
 }
 
 impl MemoryManagementUnit {
-    pub fn do_cycle(&mut self, ticks: u32) -> u32 {
-        let cpudivider = self.speed as u32;
-        let vramticks = self.perform_vramdma();
-        let gputicks = ticks / cpudivider + vramticks;
-        let cputicks = ticks + vramticks * cpudivider;
+    pub fn next(&mut self, cycles: u32) -> u32 {
+        let cpu_divider = self.speed as u32;
+        let vram_cycles = self.run_dma();
 
-        self.timer.next(cputicks as usize);
+        let gpu_cycles = cycles / cpu_divider + vram_cycles;
+        let cpu_cycles = cycles + vram_cycles * cpu_divider;
+
+        self.timer.next(cpu_cycles);
         self.interrupt |= self.timer.interrupt;
         self.timer.interrupt = 0;
 
         self.interrupt |= self.joypad.interrupt;
         self.joypad.interrupt = 0;
 
-        self.gpu.next(gputicks);
+        self.gpu.next(gpu_cycles);
         self.interrupt |= self.gpu.interrupt;
         self.gpu.interrupt = 0;
 
-        self.sound.as_mut().map_or((), |s| s.do_cycle(gputicks));
+        self.sound.as_mut().map_or((), |s| s.do_cycle(gpu_cycles));
 
         self.interrupt |= self.serial.interrupt;
         self.serial.interrupt = 0;
 
-        gputicks
+        gpu_cycles
     }
 
     pub fn switch_speed(&mut self) {
@@ -131,50 +132,42 @@ impl MemoryManagementUnit {
         self.shift = false;
     }
 
-    fn perform_vramdma(&mut self) -> u32 {
+    fn run_dma(&mut self) -> u32 {
         if !self.hdma.active {
             return 0;
         }
         match self.hdma.mode {
-            HdmaMode::Gdma => self.perform_gdma(),
-            HdmaMode::Hdma => self.perform_hdma(),
+            HdmaMode::Gdma => {
+                let len = u32::from(self.hdma.remain) + 1;
+                for _ in 0..len {
+                    self.run_dma_hrampart();
+                }
+                self.hdma.active = false;
+                len * 8
+            }
+            HdmaMode::Hdma => {
+                if !self.gpu.blanked {
+                    return 0;
+                }
+                self.run_dma_hrampart();
+                if self.hdma.remain == 0x7f {
+                    self.hdma.active = false;
+                }
+                8
+            }
         }
     }
 
-    fn perform_hdma(&mut self) -> u32 {
-        if !self.gpu.blanked {
-            return 0;
-        }
-
-        self.perform_vramdma_row();
-        if self.hdma.remain == 0x7F {
-            self.hdma.active = false;
-        }
-
-        8
-    }
-
-    fn perform_gdma(&mut self) -> u32 {
-        let len = u32::from(self.hdma.remain) + 1;
-        for _i in 0..len {
-            self.perform_vramdma_row();
-        }
-
-        self.hdma.active = false;
-        len * 8
-    }
-
-    fn perform_vramdma_row(&mut self) {
+    fn run_dma_hrampart(&mut self) {
         let mmu_src = self.hdma.src;
-        for j in 0..0x10 {
-            let b: u8 = self.get(mmu_src + j);
-            self.gpu.set(self.hdma.dst + j, b);
+        for i in 0..0x10 {
+            let b: u8 = self.get(mmu_src + i);
+            self.gpu.set(self.hdma.dst + i, b);
         }
         self.hdma.src += 0x10;
         self.hdma.dst += 0x10;
-
         if self.hdma.remain == 0 {
-            self.hdma.remain = 0x7F;
+            self.hdma.remain = 0x7f;
         } else {
             self.hdma.remain -= 1;
         }

@@ -5,7 +5,7 @@ use super::register::Flag::{C, H, N, Z};
 use super::register::Register;
 
 //  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-const OP_CYCLES: [usize; 256] = [
+const OP_CYCLES: [u32; 256] = [
     1, 3, 2, 2, 1, 1, 2, 1, 5, 2, 2, 2, 1, 1, 2, 1, // 0
     0, 3, 2, 2, 1, 1, 2, 1, 3, 2, 2, 2, 1, 1, 2, 1, // 1
     2, 3, 2, 2, 1, 1, 2, 1, 2, 2, 2, 2, 1, 1, 2, 1, // 2
@@ -25,7 +25,7 @@ const OP_CYCLES: [usize; 256] = [
 ];
 
 //  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-const CB_CYCLES: [usize; 256] = [
+const CB_CYCLES: [u32; 256] = [
     2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 0
     2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 1
     2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 2
@@ -540,7 +540,7 @@ impl Cpu {
         }
     }
 
-    pub fn next(&mut self, mem: &mut Memory) -> usize {
+    pub fn next(&mut self, mem: &mut Memory) -> u32 {
         let c = self.handle_interrupts(mem);
         if c != 0 {
             return c;
@@ -551,7 +551,7 @@ impl Cpu {
         self.ex(mem)
     }
 
-    fn handle_interrupts(&mut self, mem: &mut Memory) -> usize {
+    fn handle_interrupts(&mut self, mem: &mut Memory) -> u32 {
         if !self.enable_interrupts && !self.halted {
             return 0;
         }
@@ -574,7 +574,8 @@ impl Cpu {
         4
     }
 
-    fn ex(&mut self, mem: &mut Memory) -> usize {
+    #[allow(clippy::cyclomatic_complexity)]
+    fn ex(&mut self, mem: &mut Memory) -> u32 {
         let opcode = self.imm(mem);
         let mut cbcode: u8 = 0;
         match opcode {
