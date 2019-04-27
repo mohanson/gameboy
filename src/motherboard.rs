@@ -17,13 +17,13 @@ impl MotherBoard {
         Self { mmu, cpu }
     }
 
-    pub fn do_cycle(&mut self) -> u32 {
+    pub fn next(&mut self) -> u32 {
         if self.mmu.get(self.cpu.reg.pc) == 0x10 {
             self.mmu.switch_speed();
         }
         let cycles = self.cpu.next(&mut self.mmu) * 4;
-        self.mmu.do_cycle(cycles as u32);
-        cycles as u32
+        self.mmu.next(cycles);
+        cycles
     }
 
     pub fn check_and_reset_gpu_updated(&mut self) -> bool {

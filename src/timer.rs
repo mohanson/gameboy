@@ -29,11 +29,11 @@ pub struct Timer {
     //             11: CPU Clock / 256  (DMG, CGB:  16384 Hz, SGB:  ~16780 Hz)
     tac: u8,
 
-    freq: usize,
+    freq: u32,
     // Count the number of cycles and set 0 each 256 cycles
-    tmp1: usize,
+    tmp1: u32,
     // Count the number of cycles and set 0 each "freq" cycles
-    tmp2: usize,
+    tmp2: u32,
 }
 
 impl Timer {
@@ -73,7 +73,7 @@ impl Timer {
         }
     }
 
-    pub fn next(&mut self, cycles: usize) {
+    pub fn next(&mut self, cycles: u32) {
         // Increment div at rate of 16384Hz. Because the clock cycles is 4194304, so div increment every 256 cycles.
         let c = 256;
         self.tmp1 += cycles;

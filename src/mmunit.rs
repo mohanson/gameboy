@@ -95,13 +95,13 @@ impl MemoryManagementUnit {
 }
 
 impl MemoryManagementUnit {
-    pub fn do_cycle(&mut self, ticks: u32) -> u32 {
+    pub fn next(&mut self, cycles: u32) -> u32 {
         let cpudivider = self.speed as u32;
         let vramticks = self.perform_vramdma();
-        let gputicks = ticks / cpudivider + vramticks;
-        let cputicks = ticks + vramticks * cpudivider;
+        let gputicks = cycles / cpudivider + vramticks;
+        let cputicks = cycles + vramticks * cpudivider;
 
-        self.timer.next(cputicks as usize);
+        self.timer.next(cputicks);
         self.interrupt |= self.timer.interrupt;
         self.timer.interrupt = 0;
 
