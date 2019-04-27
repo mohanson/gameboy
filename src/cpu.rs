@@ -59,7 +59,7 @@ impl Cpu {
         v
     }
 
-    fn imm_halfword(&mut self, mem: &mut Memory) -> u16 {
+    fn imm_word(&mut self, mem: &mut Memory) -> u16 {
         let v = mem.get_word(self.reg.pc);
         self.reg.pc += 2;
         v
@@ -581,7 +581,7 @@ impl Cpu {
         match opcode {
             0x00 => {}
             0x01 => {
-                let v = self.imm_halfword(mem);
+                let v = self.imm_word(mem);
                 self.reg.set_bc(v);
             }
             0x02 => mem.set(self.reg.get_bc(), self.reg.a),
@@ -597,7 +597,7 @@ impl Cpu {
                 self.reg.set_flag(Z, false);
             }
             0x08 => {
-                let a = self.imm_halfword(mem);
+                let a = self.imm_word(mem);
                 mem.set_word(a, self.reg.sp);
             }
             0x09 => self.alu_add_hl(self.reg.get_bc()),
@@ -615,7 +615,7 @@ impl Cpu {
             }
             0x10 => {}
             0x11 => {
-                let v = self.imm_halfword(mem);
+                let v = self.imm_word(mem);
                 self.reg.set_de(v);
             }
             0x12 => mem.set(self.reg.get_de(), self.reg.a),
@@ -652,7 +652,7 @@ impl Cpu {
                 }
             }
             0x21 => {
-                let v = self.imm_halfword(mem);
+                let v = self.imm_word(mem);
                 self.reg.set_hl(v);
             }
             0x22 => {
@@ -696,7 +696,7 @@ impl Cpu {
                     self.reg.pc += 1;
                 }
             }
-            0x31 => self.reg.sp = self.imm_halfword(mem),
+            0x31 => self.reg.sp = self.imm_word(mem),
             0x32 => {
                 let a = self.reg.get_hl();
                 mem.set(a, self.reg.a);
@@ -881,7 +881,7 @@ impl Cpu {
                 self.reg.set_bc(v);
             }
             0xc2 => {
-                let pc = self.imm_halfword(mem);
+                let pc = self.imm_word(mem);
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = pc;
                 }
@@ -913,7 +913,7 @@ impl Cpu {
                 self.reg.pc = self.stack_pop(mem);
             }
             0xca => {
-                let pc = self.imm_halfword(mem);
+                let pc = self.imm_word(mem);
                 if self.reg.get_flag(Z) {
                     self.reg.pc = pc;
                 }
@@ -1338,7 +1338,7 @@ impl Cpu {
                 self.reg.set_de(v);
             }
             0xd2 => {
-                let pc = self.imm_halfword(mem);
+                let pc = self.imm_word(mem);
                 if !self.reg.get_flag(C) {
                     self.reg.pc = pc;
                 }
@@ -1371,7 +1371,7 @@ impl Cpu {
                 self.enable_interrupts = true;
             }
             0xda => {
-                let pc = self.imm_halfword(mem);
+                let pc = self.imm_word(mem);
                 if self.reg.get_flag(C) {
                     self.reg.pc = pc;
                 }
@@ -1417,7 +1417,7 @@ impl Cpu {
             0xe8 => self.alu_add_sp(mem),
             0xe9 => self.reg.pc = self.reg.get_hl(),
             0xea => {
-                let a = self.imm_halfword(mem);
+                let a = self.imm_word(mem);
                 mem.set(a, self.reg.a);
             }
             0xeb => panic!("Opcode 0xeb is not implemented"),
@@ -1462,7 +1462,7 @@ impl Cpu {
             }
             0xf9 => self.reg.sp = self.reg.get_hl(),
             0xfa => {
-                let a = self.imm_halfword(mem);
+                let a = self.imm_word(mem);
                 self.reg.a = mem.get(a);
             }
             0xfb => self.enable_interrupts = true,
