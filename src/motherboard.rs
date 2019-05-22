@@ -17,6 +17,7 @@ impl MotherBoard {
         Self { mmu, cpu }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> u32 {
         if self.mmu.get(self.cpu.reg.pc) == 0x10 {
             self.mmu.switch_speed();

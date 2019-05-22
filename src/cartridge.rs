@@ -662,7 +662,7 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<Cartridge> {
     if rom.len() > rom_max {
         panic!("Rom size more than {}", rom_max);
     }
-    match rom[0x0147] {
+    let cart: Box<Cartridge> = match rom[0x0147] {
         0x00 => Box::new(RomOnly::power_up(rom)),
         0x01 => Box::new(Mbc1::power_up(rom, vec![], "")),
         0x02 => {
@@ -726,7 +726,9 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<Cartridge> {
             Box::new(HuC1::power_up(rom, ram, sav_path))
         }
         n => panic!("Unsupported cartridge type: 0x{:02x}", n),
-    }
+    };
+    cart.ensure_header_checksum();
+    cart
 }
 
 // Specifies the ROM Size of the cartridge. Typically calculated as "32KB shl N".
@@ -789,6 +791,23 @@ pub trait Cartridge: Memory + Stable + Send {
             }
         }
         buf
+    }
+
+    // In position 0x14d, contains an 8 bit checksum across the cartridge header bytes 0134-014C. The checksum is
+    // calculated as follows:
+    //
+    //   x=0:FOR i=0134h TO 014Ch:x=x-MEM[i]-1:NEXT
+    //
+    // The lower 8 bits of the result must be the same than the value in this entry. The GAME WON'T WORK if this
+    // checksum is incorrect.
+    fn ensure_header_checksum(&self) {
+        let mut v: u8 = 0;
+        for i in 0x0134..0x014d {
+            v = v.wrapping_sub(self.get(i)).wrapping_sub(1);
+        }
+        if self.get(0x014d) != v {
+            panic!("Cartridge's header checksum is incorrect")
+        }
     }
 }
 
