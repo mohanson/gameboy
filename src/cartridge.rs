@@ -727,6 +727,7 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<Cartridge> {
         }
         n => panic!("Unsupported cartridge type: 0x{:02x}", n),
     };
+    cart.ensure_logo();
     cart.ensure_header_checksum();
     cart
 }
@@ -764,6 +765,7 @@ fn ram_size(b: u8) -> usize {
     }
 }
 
+// Specifies the size of the external RAM in the cartridge (if any).
 fn ram_read(path: impl AsRef<Path>, size: usize) -> Vec<u8> {
     match File::open(path) {
         Ok(mut ok) => {
@@ -774,6 +776,17 @@ fn ram_read(path: impl AsRef<Path>, size: usize) -> Vec<u8> {
         Err(_) => vec![0; size],
     }
 }
+
+// These bytes define the bitmap of the Nintendo logo that is displayed when the gameboy gets turned on.
+// The reason for joining is because if the pirates copy the cartridge, they must also copy Nintendo's LOGO,
+// which infringes the trademark law. In the early days, the copyright law is not perfect for the determination of
+// electronic data.
+// The hexdump of this bitmap is:
+const NINTENDO_LOGO: [u8; 48] = [
+    0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D, 0x00, 0x08, 0x11,
+    0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99, 0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E,
+    0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
+];
 
 pub trait Cartridge: Memory + Stable + Send {
     // Title of the game in UPPER CASE ASCII. If it is less than 16 characters then the remaining bytes are filled with
@@ -791,6 +804,15 @@ pub trait Cartridge: Memory + Stable + Send {
             }
         }
         buf
+    }
+
+    // Ensure Nintendo Logo.
+    fn ensure_logo(&self) {
+        for i in 0..48 {
+            if self.get(0x0104 + i as u16) != NINTENDO_LOGO[i as usize] {
+                panic!("Nintendo logo is incorrect")
+            }
+        }
     }
 
     // In position 0x14d, contains an 8 bit checksum across the cartridge header bytes 0134-014C. The checksum is
