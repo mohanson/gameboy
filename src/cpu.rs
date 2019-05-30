@@ -574,7 +574,7 @@ impl Cpu {
         4
     }
 
-    #[allow(clippy::cyclomatic_complexity)]
+    #[allow(clippy::cognitive_complexity)]
     fn ex(&mut self, mem: &mut Memory) -> u32 {
         let opcode = self.imm(mem);
         let mut cbcode: u8 = 0;

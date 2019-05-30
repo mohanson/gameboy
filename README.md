@@ -3,10 +3,10 @@
 Full featured Cross-platform GameBoy emulator. **Forever boys!**.
 
 ```s
-$ cargo run -- "roms/Boxes (PD).gb"
+$ cargo run -- "./res/boxes.gb"
 ```
 
-![sample.gif](./docs/imgs/sample.gif)
+![sample.gif](./res/imgs/sample.gif)
 
 Gameboy is developed by Rust, and fully tested on Windows, Ubuntu and Mac.
 
@@ -36,13 +36,13 @@ Left/Right <--- ||_ O _|   ,-. "._,"|
 
 # Tests
 
-Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. You can find the way how to run tests in `go.py`.
+Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. You can find the way how to run tests in `./scripts/test_roms.py`.
 
 
 | Test Name    | Result                               |
 |--------------|--------------------------------------|
-| cpu_instrs   | ![img](./docs/imgs/cpu_instrs.png)   |
-| instr_timing | ![img](./docs/imgs/instr_timing.png) |
+| cpu_instrs   | ![img](./res/imgs/cpu_instrs.png)   |
+| instr_timing | ![img](./res/imgs/instr_timing.png) |
 
 # Reference
 

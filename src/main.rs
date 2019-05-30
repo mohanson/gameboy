@@ -22,6 +22,7 @@ enum GBEvent {
 }
 
 fn main() {
+    rog::reg("gameboy::cartridge");
     let mut rom = String::from("");
     let mut c_audio = false;
     let mut c_scale = 2;
@@ -37,7 +38,7 @@ fn main() {
     }
 
     let mut mother_board = MotherBoard::power_up(rom);
-    let rom_name = mother_board.mmu.cartridge.rom_name();
+    let rom_name = mother_board.mmu.cartridge.title();
 
     if c_audio {
         let player = CpalPlayer::get();

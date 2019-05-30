@@ -15,10 +15,10 @@ def make():
 
 
 def test():
-    if not os.path.exists('/tmp/gb-test-roms'):
-        call('git clone --depth=1 https://github.com/retrio/gb-test-roms /tmp/gb-test-roms')
-    call(f'cargo run -- /tmp/gb-test-roms/instr_timing/instr_timing.gb')
-    call(f'cargo run -- /tmp/gb-test-roms/cpu_instrs/cpu_instrs.gb')
+    if not os.path.exists('./res/gb-test-roms'):
+        call('git clone --depth=1 https://github.com/retrio/gb-test-roms ./res/gb-test-roms')
+    call(f'cargo run -- ./res/gb-test-roms/instr_timing/instr_timing.gb')
+    call(f'cargo run -- ./res/gb-test-roms/cpu_instrs/cpu_instrs.gb')
 
 
 path_rom_only = r"/tmp/gb/3D Wireframe Demo (PD) [C].gbc"
@@ -45,7 +45,7 @@ def test_roms():
         path_mbc3_timer_ram_battery,
         path_mbc5_ram_battery
     ]:
-        call(f'target\\debug\\gameboy.exe "{p}"')
+        call(f'cargo run -- "{p}"')
 
 
 def main():

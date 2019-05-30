@@ -312,6 +312,7 @@ dependencies = [
  "blip_buf 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "cpal 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "glium 0.22.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rog 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -749,6 +750,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "rog"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1115,6 +1121,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum regex 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)" = "9329abc99e39129fcceabd24cf5d85b4671ef7c29c50e972bc5afe32438ec384"
 "checksum regex-syntax 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)" = "7d707a4fa2637f2dca2ef9fd02225ec7661fe01a53623c1e6515b6916511f7a7"
 "checksum remove_dir_all 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "3488ba1b9a2084d38645c4c08276a1752dcbf2c7130d74f1569681ad5d2799c5"
+"checksum rog 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)" = "a1317f3f2e394a9fcffa0e65d690f4c0311779a2b87888a78b669207f89e75d6"
 "checksum rustc-demangle 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)" = "ccc78bfd5acd7bf3e89cffcf899e5cb1a52d6fafa8dec2739ad70c9577a57288"
 "checksum rustc_version 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
 "checksum scopeguard 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "94258f53601af11e6a49f722422f6e3425c52b06245a5cf9bc09908b174f5e27"

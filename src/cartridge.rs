@@ -95,8 +95,7 @@ pub struct Mbc1 {
     rom: Vec<u8>,
     ram: Vec<u8>,
     bank_mode: BankMode, // MBC1 has two different maximum memory modes: 16Mbit ROM/8KByte RAM or 4Mbit ROM/32KByte RAM.
-    rom_bank: usize,
-    ram_bank: usize,
+    bank: u8,
     ram_enable: bool,
     sav_path: PathBuf,
 }
@@ -107,29 +106,40 @@ impl Mbc1 {
             rom,
             ram,
             bank_mode: BankMode::Rom, // The MBC1 defaults to 16Mbit ROM/8KByte RAM mode on power up.
-            rom_bank: 1,
-            ram_bank: 0,
+            bank: 0x01,
             ram_enable: false,
             sav_path: PathBuf::from(sav.as_ref()),
         }
+    }
+
+    fn rom_bank(&self) -> usize {
+        let n = match self.bank_mode {
+            BankMode::Rom => self.bank & 0x7f,
+            BankMode::Ram => self.bank & 0x1f,
+        };
+        n as usize
+    }
+
+    fn ram_bank(&self) -> usize {
+        let n = match self.bank_mode {
+            BankMode::Rom => 0x00,
+            BankMode::Ram => (self.bank & 0x60) >> 5,
+        };
+        n as usize
     }
 }
 
 impl Memory for Mbc1 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => *self.rom.get(a as usize).unwrap_or(&0),
+            0x0000...0x3fff => self.rom[a as usize],
             0x4000...0x7fff => {
-                let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
+                let i = self.rom_bank() * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
             }
             0xa000...0xbfff => {
                 if self.ram_enable {
-                    let ram_bank = match self.bank_mode {
-                        BankMode::Rom => 0x00,
-                        BankMode::Ram => self.ram_bank,
-                    };
-                    let i = ram_bank * 0x2000 + a as usize - 0xa000;
+                    let i = self.ram_bank() * 0x2000 + a as usize - 0xa000;
                     self.ram[i]
                 } else {
                     0x00
@@ -143,11 +153,7 @@ impl Memory for Mbc1 {
         match a {
             0xa000...0xbfff => {
                 if self.ram_enable {
-                    let ram_bank = match self.bank_mode {
-                        BankMode::Rom => 0x00,
-                        BankMode::Ram => self.ram_bank,
-                    };
-                    let i = ram_bank * 0x2000 + a as usize - 0xa000;
+                    let i = self.ram_bank() * 0x2000 + a as usize - 0xa000;
                     self.ram[i] = v;
                 }
             }
@@ -155,23 +161,20 @@ impl Memory for Mbc1 {
                 self.ram_enable = v & 0x0f == 0x0a;
             }
             0x2000...0x3fff => {
-                let n = (v & 0x1f) as usize;
+                let n = v & 0x1f;
                 let n = match n {
-                    0x00 => 1,
+                    0x00 => 0x01,
                     _ => n,
                 };
-                self.rom_bank = (self.rom_bank & 0xe0) | n;
+                self.bank = (self.bank & 0x60) | n;
             }
             0x4000...0x5fff => {
-                let n = (v & 0x03) as usize;
-                match self.bank_mode {
-                    BankMode::Rom => self.rom_bank = (self.rom_bank & 0x1f) | (n << 5),
-                    BankMode::Ram => self.ram_bank = n as usize,
-                }
+                let n = v & 0x03;
+                self.bank = self.bank & 0x9f | (n << 5)
             }
             0x6000...0x7fff => match v {
-                0 => self.bank_mode = BankMode::Rom,
-                1 => self.bank_mode = BankMode::Ram,
+                0x00 => self.bank_mode = BankMode::Rom,
+                0x01 => self.bank_mode = BankMode::Ram,
                 n => panic!("Invalid cartridge type {}", n),
             },
             _ => {}
@@ -181,6 +184,7 @@ impl Memory for Mbc1 {
 
 impl Stable for Mbc1 {
     fn sav(&self) {
+        rog::debugln!("Ram is being persisted");
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
@@ -235,7 +239,7 @@ impl Mbc2 {
 impl Memory for Mbc2 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => *self.rom.get(a as usize).unwrap_or(&0),
+            0x0000...0x3fff => self.rom[a as usize],
             0x4000...0x7fff => {
                 let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
@@ -252,6 +256,8 @@ impl Memory for Mbc2 {
     }
 
     fn set(&mut self, a: u16, v: u8) {
+        // Only the lower 4 bits of the "bytes" in this memory area are used.
+        let v = v & 0x0f;
         match a {
             0xa000...0xa1ff => {
                 if self.ram_enable {
@@ -259,13 +265,13 @@ impl Memory for Mbc2 {
                 }
             }
             0x0000...0x1fff => {
-                if (a >> 8) & 0x01 == 0 {
-                    self.ram_enable = !self.ram_enable
+                if a & 0x0100 == 0 {
+                    self.ram_enable = v == 0x0a;
                 }
             }
             0x2000...0x3fff => {
-                if (a >> 8) & 0x01 == 1 {
-                    self.rom_bank = (v & 0x0f) as usize;
+                if a & 0x0100 != 0 {
+                    self.rom_bank = v as usize;
                 }
             }
             _ => {}
@@ -275,6 +281,7 @@ impl Memory for Mbc2 {
 
 impl Stable for Mbc2 {
     fn sav(&self) {
+        rog::debugln!("Ram is being persisted");
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
@@ -296,12 +303,10 @@ struct RealTimeClock {
 
 impl RealTimeClock {
     fn power_up(sav_path: impl AsRef<Path>) -> Self {
-        let zero = match File::open(sav_path.as_ref()) {
-            Ok(mut ok) => {
-                let mut a = Vec::new();
-                ok.read_to_end(&mut a).unwrap();
+        let zero = match std::fs::read(sav_path.as_ref()) {
+            Ok(ok) => {
                 let mut b: [u8; 8] = Default::default();
-                b.copy_from_slice(&a);
+                b.copy_from_slice(&ok);
                 u64::from_be_bytes(b)
             }
             Err(_) => SystemTime::now()
@@ -463,7 +468,7 @@ impl Mbc3 {
 impl Memory for Mbc3 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => *self.rom.get(a as usize).unwrap_or(&0),
+            0x0000...0x3fff => self.rom[a as usize],
             0x4000...0x7fff => {
                 let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
@@ -502,7 +507,7 @@ impl Memory for Mbc3 {
             0x2000...0x3fff => {
                 let n = (v & 0x7f) as usize;
                 let n = match n {
-                    0x00 => 1,
+                    0x00 => 0x01,
                     _ => n,
                 };
                 self.rom_bank = n;
@@ -512,8 +517,7 @@ impl Memory for Mbc3 {
                 self.ram_bank = n;
             }
             0x6000...0x7fff => {
-                let n = (v & 0x01) as usize;
-                if n == 1 {
+                if v & 0x01 != 0 {
                     self.rtc.tic();
                 }
             }
@@ -524,6 +528,7 @@ impl Memory for Mbc3 {
 
 impl Stable for Mbc3 {
     fn sav(&self) {
+        rog::debugln!("Ram is being persisted");
         self.rtc.sav();
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
@@ -559,7 +564,7 @@ impl Mbc5 {
 impl Memory for Mbc5 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => *self.rom.get(a as usize).unwrap_or(&0),
+            0x0000...0x3fff => self.rom[a as usize],
             0x4000...0x7fff => {
                 let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
@@ -588,8 +593,8 @@ impl Memory for Mbc5 {
                 self.ram_enable = v & 0x0f == 0x0a;
             }
             0x2000...0x2fff => self.rom_bank = (self.rom_bank & 0x100) | (v as usize),
-            0x3000...0x3fff => self.rom_bank = (self.rom_bank & 0x0FF) | (((v & 0x01) as usize) << 8),
-            0x4000...0x5fff => self.ram_bank = (v & 0x0F) as usize,
+            0x3000...0x3fff => self.rom_bank = (self.rom_bank & 0x0ff) | (((v & 0x01) as usize) << 8),
+            0x4000...0x5fff => self.ram_bank = (v & 0x0f) as usize,
             _ => {}
         }
     }
@@ -597,6 +602,7 @@ impl Memory for Mbc5 {
 
 impl Stable for Mbc5 {
     fn sav(&self) {
+        rog::debugln!("Ram is being persisted");
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
@@ -621,10 +627,14 @@ impl HuC1 {
     }
 }
 
-#[rustfmt::skip]
 impl Memory for HuC1 {
-    fn get(&self, a: u16) -> u8 { self.cart.get(a) }
-    fn set(&mut self, a: u16, v: u8) { self.cart.set(a, v) }
+    fn get(&self, a: u16) -> u8 {
+        self.cart.get(a)
+    }
+
+    fn set(&mut self, a: u16, v: u8) {
+        self.cart.set(a, v)
+    }
 }
 
 impl Stable for HuC1 {
@@ -652,6 +662,7 @@ impl Stable for HuC1 {
 //  12h  MBC3+RAM                 FEh  HuC3
 //  13h  MBC3+RAM+BATTERY         FFh  HuC1+RAM+BATTERY
 pub fn power_up(path: impl AsRef<Path>) -> Box<Cartridge> {
+    rog::debugln!("Loading cartridge from {:?}", path.as_ref());
     let mut f = File::open(path.as_ref()).unwrap();
     let mut rom = Vec::new();
     f.read_to_end(&mut rom).unwrap();
@@ -727,8 +738,10 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<Cartridge> {
         }
         n => panic!("Unsupported cartridge type: 0x{:02x}", n),
     };
-    cart.ensure_logo();
-    cart.ensure_header_checksum();
+    rog::debugln!("Cartridge name is {}", cart.title());
+    rog::debugln!("Cartridge type is {}", mbc_info(cart.get(0x0147)));
+    ensure_logo(cart.as_ref());
+    ensure_header_checksum(cart.as_ref());
     cart
 }
 
@@ -777,6 +790,42 @@ fn ram_read(path: impl AsRef<Path>, size: usize) -> Vec<u8> {
     }
 }
 
+// Readable form of MBC representation
+fn mbc_info(b: u8) -> String {
+    String::from(match b {
+        0x00 => "ROM ONLY",
+        0x01 => "MBC1",
+        0x02 => "MBC1+RAM",
+        0x03 => "MBC1+RAM+BATTERY",
+        0x05 => "MBC2",
+        0x06 => "MBC2+BATTERY",
+        0x08 => "ROM+RAM",
+        0x09 => "ROM+RAM+BATTERY",
+        0x0b => "MMM01",
+        0x0c => "MMM01+RAM",
+        0x0d => "MMM01+RAM+BATTERY",
+        0x0f => "MBC3+TIMER+BATTERY",
+        0x10 => "MBC3+TIMER+RAM+BATTERY",
+        0x11 => "MBC3",
+        0x12 => "MBC3+RAM",
+        0x13 => "MBC3+RAM+BATTERY",
+        0x15 => "MBC4",
+        0x16 => "MBC4+RAM",
+        0x17 => "MBC4+RAM+BATTERY",
+        0x19 => "MBC5",
+        0x1a => "MBC5+RAM",
+        0x1b => "MBC5+RAM+BATTERY",
+        0x1c => "MBC5+RUMBLE",
+        0x1d => "MBC5+RUMBLE+RAM",
+        0x1e => "MBC5+RUMBLE+RAM+BATTERY",
+        0xfc => "POCKET CAMERA",
+        0xfd => "BANDAI TAMA5",
+        0xfe => "HuC3",
+        0x1f => "HuC1+RAM+BATTERY",
+        n => panic!("Unsupported cartridge type: 0x{:02x}", n),
+    })
+}
+
 // These bytes define the bitmap of the Nintendo logo that is displayed when the gameboy gets turned on.
 // The reason for joining is because if the pirates copy the cartridge, they must also copy Nintendo's LOGO,
 // which infringes the trademark law. In the early days, the copyright law is not perfect for the determination of
@@ -788,12 +837,38 @@ const NINTENDO_LOGO: [u8; 48] = [
     0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
 ];
 
+// Ensure Nintendo Logo.
+fn ensure_logo(cart: &Cartridge) {
+    for i in 0..48 {
+        if cart.get(0x0104 + i as u16) != NINTENDO_LOGO[i as usize] {
+            panic!("Nintendo logo is incorrect")
+        }
+    }
+}
+
+// In position 0x14d, contains an 8 bit checksum across the cartridge header bytes 0134-014C. The checksum is
+// calculated as follows:
+//
+//   x=0:FOR i=0134h TO 014Ch:x=x-MEM[i]-1:NEXT
+//
+// The lower 8 bits of the result must be the same than the value in this entry. The GAME WON'T WORK if this
+// checksum is incorrect.
+fn ensure_header_checksum(cart: &Cartridge) {
+    let mut v: u8 = 0;
+    for i in 0x0134..0x014d {
+        v = v.wrapping_sub(cart.get(i)).wrapping_sub(1);
+    }
+    if cart.get(0x014d) != v {
+        panic!("Cartridge's header checksum is incorrect")
+    }
+}
+
 pub trait Cartridge: Memory + Stable + Send {
     // Title of the game in UPPER CASE ASCII. If it is less than 16 characters then the remaining bytes are filled with
     // 00's. When inventing the CGB, Nintendo has reduced the length of this area to 15 characters, and some months
     // later they had the fantastic idea to reduce it to 11 characters only. The new meaning of the ex-title bytes is
     // described below.
-    fn rom_name(&self) -> String {
+    fn title(&self) -> String {
         let mut buf = String::new();
         let ic = 0x0134;
         let oc = if self.get(0x0143) == 0x80 { 0x013e } else { 0x0143 };
@@ -804,32 +879,6 @@ pub trait Cartridge: Memory + Stable + Send {
             }
         }
         buf
-    }
-
-    // Ensure Nintendo Logo.
-    fn ensure_logo(&self) {
-        for i in 0..48 {
-            if self.get(0x0104 + i as u16) != NINTENDO_LOGO[i as usize] {
-                panic!("Nintendo logo is incorrect")
-            }
-        }
-    }
-
-    // In position 0x14d, contains an 8 bit checksum across the cartridge header bytes 0134-014C. The checksum is
-    // calculated as follows:
-    //
-    //   x=0:FOR i=0134h TO 014Ch:x=x-MEM[i]-1:NEXT
-    //
-    // The lower 8 bits of the result must be the same than the value in this entry. The GAME WON'T WORK if this
-    // checksum is incorrect.
-    fn ensure_header_checksum(&self) {
-        let mut v: u8 = 0;
-        for i in 0x0134..0x014d {
-            v = v.wrapping_sub(self.get(i)).wrapping_sub(1);
-        }
-        if self.get(0x014d) != v {
-            panic!("Cartridge's header checksum is incorrect")
-        }
     }
 }
 
