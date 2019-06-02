@@ -1037,47 +1037,49 @@ impl Cpu {
                 self.reg.set_flag(Z, false);
             }
 
+            // JUMP
+            0xc3 => self.reg.pc = self.imm_word(),
+            0xe9 => self.reg.pc = self.reg.get_hl(),
+
+            // JUMP IF
+            0xc2 | 0xca | 0xd2 | 0xda => {
+                let pc = self.imm_word();
+                let cond = match opcode {
+                    0xc2 => !self.reg.get_flag(Z),
+                    0xca => self.reg.get_flag(Z),
+                    0xd2 => !self.reg.get_flag(C),
+                    0xda => self.reg.get_flag(C),
+                    _ => panic!(""),
+                };
+                if cond {
+                    self.reg.pc = pc;
+                }
+            }
+
+            // JR
             0x18 => self.alu_jr(),
-            0x20 => {
-                if !self.reg.get_flag(Z) {
+
+            // JR IF
+            0x20 | 0x28 | 0x30 | 0x38 => {
+                let cond = match opcode {
+                    0x20 => !self.reg.get_flag(Z),
+                    0x28 => self.reg.get_flag(Z),
+                    0x30 => !self.reg.get_flag(C),
+                    0x38 => self.reg.get_flag(C),
+                    _ => panic!(""),
+                };
+                if cond {
                     self.alu_jr();
                 } else {
                     self.reg.pc += 1;
                 }
             }
-            0x28 => {
-                if self.reg.get_flag(Z) {
-                    self.alu_jr();
-                } else {
-                    self.reg.pc += 1;
-                }
-            }
-            0x30 => {
-                if !self.reg.get_flag(C) {
-                    self.alu_jr();
-                } else {
-                    self.reg.pc += 1;
-                }
-            }
-            0x38 => {
-                if self.reg.get_flag(C) {
-                    self.alu_jr();
-                } else {
-                    self.reg.pc += 1;
-                }
-            }
+
             0xc0 => {
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
                 }
             }
-            0xc2 => {
-                let pc = self.imm_word();
-                if !self.reg.get_flag(Z) {
-                    self.reg.pc = pc;
-                }
-            }
-            0xc3 => self.reg.pc = self.mem.borrow().get_word(self.reg.pc),
             0xc4 => {
                 if !self.reg.get_flag(Z) {
                     self.stack_add(self.reg.pc + 2);
@@ -1097,12 +1099,6 @@ impl Cpu {
             }
             0xc9 => {
                 self.reg.pc = self.stack_pop();
-            }
-            0xca => {
-                let pc = self.imm_word();
-                if self.reg.get_flag(Z) {
-                    self.reg.pc = pc;
-                }
             }
             0xcb => {
                 cbcode = self.mem.borrow().get(self.reg.pc);
@@ -1560,12 +1556,6 @@ impl Cpu {
                     self.reg.pc = self.stack_pop();
                 }
             }
-            0xd2 => {
-                let pc = self.imm_word();
-                if !self.reg.get_flag(C) {
-                    self.reg.pc = pc;
-                }
-            }
             0xd3 => panic!("Opcode 0xd3 is not implemented"),
             0xd4 => {
                 if !self.reg.get_flag(C) {
@@ -1588,12 +1578,6 @@ impl Cpu {
                 self.reg.pc = self.stack_pop();
                 self.enable_interrupts = true;
             }
-            0xda => {
-                let pc = self.imm_word();
-                if self.reg.get_flag(C) {
-                    self.reg.pc = pc;
-                }
-            }
             0xdb => panic!("Opcode 0xdb is not implemented"),
             0xdc => {
                 if self.reg.get_flag(C) {
@@ -1614,7 +1598,6 @@ impl Cpu {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x20;
             }
-            0xe9 => self.reg.pc = self.reg.get_hl(),
             0xeb => panic!("Opcode 0xeb is not implemented"),
             0xec => panic!("Opcode 0xec is not implemented"),
             0xed => panic!("Opcode 0xed is not implemented"),
