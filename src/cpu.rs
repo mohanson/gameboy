@@ -845,13 +845,109 @@ impl Cpu {
                 self.alu_sbc(v);
             }
 
+            // AND A, r8/d8
+            0xa0 => self.alu_and(self.reg.b),
+            0xa1 => self.alu_and(self.reg.c),
+            0xa2 => self.alu_and(self.reg.d),
+            0xa3 => self.alu_and(self.reg.e),
+            0xa4 => self.alu_and(self.reg.h),
+            0xa5 => self.alu_and(self.reg.l),
+            0xa6 => {
+                let a = self.mem.borrow().get(self.reg.get_hl());
+                self.alu_and(a);
+            }
+            0xa7 => self.alu_and(self.reg.a),
+            0xe6 => {
+                let v = self.imm();
+                self.alu_and(v);
+            }
+
+            // OR A, r8/d8
+            0xb0 => self.alu_or(self.reg.b),
+            0xb1 => self.alu_or(self.reg.c),
+            0xb2 => self.alu_or(self.reg.d),
+            0xb3 => self.alu_or(self.reg.e),
+            0xb4 => self.alu_or(self.reg.h),
+            0xb5 => self.alu_or(self.reg.l),
+            0xb6 => {
+                let a = self.mem.borrow().get(self.reg.get_hl());
+                self.alu_or(a);
+            }
+            0xb7 => self.alu_or(self.reg.a),
+            0xf6 => {
+                let v = self.imm();
+                self.alu_or(v);
+            }
+
+            // XOR A, r8/d8
+            0xa8 => self.alu_xor(self.reg.b),
+            0xa9 => self.alu_xor(self.reg.c),
+            0xaa => self.alu_xor(self.reg.d),
+            0xab => self.alu_xor(self.reg.e),
+            0xac => self.alu_xor(self.reg.h),
+            0xad => self.alu_xor(self.reg.l),
+            0xae => {
+                let a = self.mem.borrow().get(self.reg.get_hl());
+                self.alu_xor(a);
+            }
+            0xaf => self.alu_xor(self.reg.a),
+            0xee => {
+                let v = self.imm();
+                self.alu_xor(v);
+            }
+
+            // CP A, r8/d8
+            0xb8 => self.alu_cp(self.reg.b),
+            0xb9 => self.alu_cp(self.reg.c),
+            0xba => self.alu_cp(self.reg.d),
+            0xbb => self.alu_cp(self.reg.e),
+            0xbc => self.alu_cp(self.reg.h),
+            0xbd => self.alu_cp(self.reg.l),
+            0xbe => {
+                let a = self.mem.borrow().get(self.reg.get_hl());
+                self.alu_cp(a);
+            }
+            0xbf => self.alu_cp(self.reg.a),
+            0xfe => {
+                let v = self.imm();
+                self.alu_cp(v);
+            }
+
+            // INC r8
+            0x04 => self.reg.b = self.alu_inc(self.reg.b),
+            0x0c => self.reg.c = self.alu_inc(self.reg.c),
+            0x14 => self.reg.d = self.alu_inc(self.reg.d),
+            0x1c => self.reg.e = self.alu_inc(self.reg.e),
+            0x24 => self.reg.h = self.alu_inc(self.reg.h),
+            0x2c => self.reg.l = self.alu_inc(self.reg.l),
+            0x34 => {
+                let a = self.reg.get_hl();
+                let v = self.mem.borrow().get(a);
+                let h = self.alu_inc(v);
+                self.mem.borrow_mut().set(a, h);
+            }
+            0x3c => self.reg.a = self.alu_inc(self.reg.a),
+
+            // DEC r8
+            0x05 => self.reg.b = self.alu_dec(self.reg.b),
+            0x0d => self.reg.c = self.alu_dec(self.reg.c),
+            0x15 => self.reg.d = self.alu_dec(self.reg.d),
+            0x1d => self.reg.e = self.alu_dec(self.reg.e),
+            0x25 => self.reg.h = self.alu_dec(self.reg.h),
+            0x2d => self.reg.l = self.alu_dec(self.reg.l),
+            0x35 => {
+                let a = self.reg.get_hl();
+                let v = self.mem.borrow().get(a);
+                let h = self.alu_dec(v);
+                self.mem.borrow_mut().set(a, h);
+            }
+            0x3d => self.reg.a = self.alu_dec(self.reg.a),
+
             0x00 => {}
             0x03 => {
                 let v = self.reg.get_bc().wrapping_add(1);
                 self.reg.set_bc(v);
             }
-            0x04 => self.reg.b = self.alu_inc(self.reg.b),
-            0x05 => self.reg.b = self.alu_dec(self.reg.b),
             0x07 => {
                 self.reg.a = self.alu_rlc(self.reg.a);
                 self.reg.set_flag(Z, false);
@@ -861,8 +957,6 @@ impl Cpu {
                 let v = self.reg.get_bc().wrapping_sub(1);
                 self.reg.set_bc(v);
             }
-            0x0c => self.reg.c = self.alu_inc(self.reg.c),
-            0x0d => self.reg.c = self.alu_dec(self.reg.c),
             0x0f => {
                 self.reg.a = self.alu_rrc(self.reg.a);
                 self.reg.set_flag(Z, false);
@@ -872,8 +966,6 @@ impl Cpu {
                 let v = self.reg.get_de().wrapping_add(1);
                 self.reg.set_de(v);
             }
-            0x14 => self.reg.d = self.alu_inc(self.reg.d),
-            0x15 => self.reg.d = self.alu_dec(self.reg.d),
             0x17 => {
                 self.reg.a = self.alu_rl(self.reg.a);
                 self.reg.set_flag(Z, false);
@@ -884,8 +976,6 @@ impl Cpu {
                 let v = self.reg.get_de().wrapping_sub(1);
                 self.reg.set_de(v);
             }
-            0x1c => self.reg.e = self.alu_inc(self.reg.e),
-            0x1d => self.reg.e = self.alu_dec(self.reg.e),
             0x1f => {
                 self.reg.a = self.alu_rr(self.reg.a);
                 self.reg.set_flag(Z, false);
@@ -901,8 +991,6 @@ impl Cpu {
                 let v = self.reg.get_hl().wrapping_add(1);
                 self.reg.set_hl(v);
             }
-            0x24 => self.reg.h = self.alu_inc(self.reg.h),
-            0x25 => self.reg.h = self.alu_dec(self.reg.h),
             0x27 => self.alu_daa(),
             0x28 => {
                 if self.reg.get_flag(Z) {
@@ -916,8 +1004,6 @@ impl Cpu {
                 let v = self.reg.get_hl().wrapping_sub(1);
                 self.reg.set_hl(v);
             }
-            0x2c => self.reg.l = self.alu_inc(self.reg.l),
-            0x2d => self.reg.l = self.alu_dec(self.reg.l),
             0x2f => self.alu_cpl(),
             0x30 => {
                 if !self.reg.get_flag(C) {
@@ -929,18 +1015,6 @@ impl Cpu {
             0x33 => {
                 let v = self.reg.sp.wrapping_add(1);
                 self.reg.sp = v;
-            }
-            0x34 => {
-                let a = self.reg.get_hl();
-                let v = self.mem.borrow().get(a);
-                let h = self.alu_inc(v);
-                self.mem.borrow_mut().set(a, h);
-            }
-            0x35 => {
-                let a = self.reg.get_hl();
-                let v = self.mem.borrow().get(a);
-                let h = self.alu_dec(v);
-                self.mem.borrow_mut().set(a, h);
             }
             0x37 => self.alu_scf(),
             0x38 => {
@@ -955,54 +1029,8 @@ impl Cpu {
                 let v = self.reg.sp.wrapping_sub(1);
                 self.reg.sp = v;
             }
-            0x3c => self.reg.a = self.alu_inc(self.reg.a),
-            0x3d => self.reg.a = self.alu_dec(self.reg.a),
             0x3f => self.alu_ccf(),
             0x76 => self.halted = true,
-            0xa0 => self.alu_and(self.reg.b),
-            0xa1 => self.alu_and(self.reg.c),
-            0xa2 => self.alu_and(self.reg.d),
-            0xa3 => self.alu_and(self.reg.e),
-            0xa4 => self.alu_and(self.reg.h),
-            0xa5 => self.alu_and(self.reg.l),
-            0xa6 => {
-                let a = self.mem.borrow().get(self.reg.get_hl());
-                self.alu_and(a);
-            }
-            0xa7 => self.alu_and(self.reg.a),
-            0xa8 => self.alu_xor(self.reg.b),
-            0xa9 => self.alu_xor(self.reg.c),
-            0xaa => self.alu_xor(self.reg.d),
-            0xab => self.alu_xor(self.reg.e),
-            0xac => self.alu_xor(self.reg.h),
-            0xad => self.alu_xor(self.reg.l),
-            0xae => {
-                let a = self.mem.borrow().get(self.reg.get_hl());
-                self.alu_xor(a);
-            }
-            0xaf => self.alu_xor(self.reg.a),
-            0xb0 => self.alu_or(self.reg.b),
-            0xb1 => self.alu_or(self.reg.c),
-            0xb2 => self.alu_or(self.reg.d),
-            0xb3 => self.alu_or(self.reg.e),
-            0xb4 => self.alu_or(self.reg.h),
-            0xb5 => self.alu_or(self.reg.l),
-            0xb6 => {
-                let a = self.mem.borrow().get(self.reg.get_hl());
-                self.alu_or(a);
-            }
-            0xb7 => self.alu_or(self.reg.a),
-            0xb8 => self.alu_cp(self.reg.b),
-            0xb9 => self.alu_cp(self.reg.c),
-            0xba => self.alu_cp(self.reg.d),
-            0xbb => self.alu_cp(self.reg.e),
-            0xbc => self.alu_cp(self.reg.h),
-            0xbd => self.alu_cp(self.reg.l),
-            0xbe => {
-                let a = self.mem.borrow().get(self.reg.get_hl());
-                self.alu_cp(a);
-            }
-            0xbf => self.alu_cp(self.reg.a),
             0xc0 => {
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
@@ -1526,10 +1554,6 @@ impl Cpu {
             }
             0xe3 => panic!("Opcode 0xe3 is not implemented"),
             0xe4 => panic!("Opcode 0xd4 is not implemented"),
-            0xe6 => {
-                let v = self.imm();
-                self.alu_and(v);
-            }
             0xe7 => {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x20;
@@ -1539,20 +1563,12 @@ impl Cpu {
             0xeb => panic!("Opcode 0xeb is not implemented"),
             0xec => panic!("Opcode 0xec is not implemented"),
             0xed => panic!("Opcode 0xed is not implemented"),
-            0xee => {
-                let v = self.imm();
-                self.alu_xor(v);
-            }
             0xef => {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x28;
             }
             0xf3 => self.enable_interrupts = false,
             0xf4 => panic!("Opcode 0xf4 is not implemented"),
-            0xf6 => {
-                let v = self.imm();
-                self.alu_or(v);
-            }
             0xf7 => {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x30;
@@ -1560,10 +1576,6 @@ impl Cpu {
             0xfb => self.enable_interrupts = true,
             0xfc => panic!("Opcode 0xfc is not implemented"),
             0xfd => panic!("Opcode 0xfd is not implemented"),
-            0xfe => {
-                let v = self.imm();
-                self.alu_cp(v);
-            }
             0xff => {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x38;
