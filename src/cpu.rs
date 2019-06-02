@@ -1671,7 +1671,7 @@ impl Cpu {
             return c;
         }
         if self.halted {
-            return 1;
+            return OP_CYCLES[0] * 4;
         }
         self.ex() * 4
     }
