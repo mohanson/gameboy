@@ -943,39 +943,66 @@ impl Cpu {
             }
             0x3d => self.reg.a = self.alu_dec(self.reg.a),
 
-            0x00 => {}
+            // ADD HL, r16
+            0x09 => self.alu_add_hl(self.reg.get_bc()),
+            0x19 => self.alu_add_hl(self.reg.get_de()),
+            0x29 => self.alu_add_hl(self.reg.get_hl()),
+            0x39 => self.alu_add_hl(self.reg.sp),
+
+            // ADD SP, d8
+            0xe8 => self.alu_add_sp(),
+
+            // INC r16
             0x03 => {
                 let v = self.reg.get_bc().wrapping_add(1);
                 self.reg.set_bc(v);
             }
-            0x07 => {
-                self.reg.a = self.alu_rlc(self.reg.a);
-                self.reg.set_flag(Z, false);
+            0x13 => {
+                let v = self.reg.get_de().wrapping_add(1);
+                self.reg.set_de(v);
             }
-            0x09 => self.alu_add_hl(self.reg.get_bc()),
+            0x23 => {
+                let v = self.reg.get_hl().wrapping_add(1);
+                self.reg.set_hl(v);
+            }
+            0x33 => {
+                let v = self.reg.sp.wrapping_add(1);
+                self.reg.sp = v;
+            }
+
+            // DEC r16
             0x0b => {
                 let v = self.reg.get_bc().wrapping_sub(1);
                 self.reg.set_bc(v);
+            }
+            0x1b => {
+                let v = self.reg.get_de().wrapping_sub(1);
+                self.reg.set_de(v);
+            }
+            0x2b => {
+                let v = self.reg.get_hl().wrapping_sub(1);
+                self.reg.set_hl(v);
+            }
+            0x3b => {
+                let v = self.reg.sp.wrapping_sub(1);
+                self.reg.sp = v;
+            }
+
+            0x00 => {}
+            0x07 => {
+                self.reg.a = self.alu_rlc(self.reg.a);
+                self.reg.set_flag(Z, false);
             }
             0x0f => {
                 self.reg.a = self.alu_rrc(self.reg.a);
                 self.reg.set_flag(Z, false);
             }
             0x10 => {}
-            0x13 => {
-                let v = self.reg.get_de().wrapping_add(1);
-                self.reg.set_de(v);
-            }
             0x17 => {
                 self.reg.a = self.alu_rl(self.reg.a);
                 self.reg.set_flag(Z, false);
             }
             0x18 => self.alu_jr(),
-            0x19 => self.alu_add_hl(self.reg.get_de()),
-            0x1b => {
-                let v = self.reg.get_de().wrapping_sub(1);
-                self.reg.set_de(v);
-            }
             0x1f => {
                 self.reg.a = self.alu_rr(self.reg.a);
                 self.reg.set_flag(Z, false);
@@ -987,10 +1014,6 @@ impl Cpu {
                     self.reg.pc += 1;
                 }
             }
-            0x23 => {
-                let v = self.reg.get_hl().wrapping_add(1);
-                self.reg.set_hl(v);
-            }
             0x27 => self.alu_daa(),
             0x28 => {
                 if self.reg.get_flag(Z) {
@@ -998,11 +1021,6 @@ impl Cpu {
                 } else {
                     self.reg.pc += 1;
                 }
-            }
-            0x29 => self.alu_add_hl(self.reg.get_hl()),
-            0x2b => {
-                let v = self.reg.get_hl().wrapping_sub(1);
-                self.reg.set_hl(v);
             }
             0x2f => self.alu_cpl(),
             0x30 => {
@@ -1012,10 +1030,6 @@ impl Cpu {
                     self.reg.pc += 1;
                 }
             }
-            0x33 => {
-                let v = self.reg.sp.wrapping_add(1);
-                self.reg.sp = v;
-            }
             0x37 => self.alu_scf(),
             0x38 => {
                 if self.reg.get_flag(C) {
@@ -1023,11 +1037,6 @@ impl Cpu {
                 } else {
                     self.reg.pc += 1;
                 }
-            }
-            0x39 => self.alu_add_hl(self.reg.sp),
-            0x3b => {
-                let v = self.reg.sp.wrapping_sub(1);
-                self.reg.sp = v;
             }
             0x3f => self.alu_ccf(),
             0x76 => self.halted = true,
@@ -1558,7 +1567,6 @@ impl Cpu {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x20;
             }
-            0xe8 => self.alu_add_sp(),
             0xe9 => self.reg.pc = self.reg.get_hl(),
             0xeb => panic!("Opcode 0xeb is not implemented"),
             0xec => panic!("Opcode 0xec is not implemented"),
