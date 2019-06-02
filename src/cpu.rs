@@ -1620,7 +1620,6 @@ impl Cpu {
                     0x00
                 }
             }
-
             0xc0 | 0xd0 => {
                 if self.reg.get_flag(Z) {
                     0x00
