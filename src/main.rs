@@ -60,9 +60,13 @@ fn main() {
         if !window.is_open() {
             break;
         }
+
         mother_board.next();
-        if mother_board.check_and_reset_gpu_updated() {
-            // println!("DDD");
+        if mother_board.cpu.flip() {
+            if window.is_key_down(minifb::Key::Escape) {
+                break;
+            }
+            if mother_board.check_and_reset_gpu_updated() {
             let mut i: usize = 0;
             for l in mother_board.mmu.borrow().gpu.data.iter() {
                 for w in l.iter() {
@@ -76,8 +80,25 @@ fn main() {
                 }
             }
             window.update_with_buffer(window_buffer.as_slice()).unwrap();
-        } else {
-            // window.update();
+        }
+
+            let keys = vec![
+                (minifb::Key::Right, gameboy::joypad::JoypadKey::Right),
+                (minifb::Key::Up, gameboy::joypad::JoypadKey::Up),
+                (minifb::Key::Left, gameboy::joypad::JoypadKey::Left),
+                (minifb::Key::Down, gameboy::joypad::JoypadKey::Down),
+                (minifb::Key::Z, gameboy::joypad::JoypadKey::A),
+                (minifb::Key::X, gameboy::joypad::JoypadKey::B),
+                (minifb::Key::Space, gameboy::joypad::JoypadKey::Select),
+                (minifb::Key::Enter, gameboy::joypad::JoypadKey::Start),
+            ];
+            for (rk, vk) in &keys {
+                if window.is_key_down(*rk) {
+                    mother_board.keydown(vk.clone());
+                } else {
+                    mother_board.keyup(vk.clone());
+                }
+            }
         }
     }
 

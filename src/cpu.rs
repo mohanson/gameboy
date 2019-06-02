@@ -67,6 +67,7 @@ pub struct Cpu {
     // In order to simulate real hardware speed
     step_cycles: u32,
     step_zero: time::SystemTime,
+    step_flip: bool,
 }
 
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
@@ -558,6 +559,7 @@ impl Cpu {
             enable_interrupts: true,
             step_cycles: 0,
             step_zero: time::SystemTime::now(),
+            step_flip: false,
         }
     }
 
@@ -1003,10 +1005,10 @@ impl Cpu {
             0x00 => {}
 
             // HALT
-            0x76 => {},
+            0x76 => self.halted = true,
 
             // STOP
-            0x10 => {},
+            0x10 => {}
 
             // DI/EI
             0xf3 => self.enable_interrupts = false,
@@ -1678,6 +1680,7 @@ impl Cpu {
     // Function step simulates real hardware execution speed, by limiting the frequency of the function next().
     pub fn step(&mut self) -> u32 {
         if self.step_cycles > STEP_CYCLES {
+            self.step_flip = true;
             self.step_cycles -= STEP_CYCLES;
             let d = time::SystemTime::now().duration_since(self.step_zero).unwrap();
             let s = u64::from(STEP_TIME.saturating_sub(d.as_millis() as u32));
@@ -1691,5 +1694,13 @@ impl Cpu {
         let cycles = self.next();
         self.step_cycles += cycles;
         cycles
+    }
+
+    pub fn flip(&mut self) -> bool {
+        let r = self.step_flip;
+        if r {
+            self.step_flip = false;
+        }
+        r
     }
 }
