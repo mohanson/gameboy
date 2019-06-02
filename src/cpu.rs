@@ -10,7 +10,7 @@ use std::time;
 
 pub const CLOCK_FREQUENCY: u32 = 4_194_304;
 pub const STEP_TIME: u32 = 16;
-pub const STEP_CYCLES: u32 = (STEP_TIME as f64 / (1000 as f64 / CLOCK_FREQUENCY as f64)) as u32;
+pub const STEP_CYCLES: u32 = (STEP_TIME as f64 / (1000_f64 / CLOCK_FREQUENCY as f64)) as u32;
 
 // Nintendo documents describe the CPU & instructions speed in machine cycles while this document describes them in
 // clock cycles. Here is the translation:
@@ -586,7 +586,6 @@ impl Cpu {
         4
     }
 
-    #[allow(clippy::cognitive_complexity)]
     fn ex(&mut self) -> u32 {
         let opcode = self.imm();
         let mut cbcode: u8 = 0;

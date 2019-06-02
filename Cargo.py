@@ -10,7 +10,17 @@ def call(command):
         sys.exit(r)
 
 
+c_disable_clippy_lint = [
+    'clippy::many_single_char_names',
+    'clippy::unnecessary_cast',
+    'clippy::cognitive_complexity',
+]
+
+
 def make():
+    call('cargo fmt')
+    a = ' '.join([f'-A {e}' for e in c_disable_clippy_lint])
+    call(f'cargo clippy -- {a}')
     call('cargo build')
 
 
