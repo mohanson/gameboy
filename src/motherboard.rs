@@ -1,5 +1,4 @@
 use super::cpu::Cpu;
-use super::joypad::JoypadKey;
 use super::memory::Memory;
 use super::mmunit::MemoryManagementUnit;
 use super::sound::{AudioPlayer, Sound};
@@ -42,13 +41,5 @@ impl MotherBoard {
         if let Some(ref mut sound) = self.mmu.borrow_mut().sound {
             sound.sync();
         }
-    }
-
-    pub fn keyup(&mut self, key: JoypadKey) {
-        self.mmu.borrow_mut().joypad.keyup(key);
-    }
-
-    pub fn keydown(&mut self, key: JoypadKey) {
-        self.mmu.borrow_mut().joypad.keydown(key);
     }
 }

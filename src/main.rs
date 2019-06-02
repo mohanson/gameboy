@@ -75,9 +75,9 @@ fn main() {
             ];
             for (rk, vk) in &keys {
                 if window.is_key_down(*rk) {
-                    mother_board.keydown(vk.clone());
+                    mother_board.mmu.borrow_mut().joypad.keydown(vk.clone());
                 } else {
-                    mother_board.keyup(vk.clone());
+                    mother_board.mmu.borrow_mut().joypad.keyup(vk.clone());
                 }
             }
         }

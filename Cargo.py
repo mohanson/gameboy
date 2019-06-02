@@ -11,9 +11,10 @@ def call(command):
 
 
 c_disable_clippy_lint = [
-    'clippy::many_single_char_names',
-    'clippy::unnecessary_cast',
     'clippy::cognitive_complexity',
+    'clippy::many_single_char_names',
+    'clippy::should_implement_trait',
+    'clippy::unnecessary_cast',
 ]
 
 
