@@ -543,9 +543,8 @@ impl Cpu {
 
     // Add n to current address and jump to it.
     // n = one byte signed immediate value
-    fn alu_jr(&mut self) {
-        let n = self.mem.borrow().get(self.reg.pc) as i8;
-        self.reg.pc += 1;
+    fn alu_jr(&mut self, n: u8) {
+        let n = n as i8;
         self.reg.pc = ((u32::from(self.reg.pc) as i32) + i32::from(n)) as u16;
     }
 }
@@ -1057,7 +1056,10 @@ impl Cpu {
             }
 
             // JR
-            0x18 => self.alu_jr(),
+            0x18 => {
+                let n = self.imm();
+                self.alu_jr(n);
+            }
 
             // JR IF
             0x20 | 0x28 | 0x30 | 0x38 => {
@@ -1068,24 +1070,38 @@ impl Cpu {
                     0x38 => self.reg.get_flag(C),
                     _ => panic!(""),
                 };
+                let n = self.imm();
                 if cond {
-                    self.alu_jr();
-                } else {
-                    self.reg.pc += 1;
+                    self.alu_jr(n);
+                }
+            }
+
+            // CALL
+            0xcd => {
+                let nn = self.imm_word();
+                self.stack_add(self.reg.pc);
+                self.reg.pc = nn;
+            }
+
+            // CALL IF
+            0xc4 | 0xcc | 0xd4 | 0xdc => {
+                let cond = match opcode {
+                    0xc4 => !self.reg.get_flag(Z),
+                    0xcc => self.reg.get_flag(Z),
+                    0xd4 => !self.reg.get_flag(C),
+                    0xdc => self.reg.get_flag(C),
+                    _ => panic!(""),
+                };
+                let nn = self.imm_word();
+                if cond {
+                    self.stack_add(self.reg.pc);
+                    self.reg.pc = nn;
                 }
             }
 
             0xc0 => {
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
-                }
-            }
-            0xc4 => {
-                if !self.reg.get_flag(Z) {
-                    self.stack_add(self.reg.pc + 2);
-                    self.reg.pc = self.mem.borrow().get_word(self.reg.pc);
-                } else {
-                    self.reg.pc += 2;
                 }
             }
             0xc7 => {
@@ -1535,18 +1551,6 @@ impl Cpu {
                     0xff => self.reg.a = self.alu_set(self.reg.a, 7),
                 }
             }
-            0xcc => {
-                if self.reg.get_flag(Z) {
-                    self.stack_add(self.reg.pc + 2);
-                    self.reg.pc = self.mem.borrow().get_word(self.reg.pc);
-                } else {
-                    self.reg.pc += 2;
-                }
-            }
-            0xcd => {
-                self.stack_add(self.reg.pc + 2);
-                self.reg.pc = self.mem.borrow().get_word(self.reg.pc);
-            }
             0xcf => {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x08;
@@ -1557,14 +1561,6 @@ impl Cpu {
                 }
             }
             0xd3 => panic!("Opcode 0xd3 is not implemented"),
-            0xd4 => {
-                if !self.reg.get_flag(C) {
-                    self.stack_add(self.reg.pc + 2);
-                    self.reg.pc = self.mem.borrow().get_word(self.reg.pc);
-                } else {
-                    self.reg.pc += 2;
-                }
-            }
             0xd7 => {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x10;
@@ -1579,14 +1575,6 @@ impl Cpu {
                 self.enable_interrupts = true;
             }
             0xdb => panic!("Opcode 0xdb is not implemented"),
-            0xdc => {
-                if self.reg.get_flag(C) {
-                    self.stack_add(self.reg.pc + 2);
-                    self.reg.pc = self.mem.borrow().get_word(self.reg.pc);
-                } else {
-                    self.reg.pc += 2;
-                }
-            }
             0xdd => panic!("Opcode 0xdd is not implemented"),
             0xdf => {
                 self.stack_add(self.reg.pc);
