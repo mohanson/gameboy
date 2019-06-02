@@ -1006,7 +1006,7 @@ impl Cpu {
             0x76 => self.halted = true,
 
             // STOP
-            0x10 => {}
+            0x10 => self.halted = true,
 
             // DI/EI
             0xf3 => self.enable_interrupts = false,
@@ -1675,6 +1675,7 @@ impl Cpu {
         self.ex() * 4
     }
 
+    // Function step simulates real hardware execution speed, by limiting the frequency of the function next().
     pub fn step(&mut self) -> u32 {
         if self.step_cycles > STEP_CYCLES {
             self.step_cycles -= STEP_CYCLES;
