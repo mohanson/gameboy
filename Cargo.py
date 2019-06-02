@@ -45,7 +45,6 @@ path_cpu_instr_timing = r"/tmp/gb/instr_timing.gb"
 
 
 def test_roms():
-    make()
     for p in [
         path_rom_only,
         path_mbc1,
