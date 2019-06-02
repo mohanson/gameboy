@@ -1099,23 +1099,64 @@ impl Cpu {
                 }
             }
 
-            0xc0 => {
-                if !self.reg.get_flag(Z) {
-                    self.reg.pc = self.stack_pop();
-                }
-            }
+            // RST
             0xc7 => {
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x00;
             }
-            0xc8 => {
-                if self.reg.get_flag(Z) {
+            0xcf => {
+                self.stack_add(self.reg.pc);
+                self.reg.pc = 0x08;
+            }
+            0xd7 => {
+                self.stack_add(self.reg.pc);
+                self.reg.pc = 0x10;
+            }
+            0xdf => {
+                self.stack_add(self.reg.pc);
+                self.reg.pc = 0x18;
+            }
+            0xe7 => {
+                self.stack_add(self.reg.pc);
+                self.reg.pc = 0x20;
+            }
+            0xef => {
+                self.stack_add(self.reg.pc);
+                self.reg.pc = 0x28;
+            }
+            0xf7 => {
+                self.stack_add(self.reg.pc);
+                self.reg.pc = 0x30;
+            }
+            0xff => {
+                self.stack_add(self.reg.pc);
+                self.reg.pc = 0x38;
+            }
+
+            // RET
+            0xc9 => self.reg.pc = self.stack_pop(),
+
+            // RET IF
+            0xc0 | 0xc8 | 0xd0 | 0xd8 => {
+                let cond = match opcode {
+                    0xc0 => !self.reg.get_flag(Z),
+                    0xc8 => self.reg.get_flag(Z),
+                    0xd0 => !self.reg.get_flag(C),
+                    0xd8 => self.reg.get_flag(C),
+                    _ => panic!(""),
+                };
+                if cond {
                     self.reg.pc = self.stack_pop();
                 }
             }
-            0xc9 => {
+
+            // RETI
+            0xd9 => {
                 self.reg.pc = self.stack_pop();
+                self.enable_interrupts = true;
             }
+
+            // Extended Bit Operations
             0xcb => {
                 cbcode = self.mem.borrow().get(self.reg.pc);
                 self.reg.pc += 1;
@@ -1551,59 +1592,17 @@ impl Cpu {
                     0xff => self.reg.a = self.alu_set(self.reg.a, 7),
                 }
             }
-            0xcf => {
-                self.stack_add(self.reg.pc);
-                self.reg.pc = 0x08;
-            }
-            0xd0 => {
-                if !self.reg.get_flag(C) {
-                    self.reg.pc = self.stack_pop();
-                }
-            }
             0xd3 => panic!("Opcode 0xd3 is not implemented"),
-            0xd7 => {
-                self.stack_add(self.reg.pc);
-                self.reg.pc = 0x10;
-            }
-            0xd8 => {
-                if self.reg.get_flag(C) {
-                    self.reg.pc = self.stack_pop();
-                }
-            }
-            0xd9 => {
-                self.reg.pc = self.stack_pop();
-                self.enable_interrupts = true;
-            }
             0xdb => panic!("Opcode 0xdb is not implemented"),
             0xdd => panic!("Opcode 0xdd is not implemented"),
-            0xdf => {
-                self.stack_add(self.reg.pc);
-                self.reg.pc = 0x18;
-            }
             0xe3 => panic!("Opcode 0xe3 is not implemented"),
             0xe4 => panic!("Opcode 0xd4 is not implemented"),
-            0xe7 => {
-                self.stack_add(self.reg.pc);
-                self.reg.pc = 0x20;
-            }
             0xeb => panic!("Opcode 0xeb is not implemented"),
             0xec => panic!("Opcode 0xec is not implemented"),
             0xed => panic!("Opcode 0xed is not implemented"),
-            0xef => {
-                self.stack_add(self.reg.pc);
-                self.reg.pc = 0x28;
-            }
             0xf4 => panic!("Opcode 0xf4 is not implemented"),
-            0xf7 => {
-                self.stack_add(self.reg.pc);
-                self.reg.pc = 0x30;
-            }
             0xfc => panic!("Opcode 0xfc is not implemented"),
             0xfd => panic!("Opcode 0xfd is not implemented"),
-            0xff => {
-                self.stack_add(self.reg.pc);
-                self.reg.pc = 0x38;
-            }
         };
 
         let ecycle = match opcode {
