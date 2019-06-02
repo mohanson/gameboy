@@ -1003,10 +1003,10 @@ impl Cpu {
             0x00 => {}
 
             // HALT
-            0x76 => self.halted = true,
+            0x76 => {},
 
             // STOP
-            0x10 => self.halted = true,
+            0x10 => {},
 
             // DI/EI
             0xf3 => self.enable_interrupts = false,

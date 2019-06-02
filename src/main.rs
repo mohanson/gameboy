@@ -62,6 +62,7 @@ fn main() {
         }
         mother_board.next();
         if mother_board.check_and_reset_gpu_updated() {
+            // println!("DDD");
             let mut i: usize = 0;
             for l in mother_board.mmu.borrow().gpu.data.iter() {
                 for w in l.iter() {
