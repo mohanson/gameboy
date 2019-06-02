@@ -3,61 +3,53 @@ use super::joypad::JoypadKey;
 use super::memory::Memory;
 use super::mmunit::MemoryManagementUnit;
 use super::sound::{AudioPlayer, Sound};
+use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
 
 pub struct MotherBoard {
-    pub mmu: MemoryManagementUnit,
+    pub mmu: Rc<RefCell<MemoryManagementUnit>>,
     pub cpu: Cpu,
 }
 
 impl MotherBoard {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
-        let mmu = MemoryManagementUnit::power_up(path);
-        let cpu = Cpu::power_up(mmu.term);
+        let mmu = Rc::new(RefCell::new(MemoryManagementUnit::power_up(path)));
+        let cpu = Cpu::power_up(mmu.borrow().term, mmu.clone());
         Self { mmu, cpu }
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> u32 {
-        if self.mmu.get(self.cpu.reg.pc) == 0x10 {
-            self.mmu.switch_speed();
+        if self.mmu.borrow().get(self.cpu.reg.pc) == 0x10 {
+            self.mmu.borrow_mut().switch_speed();
         }
-        let cycles = self.cpu.next(&mut self.mmu) * 4;
-        self.mmu.next(cycles);
+        let cycles = self.cpu.step();
+        self.mmu.borrow_mut().next(cycles);
         cycles
     }
 
     pub fn check_and_reset_gpu_updated(&mut self) -> bool {
-        let result = self.mmu.gpu.updated;
-        self.mmu.gpu.updated = false;
+        let result = self.mmu.borrow().gpu.updated;
+        self.mmu.borrow_mut().gpu.updated = false;
         result
     }
 
-    pub fn get_gpu_data(&self) -> Vec<u8> {
-        let mut d = vec![];
-        for l in self.mmu.gpu.data.iter() {
-            for w in l.iter() {
-                d.extend(w);
-            }
-        }
-        d
-    }
-
     pub fn enable_audio(&mut self, player: Box<AudioPlayer>) {
-        self.mmu.sound = Some(Sound::new(player));
+        self.mmu.borrow_mut().sound = Some(Sound::new(player));
     }
 
     pub fn sync_audio(&mut self) {
-        if let Some(ref mut sound) = self.mmu.sound {
+        if let Some(ref mut sound) = self.mmu.borrow_mut().sound {
             sound.sync();
         }
     }
 
     pub fn keyup(&mut self, key: JoypadKey) {
-        self.mmu.joypad.keyup(key);
+        self.mmu.borrow_mut().joypad.keyup(key);
     }
 
     pub fn keydown(&mut self, key: JoypadKey) {
-        self.mmu.joypad.keydown(key);
+        self.mmu.borrow_mut().joypad.keydown(key);
     }
 }

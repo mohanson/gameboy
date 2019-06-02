@@ -36,7 +36,7 @@ Left/Right <--- ||_ O _|   ,-. "._,"|
 
 # Tests
 
-Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. You can find the way how to run tests in `./scripts/test_roms.py`.
+Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. You can find the way how to run tests in `./Cargo.py`.
 
 
 | Test Name    | Result                               |
@@ -46,17 +46,15 @@ Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-te
 
 # Reference
 
-- [https://github.com/gbdev/awesome-gbdev](https://github.com/gbdev/awesome-gbdev)
-- [http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html](http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
-- [https://ladecadence.net/trastero/listado%20juegos%20gameboy.html](https://ladecadence.net/trastero/listado%20juegos%20gameboy.html)
-- [http://romhustler.net/roms/gbc/number](http://romhustler.net/roms/gbc/number)
-- [http://gbdev.gg8.se/wiki/articles/CPU_Comparision_with_Z80](http://gbdev.gg8.se/wiki/articles/CPU_Comparision_with_Z80)
-- [https://github.com/PoschR/Gameboy-Learning-Environment](https://github.com/PoschR/Gameboy-Learning-Environment)
-- [https://mgba-emu.github.io/gbdoc/](https://mgba-emu.github.io/gbdoc/)
-- [http://gbdev.gg8.se/wiki/articles/Main_Page](http://gbdev.gg8.se/wiki/articles/Main_Page)
-- [https://gekkio.fi/files/gb-docs/gbctr.pdf](https://gekkio.fi/files/gb-docs/gbctr.pdf)
-- [http://gameboy.mongenel.com/dmg/asmmemmap.html](http://gameboy.mongenel.com/dmg/asmmemmap.html)
-- [http://bgb.bircd.org/pandocs.htm](http://bgb.bircd.org/pandocs.htm)
+- [Gbdev](http://gbdev.gg8.se/wiki/articles/Main_Page)
+- [Open Game Boy Documentation Project](https://mgba-emu.github.io/gbdoc/)
+- [LR35902 Opcodes](https://rednex.github.io/rgbds/gbz80.7.html)
+- [LR35902 Opcodes Table](http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
+- [GameBoy Memory Map](http://gameboy.mongenel.com/dmg/asmmemmap.html)
+- [Game Boy Technical Data](http://bgb.bircd.org/pandocs.htm)
+- [awesome-gbdev](https://github.com/gbdev/awesome-gbdev)
+- [List of MBC roms](https://ladecadence.net/trastero/listado%20juegos%20gameboy.html)
+- [Roms download](http://romhustler.net/roms/gbc/number)
 
 # Licenses
 
