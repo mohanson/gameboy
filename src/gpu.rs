@@ -233,7 +233,7 @@ pub struct Gpu {
     // ---------- 160
     //        144
     pub data: [[[u8; 3]; SCREEN_W]; SCREEN_H],
-    pub interrupt: u8,
+    pub intf: u8,
     pub term: Term,
     pub updated: bool,
 
@@ -313,7 +313,7 @@ impl Gpu {
         Self {
             blanked: false,
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
-            interrupt: 0,
+            intf: 0,
             term,
             updated: false,
 
@@ -419,7 +419,7 @@ impl Gpu {
             if d != self.dots {
                 self.ly = (self.ly + 1) % 154;
                 if self.stat.enable_ly_interrupt && self.ly == self.ly_compare {
-                    self.interrupt |= 0x02;
+                    self.intf |= 0x02;
                 }
             }
             // The following are typical when the display is enabled:
@@ -450,19 +450,19 @@ impl Gpu {
                 self.render_scan();
                 self.blanked = true;
                 if self.stat.enable_m0_interrupt {
-                    self.interrupt |= 0x02
+                    self.intf |= 0x02
                 }
             }
             1 => {
-                self.interrupt |= 0x01;
+                self.intf |= 0x01;
                 self.updated = true;
                 if self.stat.enable_m1_interrupt {
-                    self.interrupt |= 0x02
+                    self.intf |= 0x02
                 }
             }
             2 => {
                 if self.stat.enable_m2_interrupt {
-                    self.interrupt |= 0x02
+                    self.intf |= 0x02
                 }
             }
             3 => {}

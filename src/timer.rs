@@ -9,7 +9,7 @@ pub struct Timer {
     // Each time when the timer overflows (ie. when TIMA gets bigger than FFh), then an interrupt is requested by
     // setting Bit 2 in the IF Register (FF0F). When that interrupt is enabled, then the CPU will execute it by calling
     // the timer interrupt vector at 0050h.
-    pub interrupt: u8,
+    pub intf: u8,
 
     // This register is incremented at rate of 16384Hz (~16779Hz on SGB). Writing any value to this register resets it
     // to 00h.
@@ -89,7 +89,7 @@ impl Timer {
                 self.tima = self.tima.wrapping_add(1);
                 if self.tima == 0x00 {
                     self.tima = self.tma;
-                    self.interrupt |= 0x04;
+                    self.intf |= 0x04;
                 }
                 self.tmp2 -= self.freq;
             }

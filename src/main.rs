@@ -43,26 +43,25 @@ fn main() {
         }
 
         mother_board.next();
+        if mother_board.check_and_reset_gpu_updated() {
+            let mut i: usize = 0;
+            for l in mother_board.mmu.borrow().gpu.data.iter() {
+                for w in l.iter() {
+                    let b = u32::from(w[0]) << 16;
+                    let g = u32::from(w[1]) << 8;
+                    let r = u32::from(w[2]);
+                    let a = 0xff00_0000;
+
+                    window_buffer[i] = a | b | g | r;
+                    i += 1;
+                }
+            }
+            window.update_with_buffer(window_buffer.as_slice()).unwrap();
+        }
         if mother_board.cpu.flip() {
             if window.is_key_down(minifb::Key::Escape) {
                 break;
             }
-            if mother_board.check_and_reset_gpu_updated() {
-                let mut i: usize = 0;
-                for l in mother_board.mmu.borrow().gpu.data.iter() {
-                    for w in l.iter() {
-                        let b = u32::from(w[0]) << 16;
-                        let g = u32::from(w[1]) << 8;
-                        let r = u32::from(w[2]);
-                        let a = 0xff00_0000;
-
-                        window_buffer[i] = a | b | g | r;
-                        i += 1;
-                    }
-                }
-                window.update_with_buffer(window_buffer.as_slice()).unwrap();
-            }
-
             let keys = vec![
                 (minifb::Key::Right, gameboy::joypad::JoypadKey::Right),
                 (minifb::Key::Up, gameboy::joypad::JoypadKey::Up),
