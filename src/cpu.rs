@@ -63,7 +63,7 @@ pub struct Cpu {
     pub reg: Register,
     pub mem: Rc<RefCell<Memory>>,
     pub halted: bool,
-    pub enable_interrupts: bool,
+    pub ei: bool,
     // In order to simulate real hardware speed
     step_cycles: u32,
     step_zero: time::SystemTime,
@@ -556,32 +556,48 @@ impl Cpu {
             reg: Register::power_up(term),
             mem,
             halted: false,
-            enable_interrupts: true,
+            ei: true,
             step_cycles: 0,
             step_zero: time::SystemTime::now(),
             step_flip: false,
         }
     }
 
-    fn handle_interrupts(&mut self) -> u32 {
-        if !self.enable_interrupts && !self.halted {
+    // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
+    // acknowledges the interrupt setting by the IE register.
+    // 1. When an interrupt is generated, the IF flag will be set.
+    // 2. If the IME flag is set & the corresponding IE flag is set, the following 3 steps are performed.
+    // 3. Reset the IME flag and prevent all interrupts.
+    // 4. The PC (program counter) is pushed onto the stack.
+    // 5. Jump to the starting address of the interrupt.
+    fn hi(&mut self) -> u32 {
+        if !self.halted && !self.ei {
             return 0;
         }
         let intf = self.mem.borrow().get(0xff0f);
         let inte = self.mem.borrow().get(0xffff);
-        let a = intf & inte;
-        if a == 0x00 {
+        let ii = intf & inte;
+        if ii == 0x00 {
             return 0;
         }
         self.halted = false;
-        if !self.enable_interrupts {
+        if !self.ei {
             return 0;
         }
-        self.enable_interrupts = false;
-        let n = a.trailing_zeros();
+        self.ei = false;
+
+        // Consumer an interrupter, the rest is written back to the register
+        let n = ii.trailing_zeros();
         let intf = intf & !(1 << n);
         self.mem.borrow_mut().set(0xff0f, intf);
+
         self.stack_add(self.reg.pc);
+        // Set the PC to correspond interrupt process program:
+        // V-Blank: 0x40
+        // LCD: 0x48
+        // TIMER: 0x50
+        // JOYPAD: 0x60
+        // Serial: 0x58
         self.reg.pc = 0x0040 | ((n as u16) << 3);
         4
     }
@@ -1010,8 +1026,8 @@ impl Cpu {
             0x10 => {}
 
             // DI/EI
-            0xf3 => self.enable_interrupts = false,
-            0xfb => self.enable_interrupts = true,
+            0xf3 => self.ei = false,
+            0xfb => self.ei = true,
 
             // RLCA
             0x07 => {
@@ -1154,7 +1170,7 @@ impl Cpu {
             // RETI
             0xd9 => {
                 self.reg.pc = self.stack_pop();
-                self.enable_interrupts = true;
+                self.ei = true;
             }
 
             // Extended Bit Operations
@@ -1666,14 +1682,14 @@ impl Cpu {
     }
 
     pub fn next(&mut self) -> u32 {
-        let c = self.handle_interrupts();
+        let c = self.hi();
         if c != 0 {
             return c;
         }
         if self.halted {
-            return OP_CYCLES[0] * 4;
+            return OP_CYCLES[0];
         }
-        self.ex() * 4
+        self.ex()
     }
 
     // Function step simulates real hardware execution speed, by limiting the frequency of the function next().
