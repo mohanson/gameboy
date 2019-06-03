@@ -64,10 +64,6 @@ pub struct Cpu {
     pub mem: Rc<RefCell<Memory>>,
     pub halted: bool,
     pub ei: bool,
-    // In order to simulate real hardware speed
-    step_cycles: u32,
-    step_zero: time::SystemTime,
-    step_flip: bool,
 }
 
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
@@ -557,9 +553,6 @@ impl Cpu {
             mem,
             halted: false,
             ei: true,
-            step_cycles: 0,
-            step_zero: time::SystemTime::now(),
-            step_flip: false,
         }
     }
 
@@ -1691,9 +1684,29 @@ impl Cpu {
         }
         self.ex()
     }
+}
 
-    // Function step simulates real hardware execution speed, by limiting the frequency of the function next().
-    pub fn step(&mut self) -> u32 {
+// In order to simulate real hardware speed.
+pub struct CpuRtc {
+    pub cpu: Cpu,
+    step_cycles: u32,
+    step_zero: time::SystemTime,
+    step_flip: bool,
+}
+
+impl CpuRtc {
+    pub fn power_up(term: Term, mem: Rc<RefCell<Memory>>) -> Self {
+        let cpu = Cpu::power_up(term, mem);
+        Self {
+            cpu,
+            step_cycles: 0,
+            step_zero: time::SystemTime::now(),
+            step_flip: false,
+        }
+    }
+
+    // Function next simulates real hardware execution speed, by limiting the frequency of the function cpu.next().
+    pub fn next(&mut self) -> u32 {
         if self.step_cycles > STEP_CYCLES {
             self.step_flip = true;
             self.step_cycles -= STEP_CYCLES;
@@ -1706,7 +1719,7 @@ impl Cpu {
                 .checked_add(time::Duration::from_millis(u64::from(STEP_TIME)))
                 .unwrap();
         }
-        let cycles = self.next();
+        let cycles = self.cpu.next();
         self.step_cycles += cycles;
         cycles
     }
