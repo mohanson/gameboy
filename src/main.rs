@@ -38,11 +38,15 @@ fn main() {
     window.update_with_buffer(window_buffer.as_slice()).unwrap();
 
     loop {
+        // Stop the program, if the GUI is closed by the user
         if !window.is_open() {
             break;
         }
 
+        // Execute an instruction
         mother_board.next();
+
+        // Update the window
         if mother_board.check_and_reset_gpu_updated() {
             let mut i: usize = 0;
             for l in mother_board.mmu.borrow().gpu.data.iter() {
@@ -58,26 +62,30 @@ fn main() {
             }
             window.update_with_buffer(window_buffer.as_slice()).unwrap();
         }
-        if mother_board.cpu.flip() {
-            if window.is_key_down(minifb::Key::Escape) {
-                break;
-            }
-            let keys = vec![
-                (minifb::Key::Right, gameboy::joypad::JoypadKey::Right),
-                (minifb::Key::Up, gameboy::joypad::JoypadKey::Up),
-                (minifb::Key::Left, gameboy::joypad::JoypadKey::Left),
-                (minifb::Key::Down, gameboy::joypad::JoypadKey::Down),
-                (minifb::Key::Z, gameboy::joypad::JoypadKey::A),
-                (minifb::Key::X, gameboy::joypad::JoypadKey::B),
-                (minifb::Key::Space, gameboy::joypad::JoypadKey::Select),
-                (minifb::Key::Enter, gameboy::joypad::JoypadKey::Start),
-            ];
-            for (rk, vk) in &keys {
-                if window.is_key_down(*rk) {
-                    mother_board.mmu.borrow_mut().joypad.keydown(vk.clone());
-                } else {
-                    mother_board.mmu.borrow_mut().joypad.keyup(vk.clone());
-                }
+
+        if !mother_board.cpu.flip() {
+            continue;
+        }
+
+        // Handling keyboard events
+        if window.is_key_down(minifb::Key::Escape) {
+            break;
+        }
+        let keys = vec![
+            (minifb::Key::Right, gameboy::joypad::JoypadKey::Right),
+            (minifb::Key::Up, gameboy::joypad::JoypadKey::Up),
+            (minifb::Key::Left, gameboy::joypad::JoypadKey::Left),
+            (minifb::Key::Down, gameboy::joypad::JoypadKey::Down),
+            (minifb::Key::Z, gameboy::joypad::JoypadKey::A),
+            (minifb::Key::X, gameboy::joypad::JoypadKey::B),
+            (minifb::Key::Space, gameboy::joypad::JoypadKey::Select),
+            (minifb::Key::Enter, gameboy::joypad::JoypadKey::Start),
+        ];
+        for (rk, vk) in &keys {
+            if window.is_key_down(*rk) {
+                mother_board.mmu.borrow_mut().joypad.keydown(vk.clone());
+            } else {
+                mother_board.mmu.borrow_mut().joypad.keyup(vk.clone());
             }
         }
     }
