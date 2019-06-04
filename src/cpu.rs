@@ -1675,26 +1675,29 @@ impl Cpu {
     }
 
     pub fn next(&mut self) -> u32 {
-        let c = self.hi();
-        if c != 0 {
-            return c;
-        }
-        if self.halted {
-            return OP_CYCLES[0];
-        }
-        self.ex()
+        let mac = {
+            let c = self.hi();
+            if c != 0 {
+                c
+            } else if self.halted {
+                OP_CYCLES[0]
+            } else {
+                self.ex()
+            }
+        };
+        mac * 4
     }
 }
 
-// In order to simulate real hardware speed.
-pub struct CpuRtc {
+// Real time cpu provided to simulate real hardware speed.
+pub struct Rtc {
     pub cpu: Cpu,
     step_cycles: u32,
     step_zero: time::SystemTime,
     step_flip: bool,
 }
 
-impl CpuRtc {
+impl Rtc {
     pub fn power_up(term: Term, mem: Rc<RefCell<Memory>>) -> Self {
         let cpu = Cpu::power_up(term, mem);
         Self {
