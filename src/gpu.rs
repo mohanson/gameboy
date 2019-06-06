@@ -23,10 +23,6 @@ pub enum HdmaMode {
 }
 
 pub struct Hdma {
-    src_h: u8,
-    src_l: u8,
-    dst_h: u8,
-    dst_l: u8,
     // These two registers specify the address at which the transfer will read data from. Normally, this should be
     // either in ROM, SRAM or WRAM, thus either in range 0000-7FF0 or A000-DFF0. [Note : this has yet to be tested on
     // Echo RAM, OAM, FEXX, IO and HRAM]. Trying to specify a source address in VRAM will cause garbage to be copied.
@@ -43,12 +39,8 @@ pub struct Hdma {
 impl Hdma {
     pub fn power_up() -> Self {
         Self {
-            src_h: 0x00,
-            src_l: 0x00,
-            dst_h: 0x00,
-            dst_l: 0x00,
             src: 0x0000,
-            dst: 0x0000,
+            dst: 0x8000,
             active: false,
             mode: HdmaMode::Gdma,
             remain: 0x00,
@@ -59,10 +51,10 @@ impl Hdma {
 impl Memory for Hdma {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0xff51 => self.src_h,
-            0xff52 => self.src_l,
-            0xff43 => self.dst_h,
-            0xff54 => self.dst_l,
+            0xff51 => (self.src >> 8) as u8,
+            0xff52 => self.src as u8,
+            0xff43 => (self.dst >> 8) as u8,
+            0xff54 => self.dst as u8,
             0xff55 => self.remain | if self.active { 0x00 } else { 0x80 },
             _ => panic!(""),
         }
@@ -70,10 +62,10 @@ impl Memory for Hdma {
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xff51 => self.src_h = v,
-            0xff52 => self.src_l = v & 0xf0,
-            0xff53 => self.dst_h = v & 0x1f,
-            0xff54 => self.dst_l = v & 0xf0,
+            0xff51 => self.src = (u16::from(v) << 8) | (self.src & 0x00ff),
+            0xff52 => self.src = (self.src & 0xff00) | u16::from(v & 0xf0),
+            0xff53 => self.dst = 0x8000 | (u16::from(v & 0x1f) << 8) | (self.dst & 0x00ff),
+            0xff54 => self.dst = (self.dst & 0xff00) | u16::from(v & 0xf0),
             0xff55 => {
                 if self.active && self.mode == HdmaMode::Hdma {
                     if v & 0x80 == 0x00 {
@@ -91,11 +83,6 @@ impl Memory for Hdma {
             }
             _ => panic!(""),
         };
-        match a {
-            0xff51...0xff52 => self.src = (u16::from(self.src_h) << 8) | u16::from(self.src_l),
-            0xff53...0xff54 => self.dst = (u16::from(self.dst_h) << 8) | u16::from(self.dst_l) | 0x8000,
-            _ => {}
-        }
     }
 }
 
