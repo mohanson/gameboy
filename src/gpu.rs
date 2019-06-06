@@ -258,6 +258,13 @@ pub struct Gpu {
 
     // This register assigns gray shades to the color numbers of the BG and Window tiles.
     bgp: u8,
+    // This register assigns gray shades for sprite palette 0. It works exactly as BGP (FF47), except that the lower
+    // two bits aren't used because sprite data 00 is transparent.
+    op0: u8,
+    // This register assigns gray shades for sprite palette 1. It works exactly as BGP (FF47), except that the lower
+    // two bits aren't used because sprite data 00 is transparent.
+    op1: u8,
+
     bgprio: [PrioType; SCREEN_W],
     cbgpal_inc: bool,
     cbgpal_ind: u8,
@@ -299,12 +306,6 @@ pub struct Gpu {
     // Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
     // Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
     oam: [u8; 0xa0],
-    // This register assigns gray shades for sprite palette 0. It works exactly as BGP (FF47), except that the lower
-    // two bits aren't used because sprite data 00 is transparent.
-    op0: u8,
-    // This register assigns gray shades for sprite palette 1. It works exactly as BGP (FF47), except that the lower
-    // two bits aren't used because sprite data 00 is transparent.
-    op1: u8,
     ram: [[u8; 0x2000]; 0x02],
     ram_bank: usize,
 }
