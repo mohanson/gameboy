@@ -228,6 +228,7 @@ impl Memory for MemoryManagementUnit {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
                 // table).
                 // See: http://gbdev.gg8.se/wiki/articles/Video_Display#FF46_-_DMA_-_DMA_Transfer_and_Start_Address_.28R.2FW.29
+                assert!(v <= 0xf1);
                 let base = u16::from(v) << 8;
                 for i in 0..0xa0 {
                     let b = self.get(base + i);
