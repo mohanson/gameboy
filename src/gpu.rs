@@ -237,6 +237,25 @@ pub struct Gpu {
     pub term: Term,
     pub updated: bool,
 
+    lcdc: Lcdc,
+    stat: Stat,
+    // Scroll Y (R/W), Scroll X (R/W)
+    // Specifies the position in the 256x256 pixels BG map (32x32 tiles) which is to be displayed at the upper/left LCD
+    // display position. Values in range from 0-255 may be used for X/Y each, the video controller automatically wraps
+    // back to the upper (left) position in BG map when drawing exceeds the lower (right) border of the BG map area.
+    sy: u8,
+    sx: u8,
+    // Window Y Position (R/W), Window X Position minus 7 (R/W)
+    wy: u8,
+    wx: u8,
+    // The LY indicates the vertical line to which the present data is transferred to the LCD Driver. The LY can take
+    // on any value between 0 through 153. The values between 144 and 153 indicate the V-Blank period. Writing will
+    // reset the counter.
+    ly: u8,
+    // The Gameboy permanently compares the value of the LYC and LY registers. When both values are identical, the
+    // coincident bit in the STAT register becomes set, and (if enabled) a STAT interrupt is requested.
+    lc: u8,
+
     // This register assigns gray shades to the color numbers of the BG and Window tiles.
     bgp: u8,
     bgprio: [PrioType; SCREEN_W],
@@ -250,14 +269,6 @@ pub struct Gpu {
     // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
     // Scanlines 144 through 153 are mode 1.
     dots: u32,
-    lcdc: Lcdc,
-    // The LY indicates the vertical line to which the present data is transferred to the LCD Driver. The LY can take
-    // on any value between 0 through 153. The values between 144 and 153 indicate the V-Blank period. Writing will
-    // reset the counter.
-    ly: u8,
-    // The Gameboy permanently compares the value of the LYC and LY registers. When both values are identical, the
-    // coincident bit in the STAT register becomes set, and (if enabled) a STAT interrupt is requested.
-    ly_compare: u8,
     // VRAM Sprite Attribute Table (OAM)
     // Gameboy video controller can display up to 40 sprites either in 8x8 or in 8x16 pixels. Because of a limitation of
     // hardware, only ten sprites can be displayed per scan line. Sprite patterns have the same format as BG tiles, but
@@ -296,16 +307,6 @@ pub struct Gpu {
     op1: u8,
     ram: [[u8; 0x2000]; 0x02],
     ram_bank: usize,
-    // Scroll Y (R/W), Scroll X (R/W)
-    // Specifies the position in the 256x256 pixels BG map (32x32 tiles) which is to be displayed at the upper/left LCD
-    // display position. Values in range from 0-255 may be used for X/Y each, the video controller automatically wraps
-    // back to the upper (left) position in BG map when drawing exceeds the lower (right) border of the BG map area.
-    sx: u8,
-    sy: u8,
-    stat: Stat,
-    // Window Y Position (R/W), Window X Position minus 7 (R/W)
-    wx: u8,
-    wy: u8,
 }
 
 impl Gpu {
@@ -328,7 +329,7 @@ impl Gpu {
             dots: 0,
             lcdc: Lcdc::power_up(),
             ly: 0x00,
-            ly_compare: 0x00,
+            lc: 0x00,
             oam: [0x00; 0xa0],
             op0: 0x00,
             op1: 0x01,
@@ -418,7 +419,7 @@ impl Gpu {
             self.dots %= 456;
             if d != self.dots {
                 self.ly = (self.ly + 1) % 154;
-                if self.stat.enable_ly_interrupt && self.ly == self.ly_compare {
+                if self.stat.enable_ly_interrupt && self.ly == self.lc {
                     self.intf |= 0x02;
                 }
             }
@@ -646,13 +647,13 @@ impl Memory for Gpu {
                 let bit5 = if self.stat.enable_m2_interrupt { 0x20 } else { 0x00 };
                 let bit4 = if self.stat.enable_m1_interrupt { 0x10 } else { 0x00 };
                 let bit3 = if self.stat.enable_m0_interrupt { 0x08 } else { 0x00 };
-                let bit2 = if self.ly == self.ly_compare { 0x04 } else { 0x00 };
+                let bit2 = if self.ly == self.lc { 0x04 } else { 0x00 };
                 bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
             0xff42 => self.sy,
             0xff43 => self.sx,
             0xff44 => self.ly,
-            0xff45 => self.ly_compare,
+            0xff45 => self.lc,
             0xff47 => self.bgp,
             0xff48 => self.op0,
             0xff49 => self.op1,
@@ -715,7 +716,7 @@ impl Memory for Gpu {
             0xff42 => self.sy = v,
             0xff43 => self.sx = v,
             0xff44 => {}
-            0xff45 => self.ly_compare = v,
+            0xff45 => self.lc = v,
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,
             0xff49 => self.op1 = v,
