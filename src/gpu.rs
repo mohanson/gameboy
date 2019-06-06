@@ -178,6 +178,39 @@ impl Stat {
     }
 }
 
+// This register is used to address a byte in the CGBs Background Palette Memory. Each two byte in that memory define a
+// color value. The first 8 bytes define Color 0-3 of Palette 0 (BGP0), and so on for BGP1-7.
+//  Bit 0-5   Index (00-3F)
+//  Bit 7     Auto Increment  (0=Disabled, 1=Increment after Writing)
+// Data can be read/written to/from the specified index address through Register FF69. When the Auto Increment bit is
+// set then the index is automatically incremented after each <write> to FF69. Auto Increment has no effect when
+// <reading> from FF69, so the index must be manually incremented in that case. Writing to FF69 during rendering still
+// causes auto-increment to occur.
+// Unlike the following, this register can be accessed outside V-Blank and H-Blank.
+struct Bgpi {
+    i: u8,
+    auto_increment: bool,
+}
+
+impl Bgpi {
+    fn power_up() -> Self {
+        Self {
+            i: 0x00,
+            auto_increment: false,
+        }
+    }
+
+    fn get(&self) -> u8 {
+        let a = if self.auto_increment { 0x80 } else { 0x00 };
+        a | self.i
+    }
+
+    fn set(&mut self, v: u8) {
+        self.auto_increment = v & 0x80 != 0x00;
+        self.i = v & 0x3f;
+    }
+}
+
 pub enum GrayShades {
     White = 0xff,
     Light = 0xc0,
@@ -265,13 +298,24 @@ pub struct Gpu {
     // two bits aren't used because sprite data 00 is transparent.
     op1: u8,
 
+    cbgpi: Bgpi,
+    // This register allows to read/write data to the CGBs Background Palette Memory, addressed through Register FF68.
+    // Each color is defined by two bytes (Bit 0-7 in first byte).
+    //     Bit 0-4   Red Intensity   (00-1F)
+    //     Bit 5-9   Green Intensity (00-1F)
+    //     Bit 10-14 Blue Intensity  (00-1F)
+    // Much like VRAM, data in Palette Memory cannot be read/written during the time when the LCD Controller is
+    // reading from it. (That is when the STAT register indicates Mode 3). Note: All background colors are initialized
+    // as white by the boot ROM, but it's a good idea to initialize at least one color yourself (for example if you
+    // include a soft-reset mechanic).
+    //
+    // Note: Type [[[u8; 3]; 4]; 8] equals with [u8; 64].
+    cbgpd: [[[u8; 3]; 4]; 8],
+
+    cobpi: Bgpi,
+    cobpd: [[[u8; 3]; 4]; 8],
+
     bgprio: [PrioType; SCREEN_W],
-    cbgpal_inc: bool,
-    cbgpal_ind: u8,
-    cbgpal: [[[u8; 3]; 4]; 8],
-    csprit_inc: bool,
-    csprit_ind: u8,
-    csprit: [[[u8; 3]; 4]; 8],
     // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots, or
     // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
     // Scanlines 144 through 153 are mode 1.
@@ -330,13 +374,11 @@ impl Gpu {
             bgp: 0x00,
             op0: 0x00,
             op1: 0x01,
+            cbgpi: Bgpi::power_up(),
+            cbgpd: [[[0u8; 3]; 4]; 8],
+            cobpi: Bgpi::power_up(),
+            cobpd: [[[0u8; 3]; 4]; 8],
             bgprio: [PrioType::Else; SCREEN_W],
-            cbgpal_inc: false,
-            cbgpal_ind: 0,
-            cbgpal: [[[0u8; 3]; 4]; 8],
-            csprit_inc: false,
-            csprit_ind: 0,
-            csprit: [[[0u8; 3]; 4]; 8],
             dots: 0,
             oam: [0x00; 0xa0],
             ram: [[0x00; 0x2000]; 0x02],
@@ -556,9 +598,9 @@ impl Gpu {
             };
 
             if self.term == Term::GBC {
-                let r = self.cbgpal[tile_attr.palette_number_1][color_num][0];
-                let g = self.cbgpal[tile_attr.palette_number_1][color_num][1];
-                let b = self.cbgpal[tile_attr.palette_number_1][color_num][2];
+                let r = self.cbgpd[tile_attr.palette_number_1][color_num][0];
+                let g = self.cbgpd[tile_attr.palette_number_1][color_num][1];
+                let b = self.cbgpd[tile_attr.palette_number_1][color_num][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
                 let color = Self::get_gray_shades(self.bgp, color_num) as u8;
@@ -617,9 +659,9 @@ impl Gpu {
                     {
                         continue;
                     }
-                    let r = self.csprit[tile_attr.palette_number_1][color_mum][0];
-                    let g = self.csprit[tile_attr.palette_number_1][color_mum][1];
-                    let b = self.csprit[tile_attr.palette_number_1][color_mum][2];
+                    let r = self.cobpd[tile_attr.palette_number_1][color_mum][0];
+                    let g = self.cobpd[tile_attr.palette_number_1][color_mum][1];
+                    let b = self.cobpd[tile_attr.palette_number_1][color_mum][2];
                     self.set_rgb((sprite_x + x) as usize, r, g, b);
                 } else {
                     if tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero {
@@ -661,35 +703,35 @@ impl Memory for Gpu {
             0xff4a => self.wy,
             0xff4b => self.wx,
             0xff4f => self.ram_bank as u8,
-            0xff68 => (if self.cbgpal_inc { 0x80 } else { 0x00 }) | self.cbgpal_ind,
+            0xff68 => self.cbgpi.get(),
             0xff69 => {
-                let r = self.cbgpal_ind as usize >> 3;
-                let c = self.cbgpal_ind as usize >> 1 & 0x3;
-                if self.cbgpal_ind & 0x01 == 0x00 {
-                    let a = self.cbgpal[r][c][0];
-                    let b = self.cbgpal[r][c][1] << 5;
+                let r = self.cbgpi.i as usize >> 3;
+                let c = self.cbgpi.i as usize >> 1 & 0x3;
+                if self.cbgpi.i & 0x01 == 0x00 {
+                    let a = self.cbgpd[r][c][0];
+                    let b = self.cbgpd[r][c][1] << 5;
                     a | b
                 } else {
-                    let a = self.cbgpal[r][c][1] >> 3;
-                    let b = self.cbgpal[r][c][2] << 2;
+                    let a = self.cbgpd[r][c][1] >> 3;
+                    let b = self.cbgpd[r][c][2] << 2;
                     a | b
                 }
             }
-            0xff6a => (if self.csprit_inc { 0x80 } else { 0x00 }) | self.csprit_ind,
+            0xff6a => self.cobpi.get(),
             0xff6b => {
-                let r = self.csprit_ind as usize >> 3;
-                let c = self.csprit_ind as usize >> 1 & 0x3;
-                if self.csprit_ind & 0x01 == 0x00 {
-                    let a = self.csprit[r][c][0];
-                    let b = self.csprit[r][c][1] << 5;
+                let r = self.cobpi.i as usize >> 3;
+                let c = self.cobpi.i as usize >> 1 & 0x3;
+                if self.cobpi.i & 0x01 == 0x00 {
+                    let a = self.cobpd[r][c][0];
+                    let b = self.cobpd[r][c][1] << 5;
                     a | b
                 } else {
-                    let a = self.csprit[r][c][1] >> 3;
-                    let b = self.csprit[r][c][2] << 2;
+                    let a = self.cobpd[r][c][1] >> 3;
+                    let b = self.cobpd[r][c][2] << 2;
                     a | b
                 }
             }
-            _ => panic!("Unsupported address"),
+            _ => panic!(""),
         }
     }
 
@@ -724,43 +766,39 @@ impl Memory for Gpu {
             0xff4a => self.wy = v,
             0xff4b => self.wx = v,
             0xff4f => self.ram_bank = (v & 0x01) as usize,
-            0xff68 => {
-                self.cbgpal_ind = v & 0x3f;
-                self.cbgpal_inc = v & 0x80 != 0x00;
-            }
+            0xff68 => self.cbgpi.set(v),
             0xff69 => {
-                let r = self.cbgpal_ind as usize >> 3;
-                let c = self.cbgpal_ind as usize >> 1 & 0x03;
-                if self.cbgpal_ind & 0x01 == 0x00 {
-                    self.cbgpal[r][c][0] = v & 0x1f;
-                    self.cbgpal[r][c][1] = (self.cbgpal[r][c][1] & 0x18) | (v >> 5);
+                let r = self.cbgpi.i as usize >> 3;
+                let c = self.cbgpi.i as usize >> 1 & 0x03;
+                if self.cbgpi.i & 0x01 == 0x00 {
+                    self.cbgpd[r][c][0] = v & 0x1f;
+                    self.cbgpd[r][c][1] = (self.cbgpd[r][c][1] & 0x18) | (v >> 5);
                 } else {
-                    self.cbgpal[r][c][1] = (self.cbgpal[r][c][1] & 0x07) | ((v & 0x03) << 3);
-                    self.cbgpal[r][c][2] = (v >> 2) & 0x1f;
+                    self.cbgpd[r][c][1] = (self.cbgpd[r][c][1] & 0x07) | ((v & 0x03) << 3);
+                    self.cbgpd[r][c][2] = (v >> 2) & 0x1f;
                 }
-                if self.cbgpal_inc {
-                    self.cbgpal_ind = (self.cbgpal_ind + 1) & 0x3f;
-                };
+                if self.cbgpi.auto_increment {
+                    self.cbgpi.i += 0x01;
+                    self.cbgpi.i &= 0x3f;
+                }
             }
-            0xff6a => {
-                self.csprit_ind = v & 0x3f;
-                self.csprit_inc = v & 0x80 != 0x00;
-            }
+            0xff6a => self.cobpi.set(v),
             0xff6b => {
-                let r = self.csprit_ind as usize >> 3;
-                let c = self.csprit_ind as usize >> 1 & 0x03;
-                if self.csprit_ind & 0x01 == 0x00 {
-                    self.csprit[r][c][0] = v & 0x1f;
-                    self.csprit[r][c][1] = (self.csprit[r][c][1] & 0x18) | (v >> 5);
+                let r = self.cobpi.i as usize >> 3;
+                let c = self.cobpi.i as usize >> 1 & 0x03;
+                if self.cobpi.i & 0x01 == 0x00 {
+                    self.cobpd[r][c][0] = v & 0x1f;
+                    self.cobpd[r][c][1] = (self.cobpd[r][c][1] & 0x18) | (v >> 5);
                 } else {
-                    self.csprit[r][c][1] = (self.csprit[r][c][1] & 0x07) | ((v & 0x03) << 3);
-                    self.csprit[r][c][2] = (v >> 2) & 0x1f;
+                    self.cobpd[r][c][1] = (self.cobpd[r][c][1] & 0x07) | ((v & 0x03) << 3);
+                    self.cobpd[r][c][2] = (v >> 2) & 0x1f;
                 }
-                if self.csprit_inc {
-                    self.csprit_ind = (self.csprit_ind + 1) & 0x3f;
-                };
+                if self.cobpi.auto_increment {
+                    self.cobpi.i += 0x01;
+                    self.cobpi.i &= 0x3f;
+                }
             }
-            _ => panic!("Unsupported address"),
+            _ => panic!(""),
         }
     }
 }
