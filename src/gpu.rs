@@ -520,10 +520,11 @@ impl Gpu {
     }
 
     fn draw_bg(&mut self) {
-        let using_window = self.lcdc.bit5() && self.wy <= self.ly;
+        let show_window = self.lcdc.bit5() && self.wy <= self.ly;
         let tile_base = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };
 
-        let py = if using_window {
+        let wx = self.wx.wrapping_sub(7);
+        let py = if show_window {
             self.ly.wrapping_sub(self.wy)
         } else {
             self.sy.wrapping_add(self.ly)
@@ -531,27 +532,27 @@ impl Gpu {
         let ty = (u16::from(py) >> 3) & 31;
 
         for x in 0..SCREEN_W {
-            // Translate the current x pos to window space if necessary
-            let px = if using_window && x as u8 >= (self.wx - 7) {
-                x as u8 - (self.wx - 7)
+            let px = if show_window && x as u8 >= wx {
+                x as u8 - wx
             } else {
                 self.sx.wrapping_add(x as u8)
             };
             let tx = (u16::from(px) >> 3) & 31;
 
-            let bg = if using_window && x as u8 >= (self.wx - 7) {
+            // Background memory base addr.
+            let bg_base = if show_window && x as u8 >= wx {
                 if self.lcdc.bit6() {
                     0x9c00
                 } else {
                     0x9800
                 }
             } else if self.lcdc.bit3() {
-                0x9C00
+                0x9c00
             } else {
                 0x9800
             };
 
-            let tile_address = bg + ty * 32 + tx;
+            let tile_address = bg_base + ty * 32 + tx;
             let tile_num = self.get_ram0(tile_address);
             let tile_location = tile_base
                 + (if self.lcdc.bit4() {
