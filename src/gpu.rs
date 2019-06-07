@@ -255,7 +255,6 @@ pub const SCREEN_W: usize = 160;
 pub const SCREEN_H: usize = 144;
 
 pub struct Gpu {
-    pub blanked: bool,
     // Digital image with mode RGB. Size = 144 * 160 * 3.
     // 3---------
     // ----------
@@ -265,7 +264,8 @@ pub struct Gpu {
     pub data: [[[u8; 3]; SCREEN_W]; SCREEN_H],
     pub intf: u8,
     pub term: Term,
-    pub updated: bool,
+    pub h_blank: bool,
+    pub v_blank: bool,
 
     lcdc: Lcdc,
     stat: Stat,
@@ -355,11 +355,11 @@ pub struct Gpu {
 impl Gpu {
     pub fn power_up(term: Term) -> Self {
         Self {
-            blanked: false,
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
             intf: 0,
             term,
-            updated: false,
+            h_blank: false,
+            v_blank: false,
 
             lcdc: Lcdc::power_up(),
             stat: Stat::power_up(),
@@ -441,11 +441,19 @@ impl Gpu {
         if !self.lcdc.bit7() {
             return;
         }
-        self.blanked = false;
+        self.h_blank = false;
 
         // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots,
         // or 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456
         // dots. Scanlines 144 through 153 are mode 1.
+        //
+        // 1 scanline = 456 dots
+        //
+        // The following are typical when the display is enabled:
+        // Mode 2  2_____2_____2_____2_____2_____2___________________2____
+        // Mode 3  _33____33____33____33____33____33__________________3___
+        // Mode 0  ___000___000___000___000___000___000________________000
+        // Mode 1  ____________________________________11111111111111_____
         if cycles == 0 {
             return;
         }
@@ -464,56 +472,40 @@ impl Gpu {
                     self.intf |= 0x02;
                 }
             }
-            // The following are typical when the display is enabled:
-            // Mode 2  2_____2_____2_____2_____2_____2___________________2____
-            // Mode 3  _33____33____33____33____33____33__________________3___
-            // Mode 0  ___000___000___000___000___000___000________________000
-            // Mode 1  ____________________________________11111111111111_____
             if self.ly >= 144 {
-                self.ensure_mode(1);
-            } else if self.dots <= 80 {
-                self.ensure_mode(2);
-            } else if self.dots <= (80 + 172) {
-                self.ensure_mode(3);
-            } else {
-                self.ensure_mode(0);
-            }
-        }
-    }
-
-    fn ensure_mode(&mut self, mode: u8) {
-        if self.stat.mode == mode {
-            return;
-        }
-        self.stat.mode = mode;
-
-        match self.stat.mode {
-            0 => {
-                self.render_scan();
-                self.blanked = true;
-                if self.stat.enable_m0_interrupt {
-                    self.intf |= 0x02
+                if self.stat.mode == 1 {
+                    continue;
                 }
-            }
-            1 => {
+                self.stat.mode = 1;
+                self.v_blank = true;
                 self.intf |= 0x01;
-                self.updated = true;
                 if self.stat.enable_m1_interrupt {
                     self.intf |= 0x02
                 }
-            }
-            2 => {
+            } else if self.dots <= 80 {
+                if self.stat.mode == 2 {
+                    continue;
+                }
+                self.stat.mode = 2;
                 if self.stat.enable_m2_interrupt {
                     self.intf |= 0x02
                 }
+            } else if self.dots <= (80 + 172) {
+                self.stat.mode = 3;
+            } else {
+                if self.stat.mode == 0 {
+                    continue;
+                }
+                self.stat.mode = 0;
+                self.h_blank = true;
+                if self.stat.enable_m0_interrupt {
+                    self.intf |= 0x02
+                }
+                self.render_scan();
             }
-            3 => {}
-            _ => panic!(""),
-        };
+        }
     }
-}
 
-impl Gpu {
     fn render_scan(&mut self) {
         for x in 0..SCREEN_W {
             self.set_gre(x, 0xff);
@@ -745,7 +737,7 @@ impl Memory for Gpu {
                     self.stat.mode = 0;
                     // Clean screen.
                     self.data = [[[0xffu8; 3]; SCREEN_W]; SCREEN_H];
-                    self.updated = true;
+                    self.v_blank = true;
                 }
             }
             0xff41 => {

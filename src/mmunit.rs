@@ -146,7 +146,7 @@ impl MemoryManagementUnit {
                 len * 8
             }
             HdmaMode::Hdma => {
-                if !self.gpu.blanked {
+                if !self.gpu.h_blank {
                     return 0;
                 }
                 self.run_dma_hrampart();

@@ -28,8 +28,8 @@ impl MotherBoard {
     }
 
     pub fn check_and_reset_gpu_updated(&mut self) -> bool {
-        let result = self.mmu.borrow().gpu.updated;
-        self.mmu.borrow_mut().gpu.updated = false;
+        let result = self.mmu.borrow().gpu.v_blank;
+        self.mmu.borrow_mut().gpu.v_blank = false;
         result
     }
 

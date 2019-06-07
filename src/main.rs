@@ -89,4 +89,6 @@ fn main() {
             }
         }
     }
+
+    mother_board.mmu.borrow_mut().cartridge.sav();
 }
