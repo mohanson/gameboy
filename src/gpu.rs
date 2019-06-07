@@ -312,6 +312,9 @@ pub struct Gpu {
     cobpi: Bgpi,
     cobpd: [[[u8; 3]; 4]; 8],
 
+    ram: [u8; 0x4000],
+    ram_bank: usize,
+
     bgprio: [PrioType; SCREEN_W],
     // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots, or
     // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
@@ -347,8 +350,6 @@ pub struct Gpu {
     // Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
     // Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
     oam: [u8; 0xa0],
-    ram: [u8; 0x4000],
-    ram_bank: usize,
 }
 
 impl Gpu {
@@ -375,11 +376,11 @@ impl Gpu {
             cbgpd: [[[0u8; 3]; 4]; 8],
             cobpi: Bgpi::power_up(),
             cobpd: [[[0u8; 3]; 4]; 8],
+            ram: [0x00; 0x4000],
+            ram_bank: 0x00,
             bgprio: [PrioType::Else; SCREEN_W],
             dots: 0,
             oam: [0x00; 0xa0],
-            ram: [0x00; 0x4000],
-            ram_bank: 0x00,
         }
     }
 
