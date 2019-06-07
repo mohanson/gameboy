@@ -347,7 +347,7 @@ pub struct Gpu {
     // Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
     // Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
     oam: [u8; 0xa0],
-    ram: [[u8; 0x2000]; 0x02],
+    ram: [u8; 0x4000],
     ram_bank: usize,
 }
 
@@ -378,17 +378,17 @@ impl Gpu {
             bgprio: [PrioType::Else; SCREEN_W],
             dots: 0,
             oam: [0x00; 0xa0],
-            ram: [[0x00; 0x2000]; 0x02],
+            ram: [0x00; 0x4000],
             ram_bank: 0x00,
         }
     }
 
     fn get_ram0(&self, a: u16) -> u8 {
-        self.ram[0][a as usize - 0x8000]
+        self.ram[a as usize - 0x8000]
     }
 
     fn get_ram1(&self, a: u16) -> u8 {
-        self.ram[1][a as usize - 0x8000]
+        self.ram[a as usize - 0x6000]
     }
 
     // This register assigns gray shades to the color numbers of the BG and Window tiles.
@@ -679,7 +679,7 @@ impl Gpu {
 impl Memory for Gpu {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x8000...0x9fff => self.ram[self.ram_bank][a as usize - 0x8000],
+            0x8000...0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000],
             0xfe00...0xfe9f => self.oam[a as usize - 0xfe00],
             0xff40 => self.lcdc.data,
             0xff41 => {
@@ -734,7 +734,7 @@ impl Memory for Gpu {
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0x8000...0x9fff => self.ram[self.ram_bank][a as usize - 0x8000] = v,
+            0x8000...0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v,
             0xfe00...0xfe9f => self.oam[a as usize - 0xfe00] = v,
             0xff40 => {
                 self.lcdc.data = v;
