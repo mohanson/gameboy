@@ -124,7 +124,8 @@ impl Lcdc {
 
     // LCDC.2 - OBJ Size
     // This bit controls the sprite size (1 tile or 2 stacked vertically).
-    // Be cautious when changing this mid-frame from 8x8 to 8x16 : "remnants" of the sprites intended for 8x8 could "leak" into the 8x16 zone and cause artifacts.
+    // Be cautious when changing this mid-frame from 8x8 to 8x16 : "remnants" of the sprites intended for 8x8 could
+    // "leak" into the 8x16 zone and cause artifacts.
     fn bit2(&self) -> bool { self.data & 0b0000_0100 != 0x00 }
 
     // LCDC.1 - OBJ Display Enable
@@ -217,9 +218,9 @@ pub enum GrayShades {
 
 #[derive(PartialEq, Copy, Clone)]
 enum Prio {
-    Priority,
-    Zero,
-    Else,
+    Bg,
+    Color0,
+    UseObj,
 }
 
 // Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
@@ -379,7 +380,7 @@ impl Gpu {
             ram: [0x00; 0x4000],
             ram_bank: 0x00,
             oam: [0x00; 0xa0],
-            prio: [Prio::Else; SCREEN_W],
+            prio: [Prio::UseObj; SCREEN_W],
             dots: 0,
         }
     }
@@ -509,7 +510,7 @@ impl Gpu {
     fn render_scan(&mut self) {
         for x in 0..SCREEN_W {
             self.set_gre(x, 0xff);
-            self.prio[x] = Prio::Else;
+            self.prio[x] = Prio::UseObj;
         }
         if self.term == Term::GBC || self.lcdc.bit0() {
             self.draw_bg();
@@ -586,12 +587,13 @@ impl Gpu {
             let color_h = if tile_y_data[1] & (0x80 >> tile_x) != 0 { 2 } else { 0 };
             let color = color_h | color_l;
 
+            // Priority
             self.prio[x] = if color == 0 {
-                Prio::Zero
+                Prio::Color0
             } else if tile_attr.priority {
-                Prio::Priority
+                Prio::Bg
             } else {
-                Prio::Else
+                Prio::UseObj
             };
 
             if self.term == Term::GBC {
@@ -651,8 +653,8 @@ impl Gpu {
 
                 if self.term == Term::GBC {
                     if self.lcdc.bit0()
-                        && (self.prio[(sprite_x + x) as usize] == Prio::Priority
-                            || (tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Zero))
+                        && (self.prio[(sprite_x + x) as usize] == Prio::Bg
+                            || (tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Color0))
                     {
                         continue;
                     }
@@ -661,7 +663,7 @@ impl Gpu {
                     let b = self.cobpd[tile_attr.palette_number_1][color_mum][2];
                     self.set_rgb((sprite_x + x) as usize, r, g, b);
                 } else {
-                    if tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Zero {
+                    if tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Color0 {
                         continue;
                     }
                     let color = if tile_attr.palette_number_0 == 1 {
