@@ -216,7 +216,7 @@ pub enum GrayShades {
 }
 
 #[derive(PartialEq, Copy, Clone)]
-enum PrioType {
+enum Prio {
     Priority,
     Zero,
     Else,
@@ -345,7 +345,7 @@ pub struct Gpu {
     // Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
     oam: [u8; 0xa0],
 
-    bgprio: [PrioType; SCREEN_W],
+    prio: [Prio; SCREEN_W],
     // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots, or
     // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
     // Scanlines 144 through 153 are mode 1.
@@ -379,7 +379,7 @@ impl Gpu {
             ram: [0x00; 0x4000],
             ram_bank: 0x00,
             oam: [0x00; 0xa0],
-            bgprio: [PrioType::Else; SCREEN_W],
+            prio: [Prio::Else; SCREEN_W],
             dots: 0,
         }
     }
@@ -509,7 +509,7 @@ impl Gpu {
     fn render_scan(&mut self) {
         for x in 0..SCREEN_W {
             self.set_gre(x, 0xff);
-            self.bgprio[x] = PrioType::Else;
+            self.prio[x] = Prio::Else;
         }
         if self.lcdc.bit0() {
             self.draw_bg();
@@ -579,12 +579,12 @@ impl Gpu {
             let color_num =
                 if b1 & (1 << color_bit) != 0 { 1 } else { 0 } | if b2 & (1 << color_bit) != 0 { 2 } else { 0 };
 
-            self.bgprio[x] = if color_num == 0 {
-                PrioType::Zero
+            self.prio[x] = if color_num == 0 {
+                Prio::Zero
             } else if tile_attr.priority {
-                PrioType::Priority
+                Prio::Priority
             } else {
-                PrioType::Else
+                Prio::Else
             };
 
             if self.term == Term::GBC {
@@ -644,8 +644,8 @@ impl Gpu {
 
                 if self.term == Term::GBC {
                     if self.lcdc.bit0()
-                        && (self.bgprio[(sprite_x + x) as usize] == PrioType::Priority
-                            || (tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero))
+                        && (self.prio[(sprite_x + x) as usize] == Prio::Priority
+                            || (tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Zero))
                     {
                         continue;
                     }
@@ -654,7 +654,7 @@ impl Gpu {
                     let b = self.cobpd[tile_attr.palette_number_1][color_mum][2];
                     self.set_rgb((sprite_x + x) as usize, r, g, b);
                 } else {
-                    if tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero {
+                    if tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Zero {
                         continue;
                     }
                     let color = if tile_attr.palette_number_0 == 1 {
