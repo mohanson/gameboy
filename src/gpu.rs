@@ -552,21 +552,24 @@ impl Gpu {
                 0x9800
             };
 
-            let tile_address = bg_base + ty * 32 + tx;
-            let tile_num = self.get_ram0(tile_address);
-            let tile_location = tile_base
-                + (if self.lcdc.bit4() {
-                    u16::from(tile_num)
-                } else {
-                    (i16::from(tile_num as i8) + 128) as u16
-                }) * 16;
-            let tile_attr = Attr::from(self.get_ram1(tile_address));
+            // Tile data
+            let tile_addr = bg_base + ty * 32 + tx;
+            let tile_number = self.get_ram0(tile_addr);
+            let tile_offset = if self.lcdc.bit4() {
+                i16::from(tile_number)
+            } else {
+                i16::from(tile_number as i8) + 128
+            } as u16
+                * 16;
+            let tile_location = tile_base + tile_offset;
+            let tile_attr = Attr::from(self.get_ram1(tile_addr));
 
             let line = if self.term == Term::GBC && tile_attr.yflip {
-                ((7u8.wrapping_sub(py)) % 8) * 2
+                7u8.wrapping_sub(py) % 8
             } else {
-                (py % 8) * 2
-            };
+                py % 8
+            } * 2;
+
             let (b1, b2) = if self.term == Term::GBC && tile_attr.bank {
                 let a = self.get_ram1(tile_location + u16::from(line));
                 let b = self.get_ram1(tile_location + u16::from(line) + 1);
