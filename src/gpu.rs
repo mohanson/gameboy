@@ -511,7 +511,7 @@ impl Gpu {
             self.set_gre(x, 0xff);
             self.prio[x] = Prio::Else;
         }
-        if self.lcdc.bit0() {
+        if self.term == Term::GBC || self.lcdc.bit0() {
             self.draw_bg();
         }
         if self.lcdc.bit1() {
