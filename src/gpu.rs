@@ -553,6 +553,11 @@ impl Gpu {
             };
 
             // Tile data
+            // Each tile is sized 8x8 pixels and has a color depth of 4 colors/gray shades.
+            // Each tile occupies 16 bytes, where each 2 bytes represent a line:
+            // Byte 0-1  First Line (Upper 8 pixels)
+            // Byte 2-3  Next Line
+            // etc.
             let tile_addr = bg_base + ty * 32 + tx;
             let tile_number = self.get_ram0(tile_addr);
             let tile_offset = if self.lcdc.bit4() {
@@ -564,26 +569,24 @@ impl Gpu {
             let tile_location = tile_base + tile_offset;
             let tile_attr = Attr::from(self.get_ram1(tile_addr));
 
-            let line = if self.term == Term::GBC && tile_attr.yflip {
-                7u8.wrapping_sub(py) % 8
+            let tile_y = if tile_attr.yflip { 7 - py % 8 } else { py % 8 };
+            let tile_y_data: [u8; 2] = if self.term == Term::GBC && tile_attr.bank {
+                let a = self.get_ram1(tile_location + u16::from(tile_y * 2));
+                let b = self.get_ram1(tile_location + u16::from(tile_y * 2) + 1);
+                [a, b]
             } else {
-                py % 8
-            } * 2;
-
-            let (b1, b2) = if self.term == Term::GBC && tile_attr.bank {
-                let a = self.get_ram1(tile_location + u16::from(line));
-                let b = self.get_ram1(tile_location + u16::from(line) + 1);
-                (a, b)
-            } else {
-                let a = self.get_ram0(tile_location + u16::from(line));
-                let b = self.get_ram0(tile_location + u16::from(line) + 1);
-                (a, b)
+                let a = self.get_ram0(tile_location + u16::from(tile_y * 2));
+                let b = self.get_ram0(tile_location + u16::from(tile_y * 2) + 1);
+                [a, b]
             };
-            let color_bit = if tile_attr.xflip { px % 8 } else { 7 - px % 8 };
-            let color_num =
-                if b1 & (1 << color_bit) != 0 { 1 } else { 0 } | if b2 & (1 << color_bit) != 0 { 2 } else { 0 };
+            let tile_x = if tile_attr.xflip { 7 - px % 8 } else { px % 8 };
 
-            self.prio[x] = if color_num == 0 {
+            // Palettes
+            let color_l = if tile_y_data[0] & (0x80 >> tile_x) != 0 { 1 } else { 0 };
+            let color_h = if tile_y_data[1] & (0x80 >> tile_x) != 0 { 2 } else { 0 };
+            let color = color_h | color_l;
+
+            self.prio[x] = if color == 0 {
                 Prio::Zero
             } else if tile_attr.priority {
                 Prio::Priority
@@ -592,12 +595,12 @@ impl Gpu {
             };
 
             if self.term == Term::GBC {
-                let r = self.cbgpd[tile_attr.palette_number_1][color_num][0];
-                let g = self.cbgpd[tile_attr.palette_number_1][color_num][1];
-                let b = self.cbgpd[tile_attr.palette_number_1][color_num][2];
+                let r = self.cbgpd[tile_attr.palette_number_1][color][0];
+                let g = self.cbgpd[tile_attr.palette_number_1][color][1];
+                let b = self.cbgpd[tile_attr.palette_number_1][color][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
-                let color = Self::get_gray_shades(self.bgp, color_num) as u8;
+                let color = Self::get_gray_shades(self.bgp, color) as u8;
                 self.set_gre(x, color);
             }
         }
@@ -640,8 +643,8 @@ impl Gpu {
                 if sprite_x + x < 0 || sprite_x + x >= (SCREEN_W as i32) {
                     continue;
                 }
-                let color_bit = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
-                let color_mum = (if b1 & color_bit != 0 { 1 } else { 0 }) | (if b2 & color_bit != 0 { 2 } else { 0 });
+                let tile_x = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
+                let color_mum = (if b1 & tile_x != 0 { 1 } else { 0 }) | (if b2 & tile_x != 0 { 2 } else { 0 });
                 if color_mum == 0 {
                     continue;
                 }
