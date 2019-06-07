@@ -532,14 +532,14 @@ impl Gpu {
 
         for x in 0..SCREEN_W {
             // Translate the current x pos to window space if necessary
-            let px = if using_window && x as u8 >= self.wx {
-                x as u8 - self.wx
+            let px = if using_window && x as u8 >= (self.wx - 7) {
+                x as u8 - (self.wx - 7)
             } else {
                 self.sx.wrapping_add(x as u8)
             };
             let tx = (u16::from(px) >> 3) & 31;
 
-            let bg = if using_window && x as u8 >= self.wx {
+            let bg = if using_window && x as u8 >= (self.wx - 7) {
                 if self.lcdc.bit6() {
                     0x9c00
                 } else {
