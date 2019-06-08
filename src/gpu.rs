@@ -502,21 +502,14 @@ impl Gpu {
                 if self.stat.enable_m0_interrupt {
                     self.intf |= 0x02
                 }
-                self.render_scan();
+                // Render scanline
+                if self.term == Term::GBC || self.lcdc.bit0() {
+                    self.draw_bg();
+                }
+                if self.lcdc.bit1() {
+                    self.draw_sprites();
+                }
             }
-        }
-    }
-
-    fn render_scan(&mut self) {
-        for x in 0..SCREEN_W {
-            self.set_gre(x, 0xff);
-            self.prio[x] = Prio::UseObj;
-        }
-        if self.term == Term::GBC || self.lcdc.bit0() {
-            self.draw_bg();
-        }
-        if self.lcdc.bit1() {
-            self.draw_sprites();
         }
     }
 
