@@ -644,7 +644,7 @@ impl Gpu {
             let sprite_addr = 0xfe00 + (i as u16) * 4;
             let sprite_y = i32::from(self.get(sprite_addr)) - 16;
             let sprite_x = i32::from(self.get(sprite_addr + 1)) - 8;
-            let tile_location = u16::from(self.get(sprite_addr + 2)) & (if self.lcdc.bit2() { 0xfe } else { 0xff });
+            let tile_number = self.get(sprite_addr + 2) & if self.lcdc.bit2() { 0xfe } else { 0xff };
             let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
             let line = i32::from(self.ly);
@@ -660,7 +660,7 @@ impl Gpu {
             } else {
                 (line - sprite_y) as u16
             };
-            let tile_location = 0x8000u16 + tile_location * 16 + line * 2;
+            let tile_location = 0x8000u16 + u16::from(tile_number) * 16 + line * 2;
             let b1: u8;
             let b2: u8;
             if tile_attr.bank && self.term == Term::GBC {
