@@ -642,66 +642,70 @@ impl Gpu {
         let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
         for i in 0..40 {
             let sprite_addr = 0xfe00 + (i as u16) * 4;
-            let sprite_y = i32::from(self.get(sprite_addr)) - 16;
-            let sprite_x = i32::from(self.get(sprite_addr + 1)) - 8;
+            let py = i32::from(self.get(sprite_addr)) - 16;
+            let px = i32::from(self.get(sprite_addr + 1)) - 8;
             let tile_number = self.get(sprite_addr + 2) & if self.lcdc.bit2() { 0xfe } else { 0xff };
             let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
-            let line = i32::from(self.ly);
             // If this is true the scanline is out of the area we care about
-            if line < sprite_y || line >= sprite_y + sprite_size {
+            if i32::from(self.ly) < py || i32::from(self.ly) >= py + sprite_size {
                 continue;
             }
-            if sprite_x < -7 || sprite_x >= (SCREEN_W as i32) {
+            if px < -7 || px >= (SCREEN_W as i32) {
                 continue;
             }
-            let line: u16 = if tile_attr.yflip {
-                (sprite_size - 1 - (line - sprite_y)) as u16
+
+            let tile_y = if tile_attr.yflip {
+                sprite_size - 1 - (i32::from(self.ly) - py)
             } else {
-                (line - sprite_y) as u16
+                i32::from(self.ly) - py
             };
-            let tile_location = 0x8000u16 + u16::from(tile_number) * 16 + line * 2;
-            let b1: u8;
-            let b2: u8;
-            if tile_attr.bank && self.term == Term::GBC {
-                b1 = self.get_ram1(tile_location);
-                b2 = self.get_ram1(tile_location + 1);
+            let tile_y_addr = 0x8000u16 + u16::from(tile_number) * 16 + tile_y as u16 * 2;
+            let tile_y_data: [u8; 2] = if self.term == Term::GBC && tile_attr.bank {
+                let b1 = self.get_ram1(tile_y_addr);
+                let b2 = self.get_ram1(tile_y_addr + 1);
+                [b1, b2]
             } else {
-                b1 = self.get_ram0(tile_location);
-                b2 = self.get_ram0(tile_location + 1);
+                let b1 = self.get_ram0(tile_y_addr);
+                let b2 = self.get_ram0(tile_y_addr + 1);
+                [b1, b2]
             };
 
             for x in 0..8 {
-                if sprite_x + x < 0 || sprite_x + x >= (SCREEN_W as i32) {
+                if px + x < 0 || px + x >= (SCREEN_W as i32) {
                     continue;
                 }
-                let tile_x = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
-                let color_mum = (if b1 & tile_x != 0 { 1 } else { 0 }) | (if b2 & tile_x != 0 { 2 } else { 0 });
-                if color_mum == 0 {
+                let tile_x = if tile_attr.xflip { 7 - x } else { x };
+
+                // Palettes
+                let color_l = if tile_y_data[0] & (0x80 >> tile_x) != 0 { 1 } else { 0 };
+                let color_h = if tile_y_data[1] & (0x80 >> tile_x) != 0 { 2 } else { 0 };
+                let color = color_h | color_l;
+                if color == 0 {
                     continue;
                 }
 
                 if self.term == Term::GBC {
                     if self.lcdc.bit0()
-                        && (self.prio[(sprite_x + x) as usize] == Prio::Bg
-                            || (tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Color0))
+                        && (self.prio[(px + x) as usize] == Prio::Bg
+                            || (tile_attr.priority && self.prio[(px + x) as usize] != Prio::Color0))
                     {
                         continue;
                     }
-                    let r = self.cobpd[tile_attr.palette_number_1][color_mum][0];
-                    let g = self.cobpd[tile_attr.palette_number_1][color_mum][1];
-                    let b = self.cobpd[tile_attr.palette_number_1][color_mum][2];
-                    self.set_rgb((sprite_x + x) as usize, r, g, b);
+                    let r = self.cobpd[tile_attr.palette_number_1][color][0];
+                    let g = self.cobpd[tile_attr.palette_number_1][color][1];
+                    let b = self.cobpd[tile_attr.palette_number_1][color][2];
+                    self.set_rgb((px + x) as usize, r, g, b);
                 } else {
-                    if tile_attr.priority && self.prio[(sprite_x + x) as usize] != Prio::Color0 {
+                    if tile_attr.priority && self.prio[(px + x) as usize] != Prio::Color0 {
                         continue;
                     }
                     let color = if tile_attr.palette_number_0 == 1 {
-                        Self::get_gray_shades(self.op1, color_mum) as u8
+                        Self::get_gray_shades(self.op1, color) as u8
                     } else {
-                        Self::get_gray_shades(self.op0, color_mum) as u8
+                        Self::get_gray_shades(self.op0, color) as u8
                     };
-                    self.set_gre((sprite_x + x) as usize, color);
+                    self.set_gre((px + x) as usize, color);
                 }
             }
         }
