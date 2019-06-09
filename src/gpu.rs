@@ -216,13 +216,6 @@ pub enum GrayShades {
     Black = 0x00,
 }
 
-#[derive(PartialEq, Copy, Clone)]
-enum Prio {
-    Bg,
-    Color0,
-    UseObj,
-}
-
 // Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
 //     (Used for both BG and Window. BG color 0 is always behind OBJ)
 // Bit6   Y flip          (0=Normal, 1=Vertically mirrored)
@@ -346,7 +339,7 @@ pub struct Gpu {
     // Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
     oam: [u8; 0xa0],
 
-    prio: [Prio; SCREEN_W],
+    prio: [(bool, usize); SCREEN_W],
     // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots, or
     // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
     // Scanlines 144 through 153 are mode 1.
@@ -380,7 +373,7 @@ impl Gpu {
             ram: [0x00; 0x4000],
             ram_bank: 0x00,
             oam: [0x00; 0xa0],
-            prio: [Prio::UseObj; SCREEN_W],
+            prio: [(true, 0); SCREEN_W],
             dots: 0,
         }
     }
@@ -581,13 +574,7 @@ impl Gpu {
             let color = color_h | color_l;
 
             // Priority
-            self.prio[x] = if color == 0 {
-                Prio::Color0
-            } else if tile_attr.priority {
-                Prio::Bg
-            } else {
-                Prio::UseObj
-            };
+            self.prio[x] = (tile_attr.priority, color);
 
             if self.term == Term::GBC {
                 let r = self.cbgpd[tile_attr.palette_number_1][color][0];
@@ -684,21 +671,25 @@ impl Gpu {
                     continue;
                 }
 
+                // Confirm the priority of background and sprite.
+                let prio = self.prio[px.wrapping_add(x) as usize];
+                let skip = if self.term == Term::GBC && !self.lcdc.bit0() {
+                    prio.1 == 0
+                } else if prio.0 {
+                    prio.1 != 0
+                } else {
+                    tile_attr.priority && prio.1 != 0
+                };
+                if skip {
+                    continue;
+                }
+
                 if self.term == Term::GBC {
-                    if self.lcdc.bit0()
-                        && (self.prio[px.wrapping_add(x) as usize] == Prio::Bg
-                            || (tile_attr.priority && self.prio[px.wrapping_add(x) as usize] != Prio::Color0))
-                    {
-                        continue;
-                    }
                     let r = self.cobpd[tile_attr.palette_number_1][color][0];
                     let g = self.cobpd[tile_attr.palette_number_1][color][1];
                     let b = self.cobpd[tile_attr.palette_number_1][color][2];
                     self.set_rgb(px.wrapping_add(x) as usize, r, g, b);
                 } else {
-                    if tile_attr.priority && self.prio[px.wrapping_add(x) as usize] != Prio::Color0 {
-                        continue;
-                    }
                     let color = if tile_attr.palette_number_0 == 1 {
                         Self::get_gray_shades(self.op1, color) as u8
                     } else {
