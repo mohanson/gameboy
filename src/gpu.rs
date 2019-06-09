@@ -23,8 +23,6 @@ pub enum HdmaMode {
 }
 
 pub struct Hdma {
-    pub data: [u8; 0x04],
-
     // These two registers specify the address at which the transfer will read data from. Normally, this should be
     // either in ROM, SRAM or WRAM, thus either in range 0000-7FF0 or A000-DFF0. [Note : this has yet to be tested on
     // Echo RAM, OAM, FEXX, IO and HRAM]. Trying to specify a source address in VRAM will cause garbage to be copied.
@@ -33,7 +31,6 @@ pub struct Hdma {
     // These two registers specify the address within 8000-9FF0 to which the data will be copied. Only bits 12-4 are
     // respected; others are ignored. The four lower bits of this address will be ignored and treated as 0.
     pub dst: u16,
-
     pub active: bool,
     pub mode: HdmaMode,
     pub remain: u8,
@@ -42,9 +39,8 @@ pub struct Hdma {
 impl Hdma {
     pub fn power_up() -> Self {
         Self {
-            data: [0x00; 0x04],
-            src: 0x00,
-            dst: 0x00,
+            src: 0x0000,
+            dst: 0x8000,
             active: false,
             mode: HdmaMode::Gdma,
             remain: 0x00,
@@ -55,7 +51,10 @@ impl Hdma {
 impl Memory for Hdma {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0xff51...0xff54 => self.data[(a - 0xff51) as usize],
+            0xff51 => (self.src >> 8) as u8,
+            0xff52 => self.src as u8,
+            0xff43 => (self.dst >> 8) as u8,
+            0xff54 => self.dst as u8,
             0xff55 => self.remain | if self.active { 0x00 } else { 0x80 },
             _ => panic!(""),
         }
@@ -63,10 +62,10 @@ impl Memory for Hdma {
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xff51 => self.data[0] = v,
-            0xff52 => self.data[1] = v & 0xf0,
-            0xff53 => self.data[2] = v & 0x1F,
-            0xff54 => self.data[3] = v & 0xf0,
+            0xff51 => self.src = (u16::from(v) << 8) | (self.src & 0x00ff),
+            0xff52 => self.src = (self.src & 0xff00) | u16::from(v & 0xf0),
+            0xff53 => self.dst = 0x8000 | (u16::from(v & 0x1f) << 8) | (self.dst & 0x00ff),
+            0xff54 => self.dst = (self.dst & 0xff00) | u16::from(v & 0xf0),
             0xff55 => {
                 if self.active && self.mode == HdmaMode::Hdma {
                     if v & 0x80 == 0x00 {
@@ -75,10 +74,8 @@ impl Memory for Hdma {
                     return;
                 }
                 self.active = true;
-                self.src = (u16::from(self.data[0]) << 8) | u16::from(self.data[1]);
-                self.dst = (u16::from(self.data[2]) << 8) | u16::from(self.data[3]) | 0x8000;
                 self.remain = v & 0x7f;
-                self.mode = if v & 0x80 == 0x80 {
+                self.mode = if v & 0x80 != 0x00 {
                     HdmaMode::Hdma
                 } else {
                     HdmaMode::Gdma
@@ -127,7 +124,8 @@ impl Lcdc {
 
     // LCDC.2 - OBJ Size
     // This bit controls the sprite size (1 tile or 2 stacked vertically).
-    // Be cautious when changing this mid-frame from 8x8 to 8x16 : "remnants" of the sprites intended for 8x8 could "leak" into the 8x16 zone and cause artifacts.
+    // Be cautious when changing this mid-frame from 8x8 to 8x16 : "remnants" of the sprites intended for 8x8 could
+    // "leak" into the 8x16 zone and cause artifacts.
     fn bit2(&self) -> bool { self.data & 0b0000_0100 != 0x00 }
 
     // LCDC.1 - OBJ Display Enable
@@ -178,18 +176,44 @@ impl Stat {
     }
 }
 
+// This register is used to address a byte in the CGBs Background Palette Memory. Each two byte in that memory define a
+// color value. The first 8 bytes define Color 0-3 of Palette 0 (BGP0), and so on for BGP1-7.
+//  Bit 0-5   Index (00-3F)
+//  Bit 7     Auto Increment  (0=Disabled, 1=Increment after Writing)
+// Data can be read/written to/from the specified index address through Register FF69. When the Auto Increment bit is
+// set then the index is automatically incremented after each <write> to FF69. Auto Increment has no effect when
+// <reading> from FF69, so the index must be manually incremented in that case. Writing to FF69 during rendering still
+// causes auto-increment to occur.
+// Unlike the following, this register can be accessed outside V-Blank and H-Blank.
+struct Bgpi {
+    i: u8,
+    auto_increment: bool,
+}
+
+impl Bgpi {
+    fn power_up() -> Self {
+        Self {
+            i: 0x00,
+            auto_increment: false,
+        }
+    }
+
+    fn get(&self) -> u8 {
+        let a = if self.auto_increment { 0x80 } else { 0x00 };
+        a | self.i
+    }
+
+    fn set(&mut self, v: u8) {
+        self.auto_increment = v & 0x80 != 0x00;
+        self.i = v & 0x3f;
+    }
+}
+
 pub enum GrayShades {
     White = 0xff,
     Light = 0xc0,
     Dark = 0x60,
     Black = 0x00,
-}
-
-#[derive(PartialEq, Copy, Clone)]
-enum PrioType {
-    Priority,
-    Zero,
-    Else,
 }
 
 // Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
@@ -225,7 +249,6 @@ pub const SCREEN_W: usize = 160;
 pub const SCREEN_H: usize = 144;
 
 pub struct Gpu {
-    pub blanked: bool,
     // Digital image with mode RGB. Size = 144 * 160 * 3.
     // 3---------
     // ----------
@@ -233,31 +256,58 @@ pub struct Gpu {
     // ---------- 160
     //        144
     pub data: [[[u8; 3]; SCREEN_W]; SCREEN_H],
-    pub interrupt: u8,
+    pub intf: u8,
     pub term: Term,
-    pub updated: bool,
+    pub h_blank: bool,
+    pub v_blank: bool,
 
-    // This register assigns gray shades to the color numbers of the BG and Window tiles.
-    bgp: u8,
-    bgprio: [PrioType; SCREEN_W],
-    cbgpal_inc: bool,
-    cbgpal_ind: u8,
-    cbgpal: [[[u8; 3]; 4]; 8],
-    csprit_inc: bool,
-    csprit_ind: u8,
-    csprit: [[[u8; 3]; 4]; 8],
-    // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots, or
-    // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
-    // Scanlines 144 through 153 are mode 1.
-    dots: u32,
     lcdc: Lcdc,
+    stat: Stat,
+    // Scroll Y (R/W), Scroll X (R/W)
+    // Specifies the position in the 256x256 pixels BG map (32x32 tiles) which is to be displayed at the upper/left LCD
+    // display position. Values in range from 0-255 may be used for X/Y each, the video controller automatically wraps
+    // back to the upper (left) position in BG map when drawing exceeds the lower (right) border of the BG map area.
+    sy: u8,
+    sx: u8,
+    // Window Y Position (R/W), Window X Position minus 7 (R/W)
+    wy: u8,
+    wx: u8,
     // The LY indicates the vertical line to which the present data is transferred to the LCD Driver. The LY can take
     // on any value between 0 through 153. The values between 144 and 153 indicate the V-Blank period. Writing will
     // reset the counter.
     ly: u8,
     // The Gameboy permanently compares the value of the LYC and LY registers. When both values are identical, the
     // coincident bit in the STAT register becomes set, and (if enabled) a STAT interrupt is requested.
-    ly_compare: u8,
+    lc: u8,
+
+    // This register assigns gray shades to the color numbers of the BG and Window tiles.
+    bgp: u8,
+    // This register assigns gray shades for sprite palette 0. It works exactly as BGP (FF47), except that the lower
+    // two bits aren't used because sprite data 00 is transparent.
+    op0: u8,
+    // This register assigns gray shades for sprite palette 1. It works exactly as BGP (FF47), except that the lower
+    // two bits aren't used because sprite data 00 is transparent.
+    op1: u8,
+
+    cbgpi: Bgpi,
+    // This register allows to read/write data to the CGBs Background Palette Memory, addressed through Register FF68.
+    // Each color is defined by two bytes (Bit 0-7 in first byte).
+    //     Bit 0-4   Red Intensity   (00-1F)
+    //     Bit 5-9   Green Intensity (00-1F)
+    //     Bit 10-14 Blue Intensity  (00-1F)
+    // Much like VRAM, data in Palette Memory cannot be read/written during the time when the LCD Controller is
+    // reading from it. (That is when the STAT register indicates Mode 3). Note: All background colors are initialized
+    // as white by the boot ROM, but it's a good idea to initialize at least one color yourself (for example if you
+    // include a soft-reset mechanic).
+    //
+    // Note: Type [[[u8; 3]; 4]; 8] equals with [u8; 64].
+    cbgpd: [[[u8; 3]; 4]; 8],
+
+    cobpi: Bgpi,
+    cobpd: [[[u8; 3]; 4]; 8],
+
+    ram: [u8; 0x4000],
+    ram_bank: usize,
     // VRAM Sprite Attribute Table (OAM)
     // Gameboy video controller can display up to 40 sprites either in 8x8 or in 8x16 pixels. Because of a limitation of
     // hardware, only ten sprites can be displayed per scan line. Sprite patterns have the same format as BG tiles, but
@@ -288,66 +338,52 @@ pub struct Gpu {
     // Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
     // Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
     oam: [u8; 0xa0],
-    // This register assigns gray shades for sprite palette 0. It works exactly as BGP (FF47), except that the lower
-    // two bits aren't used because sprite data 00 is transparent.
-    op0: u8,
-    // This register assigns gray shades for sprite palette 1. It works exactly as BGP (FF47), except that the lower
-    // two bits aren't used because sprite data 00 is transparent.
-    op1: u8,
-    ram: [[u8; 0x2000]; 0x02],
-    ram_bank: usize,
-    // Scroll Y (R/W), Scroll X (R/W)
-    // Specifies the position in the 256x256 pixels BG map (32x32 tiles) which is to be displayed at the upper/left LCD
-    // display position. Values in range from 0-255 may be used for X/Y each, the video controller automatically wraps
-    // back to the upper (left) position in BG map when drawing exceeds the lower (right) border of the BG map area.
-    sx: u8,
-    sy: u8,
-    stat: Stat,
-    // Window Y Position (R/W), Window X Position minus 7 (R/W)
-    wx: u8,
-    wy: u8,
+
+    prio: [(bool, usize); SCREEN_W],
+    // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots, or
+    // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
+    // Scanlines 144 through 153 are mode 1.
+    dots: u32,
 }
 
 impl Gpu {
     pub fn power_up(term: Term) -> Self {
         Self {
-            blanked: false,
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
-            interrupt: 0,
+            intf: 0,
             term,
-            updated: false,
+            h_blank: false,
+            v_blank: false,
 
-            bgp: 0x00,
-            bgprio: [PrioType::Else; SCREEN_W],
-            cbgpal_inc: false,
-            cbgpal_ind: 0,
-            cbgpal: [[[0u8; 3]; 4]; 8],
-            csprit_inc: false,
-            csprit_ind: 0,
-            csprit: [[[0u8; 3]; 4]; 8],
-            dots: 0,
             lcdc: Lcdc::power_up(),
-            ly: 0x00,
-            ly_compare: 0x00,
-            oam: [0x00; 0xa0],
-            op0: 0x00,
-            op1: 0x01,
-            ram: [[0x00; 0x2000]; 0x02],
-            ram_bank: 0x00,
-            sx: 0x00,
-            sy: 0x00,
             stat: Stat::power_up(),
+            sy: 0x00,
+            sx: 0x00,
             wx: 0x00,
             wy: 0x00,
+            ly: 0x00,
+            lc: 0x00,
+            bgp: 0x00,
+            op0: 0x00,
+            op1: 0x01,
+            cbgpi: Bgpi::power_up(),
+            cbgpd: [[[0u8; 3]; 4]; 8],
+            cobpi: Bgpi::power_up(),
+            cobpd: [[[0u8; 3]; 4]; 8],
+            ram: [0x00; 0x4000],
+            ram_bank: 0x00,
+            oam: [0x00; 0xa0],
+            prio: [(true, 0); SCREEN_W],
+            dots: 0,
         }
     }
 
     fn get_ram0(&self, a: u16) -> u8 {
-        self.ram[0][a as usize - 0x8000]
+        self.ram[a as usize - 0x8000]
     }
 
     fn get_ram1(&self, a: u16) -> u8 {
-        self.ram[1][a as usize - 0x8000]
+        self.ram[a as usize - 0x6000]
     }
 
     // This register assigns gray shades to the color numbers of the BG and Window tiles.
@@ -399,11 +435,19 @@ impl Gpu {
         if !self.lcdc.bit7() {
             return;
         }
-        self.blanked = false;
+        self.h_blank = false;
 
         // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots,
         // or 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456
         // dots. Scanlines 144 through 153 are mode 1.
+        //
+        // 1 scanline = 456 dots
+        //
+        // The following are typical when the display is enabled:
+        // Mode 2  2_____2_____2_____2_____2_____2___________________2____
+        // Mode 3  _33____33____33____33____33____33__________________3___
+        // Mode 0  ___000___000___000___000___000___000________________000
+        // Mode 1  ____________________________________11111111111111_____
         if cycles == 0 {
             return;
         }
@@ -418,78 +462,56 @@ impl Gpu {
             self.dots %= 456;
             if d != self.dots {
                 self.ly = (self.ly + 1) % 154;
-                if self.stat.enable_ly_interrupt && self.ly == self.ly_compare {
-                    self.interrupt |= 0x02;
+                if self.stat.enable_ly_interrupt && self.ly == self.lc {
+                    self.intf |= 0x02;
                 }
             }
-            // The following are typical when the display is enabled:
-            // Mode 2  2_____2_____2_____2_____2_____2___________________2____
-            // Mode 3  _33____33____33____33____33____33__________________3___
-            // Mode 0  ___000___000___000___000___000___000________________000
-            // Mode 1  ____________________________________11111111111111_____
             if self.ly >= 144 {
-                self.ensure_mode(1);
-            } else if self.dots <= 80 {
-                self.ensure_mode(2);
-            } else if self.dots <= (80 + 172) {
-                self.ensure_mode(3);
-            } else {
-                self.ensure_mode(0);
-            }
-        }
-    }
-
-    fn ensure_mode(&mut self, mode: u8) {
-        if self.stat.mode == mode {
-            return;
-        }
-        self.stat.mode = mode;
-
-        match self.stat.mode {
-            0 => {
-                self.render_scan();
-                self.blanked = true;
-                if self.stat.enable_m0_interrupt {
-                    self.interrupt |= 0x02
+                if self.stat.mode == 1 {
+                    continue;
                 }
-            }
-            1 => {
-                self.interrupt |= 0x01;
-                self.updated = true;
+                self.stat.mode = 1;
+                self.v_blank = true;
+                self.intf |= 0x01;
                 if self.stat.enable_m1_interrupt {
-                    self.interrupt |= 0x02
+                    self.intf |= 0x02
                 }
-            }
-            2 => {
+            } else if self.dots <= 80 {
+                if self.stat.mode == 2 {
+                    continue;
+                }
+                self.stat.mode = 2;
                 if self.stat.enable_m2_interrupt {
-                    self.interrupt |= 0x02
+                    self.intf |= 0x02
+                }
+            } else if self.dots <= (80 + 172) {
+                self.stat.mode = 3;
+            } else {
+                if self.stat.mode == 0 {
+                    continue;
+                }
+                self.stat.mode = 0;
+                self.h_blank = true;
+                if self.stat.enable_m0_interrupt {
+                    self.intf |= 0x02
+                }
+                // Render scanline
+                if self.term == Term::GBC || self.lcdc.bit0() {
+                    self.draw_bg();
+                }
+                if self.lcdc.bit1() {
+                    self.draw_sprites();
                 }
             }
-            3 => {}
-            _ => panic!(""),
-        };
-    }
-}
-
-impl Gpu {
-    fn render_scan(&mut self) {
-        for x in 0..SCREEN_W {
-            self.set_gre(x, 0xff);
-            self.bgprio[x] = PrioType::Else;
-        }
-        if self.lcdc.bit0() {
-            self.draw_bg();
-        }
-        if self.lcdc.bit1() {
-            self.draw_sprites();
         }
     }
 
     fn draw_bg(&mut self) {
-        let using_window = self.lcdc.bit5() && self.wy <= self.ly;
+        let show_window = self.lcdc.bit5() && self.wy <= self.ly;
         let tile_base = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };
 
-        let py = if using_window {
+        let wx = self.wx.wrapping_sub(7);
+        let py = if show_window {
             self.ly.wrapping_sub(self.wy)
         } else {
             self.sy.wrapping_add(self.ly)
@@ -497,138 +519,183 @@ impl Gpu {
         let ty = (u16::from(py) >> 3) & 31;
 
         for x in 0..SCREEN_W {
-            // Translate the current x pos to window space if necessary
-            let px = if using_window && x as u8 >= self.wx {
-                x as u8 - self.wx
+            let px = if show_window && x as u8 >= wx {
+                x as u8 - wx
             } else {
                 self.sx.wrapping_add(x as u8)
             };
             let tx = (u16::from(px) >> 3) & 31;
 
-            let bg = if using_window && x as u8 >= self.wx {
+            // Background memory base addr.
+            let bg_base = if show_window && x as u8 >= wx {
                 if self.lcdc.bit6() {
                     0x9c00
                 } else {
                     0x9800
                 }
             } else if self.lcdc.bit3() {
-                0x9C00
+                0x9c00
             } else {
                 0x9800
             };
 
-            let tile_address = bg + ty * 32 + tx;
-            let tile_num = self.get_ram0(tile_address);
-            let tile_location = tile_base
-                + (if self.lcdc.bit4() {
-                    u16::from(tile_num)
-                } else {
-                    (i16::from(tile_num as i8) + 128) as u16
-                }) * 16;
-            let tile_attr = Attr::from(self.get_ram1(tile_address));
+            // Tile data
+            // Each tile is sized 8x8 pixels and has a color depth of 4 colors/gray shades.
+            // Each tile occupies 16 bytes, where each 2 bytes represent a line:
+            // Byte 0-1  First Line (Upper 8 pixels)
+            // Byte 2-3  Next Line
+            // etc.
+            let tile_addr = bg_base + ty * 32 + tx;
+            let tile_number = self.get_ram0(tile_addr);
+            let tile_offset = if self.lcdc.bit4() {
+                i16::from(tile_number)
+            } else {
+                i16::from(tile_number as i8) + 128
+            } as u16
+                * 16;
+            let tile_location = tile_base + tile_offset;
+            let tile_attr = Attr::from(self.get_ram1(tile_addr));
 
-            let line = if self.term == Term::GBC && tile_attr.yflip {
-                ((7u8.wrapping_sub(py)) % 8) * 2
+            let tile_y = if tile_attr.yflip { 7 - py % 8 } else { py % 8 };
+            let tile_y_data: [u8; 2] = if self.term == Term::GBC && tile_attr.bank {
+                let a = self.get_ram1(tile_location + u16::from(tile_y * 2));
+                let b = self.get_ram1(tile_location + u16::from(tile_y * 2) + 1);
+                [a, b]
             } else {
-                (py % 8) * 2
+                let a = self.get_ram0(tile_location + u16::from(tile_y * 2));
+                let b = self.get_ram0(tile_location + u16::from(tile_y * 2) + 1);
+                [a, b]
             };
-            let (b1, b2) = if self.term == Term::GBC && tile_attr.bank {
-                let a = self.get_ram1(tile_location + u16::from(line));
-                let b = self.get_ram1(tile_location + u16::from(line) + 1);
-                (a, b)
-            } else {
-                let a = self.get_ram0(tile_location + u16::from(line));
-                let b = self.get_ram0(tile_location + u16::from(line) + 1);
-                (a, b)
-            };
-            let color_bit = if tile_attr.xflip { px % 8 } else { 7 - px % 8 };
-            let color_num =
-                if b1 & (1 << color_bit) != 0 { 1 } else { 0 } | if b2 & (1 << color_bit) != 0 { 2 } else { 0 };
+            let tile_x = if tile_attr.xflip { 7 - px % 8 } else { px % 8 };
 
-            self.bgprio[x] = if color_num == 0 {
-                PrioType::Zero
-            } else if tile_attr.priority {
-                PrioType::Priority
-            } else {
-                PrioType::Else
-            };
+            // Palettes
+            let color_l = if tile_y_data[0] & (0x80 >> tile_x) != 0 { 1 } else { 0 };
+            let color_h = if tile_y_data[1] & (0x80 >> tile_x) != 0 { 2 } else { 0 };
+            let color = color_h | color_l;
+
+            // Priority
+            self.prio[x] = (tile_attr.priority, color);
 
             if self.term == Term::GBC {
-                let r = self.cbgpal[tile_attr.palette_number_1][color_num][0];
-                let g = self.cbgpal[tile_attr.palette_number_1][color_num][1];
-                let b = self.cbgpal[tile_attr.palette_number_1][color_num][2];
+                let r = self.cbgpd[tile_attr.palette_number_1][color][0];
+                let g = self.cbgpd[tile_attr.palette_number_1][color][1];
+                let b = self.cbgpd[tile_attr.palette_number_1][color][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
-                let color = Self::get_gray_shades(self.bgp, color_num) as u8;
+                let color = Self::get_gray_shades(self.bgp, color) as u8;
                 self.set_gre(x, color);
             }
         }
     }
 
+    // Gameboy video controller can display up to 40 sprites either in 8x8 or in 8x16 pixels. Because of a limitation
+    // of hardware, only ten sprites can be displayed per scan line. Sprite patterns have the same format as BG tiles,
+    // but they are taken from the Sprite Pattern Table located at $8000-8FFF and have unsigned numbering.
+    //
+    // Sprite attributes reside in the Sprite Attribute Table (OAM - Object Attribute Memory) at $FE00-FE9F. Each of
+    // the 40 entries consists of four bytes with the following meanings:
+    //   Byte0 - Y Position
+    //   Specifies the sprites vertical position on the screen (minus 16). An off-screen value (for example, Y=0 or
+    //   Y>=160) hides the sprite.
+    //
+    //   Byte1 - X Position
+    //   Specifies the sprites horizontal position on the screen (minus 8). An off-screen value (X=0 or X>=168) hides
+    //   the sprite, but the sprite still affects the priority ordering - a better way to hide a sprite is to set its
+    //   Y-coordinate off-screen.
+    //
+    //   Byte2 - Tile/Pattern Number
+    //   Specifies the sprites Tile Number (00-FF). This (unsigned) value selects a tile from memory at 8000h-8FFFh. In
+    //   CGB Mode this could be either in VRAM Bank 0 or 1, depending on Bit 3 of the following byte. In 8x16 mode, the
+    //   lower bit of the tile number is ignored. IE: the upper 8x8 tile is "NN AND FEh", and the lower 8x8 tile is
+    //   "NN OR 01h".
+    //
+    //   Byte3 - Attributes/Flags:
+    //     Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
+    //           (Used for both BG and Window. BG color 0 is always behind OBJ)
+    //     Bit6   Y flip          (0=Normal, 1=Vertically mirrored)
+    //     Bit5   X flip          (0=Normal, 1=Horizontally mirrored)
+    //     Bit4   Palette number  **Non CGB Mode Only** (0=OBP0, 1=OBP1)
+    //     Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
+    //     Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
     fn draw_sprites(&mut self) {
+        // Sprite tile size 8x8 or 8x16(2 stacked vertically).
         let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
         for i in 0..40 {
-            let sprite_addr = 0xFE00 + (i as u16) * 4;
-            let sprite_y = i32::from(self.get(sprite_addr)) - 16;
-            let sprite_x = i32::from(self.get(sprite_addr + 1)) - 8;
-            let tile_location = u16::from(self.get(sprite_addr + 2)) & (if self.lcdc.bit2() { 0xfe } else { 0xff });
+            let sprite_addr = 0xfe00 + (i as u16) * 4;
+            let py = self.get(sprite_addr).wrapping_sub(16);
+            let px = self.get(sprite_addr + 1).wrapping_sub(8);
+            let tile_number = self.get(sprite_addr + 2) & if self.lcdc.bit2() { 0xfe } else { 0xff };
             let tile_attr = Attr::from(self.get(sprite_addr + 3));
 
-            let line = i32::from(self.ly);
             // If this is true the scanline is out of the area we care about
-            if line < sprite_y || line >= sprite_y + sprite_size {
-                continue;
-            }
-            if sprite_x < -7 || sprite_x >= (SCREEN_W as i32) {
-                continue;
-            }
-            let line: u16 = if tile_attr.yflip {
-                (sprite_size - 1 - (line - sprite_y)) as u16
+            if py <= 0xff - sprite_size + 1 {
+                if self.ly < py || self.ly > py + sprite_size - 1 {
+                    continue;
+                }
             } else {
-                (line - sprite_y) as u16
+                if self.ly > py.wrapping_add(sprite_size) - 1 {
+                    continue;
+                }
+            }
+            if px >= (SCREEN_W as u8) && px <= (0xff - 7) {
+                continue;
+            }
+
+            let tile_y = if tile_attr.yflip {
+                sprite_size - 1 - self.ly.wrapping_sub(py)
+            } else {
+                self.ly.wrapping_sub(py)
             };
-            let tile_location = 0x8000u16 + tile_location * 16 + line * 2;
-            let b1: u8;
-            let b2: u8;
-            if tile_attr.bank && self.term == Term::GBC {
-                b1 = self.get_ram1(tile_location);
-                b2 = self.get_ram1(tile_location + 1);
+            let tile_y_addr = 0x8000u16 + u16::from(tile_number) * 16 + u16::from(tile_y) * 2;
+            let tile_y_data: [u8; 2] = if self.term == Term::GBC && tile_attr.bank {
+                let b1 = self.get_ram1(tile_y_addr);
+                let b2 = self.get_ram1(tile_y_addr + 1);
+                [b1, b2]
             } else {
-                b1 = self.get_ram0(tile_location);
-                b2 = self.get_ram0(tile_location + 1);
+                let b1 = self.get_ram0(tile_y_addr);
+                let b2 = self.get_ram0(tile_y_addr + 1);
+                [b1, b2]
             };
 
             for x in 0..8 {
-                if sprite_x + x < 0 || sprite_x + x >= (SCREEN_W as i32) {
+                if px.wrapping_add(x) >= (SCREEN_W as u8) {
                     continue;
                 }
-                let color_bit = 1 << (if tile_attr.xflip { x } else { 7 - x } as u32);
-                let color_mum = (if b1 & color_bit != 0 { 1 } else { 0 }) | (if b2 & color_bit != 0 { 2 } else { 0 });
-                if color_mum == 0 {
+                let tile_x = if tile_attr.xflip { 7 - x } else { x };
+
+                // Palettes
+                let color_l = if tile_y_data[0] & (0x80 >> tile_x) != 0 { 1 } else { 0 };
+                let color_h = if tile_y_data[1] & (0x80 >> tile_x) != 0 { 2 } else { 0 };
+                let color = color_h | color_l;
+                if color == 0 {
+                    continue;
+                }
+
+                // Confirm the priority of background and sprite.
+                let prio = self.prio[px.wrapping_add(x) as usize];
+                let skip = if self.term == Term::GBC && !self.lcdc.bit0() {
+                    prio.1 == 0
+                } else if prio.0 {
+                    prio.1 != 0
+                } else {
+                    tile_attr.priority && prio.1 != 0
+                };
+                if skip {
                     continue;
                 }
 
                 if self.term == Term::GBC {
-                    if self.lcdc.bit0()
-                        && (self.bgprio[(sprite_x + x) as usize] == PrioType::Priority
-                            || (tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero))
-                    {
-                        continue;
-                    }
-                    let r = self.csprit[tile_attr.palette_number_1][color_mum][0];
-                    let g = self.csprit[tile_attr.palette_number_1][color_mum][1];
-                    let b = self.csprit[tile_attr.palette_number_1][color_mum][2];
-                    self.set_rgb((sprite_x + x) as usize, r, g, b);
+                    let r = self.cobpd[tile_attr.palette_number_1][color][0];
+                    let g = self.cobpd[tile_attr.palette_number_1][color][1];
+                    let b = self.cobpd[tile_attr.palette_number_1][color][2];
+                    self.set_rgb(px.wrapping_add(x) as usize, r, g, b);
                 } else {
-                    if tile_attr.priority && self.bgprio[(sprite_x + x) as usize] != PrioType::Zero {
-                        continue;
-                    }
                     let color = if tile_attr.palette_number_0 == 1 {
-                        Self::get_gray_shades(self.op1, color_mum) as u8
+                        Self::get_gray_shades(self.op1, color) as u8
                     } else {
-                        Self::get_gray_shades(self.op0, color_mum) as u8
+                        Self::get_gray_shades(self.op0, color) as u8
                     };
-                    self.set_gre((sprite_x + x) as usize, color);
+                    self.set_gre(px.wrapping_add(x) as usize, color);
                 }
             }
         }
@@ -638,7 +705,7 @@ impl Gpu {
 impl Memory for Gpu {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x8000...0x9fff => self.ram[self.ram_bank][a as usize - 0x8000],
+            0x8000...0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000],
             0xfe00...0xfe9f => self.oam[a as usize - 0xfe00],
             0xff40 => self.lcdc.data,
             0xff41 => {
@@ -646,54 +713,54 @@ impl Memory for Gpu {
                 let bit5 = if self.stat.enable_m2_interrupt { 0x20 } else { 0x00 };
                 let bit4 = if self.stat.enable_m1_interrupt { 0x10 } else { 0x00 };
                 let bit3 = if self.stat.enable_m0_interrupt { 0x08 } else { 0x00 };
-                let bit2 = if self.ly == self.ly_compare { 0x04 } else { 0x00 };
+                let bit2 = if self.ly == self.lc { 0x04 } else { 0x00 };
                 bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
             0xff42 => self.sy,
             0xff43 => self.sx,
             0xff44 => self.ly,
-            0xff45 => self.ly_compare,
+            0xff45 => self.lc,
             0xff47 => self.bgp,
             0xff48 => self.op0,
             0xff49 => self.op1,
             0xff4a => self.wy,
             0xff4b => self.wx,
-            0xff4f => self.ram_bank as u8,
-            0xff68 => (if self.cbgpal_inc { 0x80 } else { 0x00 }) | self.cbgpal_ind,
+            0xff4f => 0xfe | self.ram_bank as u8,
+            0xff68 => self.cbgpi.get(),
             0xff69 => {
-                let r = self.cbgpal_ind as usize >> 3;
-                let c = self.cbgpal_ind as usize >> 1 & 0x3;
-                if self.cbgpal_ind & 0x01 == 0x00 {
-                    let a = self.cbgpal[r][c][0];
-                    let b = self.cbgpal[r][c][1] << 5;
+                let r = self.cbgpi.i as usize >> 3;
+                let c = self.cbgpi.i as usize >> 1 & 0x3;
+                if self.cbgpi.i & 0x01 == 0x00 {
+                    let a = self.cbgpd[r][c][0];
+                    let b = self.cbgpd[r][c][1] << 5;
                     a | b
                 } else {
-                    let a = self.cbgpal[r][c][1] >> 3;
-                    let b = self.cbgpal[r][c][2] << 2;
+                    let a = self.cbgpd[r][c][1] >> 3;
+                    let b = self.cbgpd[r][c][2] << 2;
                     a | b
                 }
             }
-            0xff6a => (if self.csprit_inc { 0x80 } else { 0x00 }) | self.csprit_ind,
+            0xff6a => self.cobpi.get(),
             0xff6b => {
-                let r = self.csprit_ind as usize >> 3;
-                let c = self.csprit_ind as usize >> 1 & 0x3;
-                if self.csprit_ind & 0x01 == 0x00 {
-                    let a = self.csprit[r][c][0];
-                    let b = self.csprit[r][c][1] << 5;
+                let r = self.cobpi.i as usize >> 3;
+                let c = self.cobpi.i as usize >> 1 & 0x3;
+                if self.cobpi.i & 0x01 == 0x00 {
+                    let a = self.cobpd[r][c][0];
+                    let b = self.cobpd[r][c][1] << 5;
                     a | b
                 } else {
-                    let a = self.csprit[r][c][1] >> 3;
-                    let b = self.csprit[r][c][2] << 2;
+                    let a = self.cobpd[r][c][1] >> 3;
+                    let b = self.cobpd[r][c][2] << 2;
                     a | b
                 }
             }
-            _ => panic!("Unsupported address"),
+            _ => panic!(""),
         }
     }
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0x8000...0x9fff => self.ram[self.ram_bank][a as usize - 0x8000] = v,
+            0x8000...0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v,
             0xfe00...0xfe9f => self.oam[a as usize - 0xfe00] = v,
             0xff40 => {
                 self.lcdc.data = v;
@@ -703,7 +770,7 @@ impl Memory for Gpu {
                     self.stat.mode = 0;
                     // Clean screen.
                     self.data = [[[0xffu8; 3]; SCREEN_W]; SCREEN_H];
-                    self.updated = true;
+                    self.v_blank = true;
                 }
             }
             0xff41 => {
@@ -715,50 +782,46 @@ impl Memory for Gpu {
             0xff42 => self.sy = v,
             0xff43 => self.sx = v,
             0xff44 => {}
-            0xff45 => self.ly_compare = v,
+            0xff45 => self.lc = v,
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,
             0xff49 => self.op1 = v,
             0xff4a => self.wy = v,
             0xff4b => self.wx = v,
             0xff4f => self.ram_bank = (v & 0x01) as usize,
-            0xff68 => {
-                self.cbgpal_ind = v & 0x3f;
-                self.cbgpal_inc = v & 0x80 != 0x00;
-            }
+            0xff68 => self.cbgpi.set(v),
             0xff69 => {
-                let r = self.cbgpal_ind as usize >> 3;
-                let c = self.cbgpal_ind as usize >> 1 & 0x03;
-                if self.cbgpal_ind & 0x01 == 0x00 {
-                    self.cbgpal[r][c][0] = v & 0x1f;
-                    self.cbgpal[r][c][1] = (self.cbgpal[r][c][1] & 0x18) | (v >> 5);
+                let r = self.cbgpi.i as usize >> 3;
+                let c = self.cbgpi.i as usize >> 1 & 0x03;
+                if self.cbgpi.i & 0x01 == 0x00 {
+                    self.cbgpd[r][c][0] = v & 0x1f;
+                    self.cbgpd[r][c][1] = (self.cbgpd[r][c][1] & 0x18) | (v >> 5);
                 } else {
-                    self.cbgpal[r][c][1] = (self.cbgpal[r][c][1] & 0x07) | ((v & 0x03) << 3);
-                    self.cbgpal[r][c][2] = (v >> 2) & 0x1f;
+                    self.cbgpd[r][c][1] = (self.cbgpd[r][c][1] & 0x07) | ((v & 0x03) << 3);
+                    self.cbgpd[r][c][2] = (v >> 2) & 0x1f;
                 }
-                if self.cbgpal_inc {
-                    self.cbgpal_ind = (self.cbgpal_ind + 1) & 0x3f;
-                };
+                if self.cbgpi.auto_increment {
+                    self.cbgpi.i += 0x01;
+                    self.cbgpi.i &= 0x3f;
+                }
             }
-            0xff6a => {
-                self.csprit_ind = v & 0x3f;
-                self.csprit_inc = v & 0x80 != 0x00;
-            }
+            0xff6a => self.cobpi.set(v),
             0xff6b => {
-                let r = self.csprit_ind as usize >> 3;
-                let c = self.csprit_ind as usize >> 1 & 0x03;
-                if self.csprit_ind & 0x01 == 0x00 {
-                    self.csprit[r][c][0] = v & 0x1f;
-                    self.csprit[r][c][1] = (self.csprit[r][c][1] & 0x18) | (v >> 5);
+                let r = self.cobpi.i as usize >> 3;
+                let c = self.cobpi.i as usize >> 1 & 0x03;
+                if self.cobpi.i & 0x01 == 0x00 {
+                    self.cobpd[r][c][0] = v & 0x1f;
+                    self.cobpd[r][c][1] = (self.cobpd[r][c][1] & 0x18) | (v >> 5);
                 } else {
-                    self.csprit[r][c][1] = (self.csprit[r][c][1] & 0x07) | ((v & 0x03) << 3);
-                    self.csprit[r][c][2] = (v >> 2) & 0x1f;
+                    self.cobpd[r][c][1] = (self.cobpd[r][c][1] & 0x07) | ((v & 0x03) << 3);
+                    self.cobpd[r][c][2] = (v >> 2) & 0x1f;
                 }
-                if self.csprit_inc {
-                    self.csprit_ind = (self.csprit_ind + 1) & 0x3f;
-                };
+                if self.cobpi.auto_increment {
+                    self.cobpi.i += 0x01;
+                    self.cobpi.i &= 0x3f;
+                }
             }
-            _ => panic!("Unsupported address"),
+            _ => panic!(""),
         }
     }
 }

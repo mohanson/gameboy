@@ -30,8 +30,7 @@ pub enum JoypadKey {
 }
 
 pub struct Joypad {
-    pub interrupt: u8,
-
+    pub intf: u8,
     matrix: u8,
     select: u8,
 }
@@ -39,9 +38,9 @@ pub struct Joypad {
 impl Joypad {
     pub fn power_up() -> Self {
         Self {
+            intf: 0,
             matrix: 0xff,
             select: 0x00,
-            interrupt: 0,
         }
     }
 }
@@ -49,7 +48,7 @@ impl Joypad {
 impl Joypad {
     pub fn keydown(&mut self, key: JoypadKey) {
         self.matrix &= !(key as u8);
-        self.interrupt |= 0x10;
+        self.intf |= 0x10;
     }
 
     pub fn keyup(&mut self, key: JoypadKey) {

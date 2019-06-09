@@ -10,7 +10,19 @@ def call(command):
         sys.exit(r)
 
 
+c_disable_clippy_lint = [
+    'clippy::cognitive_complexity',
+    'clippy::collapsible_if',
+    'clippy::many_single_char_names',
+    'clippy::should_implement_trait',
+    'clippy::unnecessary_cast',
+]
+
+
 def make():
+    call('cargo fmt')
+    a = ' '.join([f'-A {e}' for e in c_disable_clippy_lint])
+    call(f'cargo clippy -- {a}')
     call('cargo build')
 
 
@@ -34,7 +46,6 @@ path_cpu_instr_timing = r"/tmp/gb/instr_timing.gb"
 
 
 def test_roms():
-    make()
     for p in [
         path_rom_only,
         path_mbc1,

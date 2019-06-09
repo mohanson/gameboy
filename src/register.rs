@@ -46,22 +46,22 @@ impl Register {
 
     pub fn set_af(&mut self, v: u16) {
         self.a = (v >> 8) as u8;
-        self.f = (v & 0x00F0) as u8;
+        self.f = (v & 0x00f0) as u8;
     }
 
     pub fn set_bc(&mut self, v: u16) {
         self.b = (v >> 8) as u8;
-        self.c = (v & 0x00FF) as u8;
+        self.c = (v & 0x00ff) as u8;
     }
 
     pub fn set_de(&mut self, v: u16) {
         self.d = (v >> 8) as u8;
-        self.e = (v & 0x00FF) as u8;
+        self.e = (v & 0x00ff) as u8;
     }
 
     pub fn set_hl(&mut self, v: u16) {
         self.h = (v >> 8) as u8;
-        self.l = (v & 0x00FF) as u8;
+        self.l = (v & 0x00ff) as u8;
     }
 }
 

@@ -19,7 +19,6 @@ pub enum Speed {
 
 pub struct MemoryManagementUnit {
     pub cartridge: Box<Cartridge>,
-    pub interrupt: u8,
     pub gpu: Gpu,
     pub joypad: Joypad,
     pub serial: Serial,
@@ -28,7 +27,8 @@ pub struct MemoryManagementUnit {
     pub speed: Speed,
     pub term: Term,
     pub timer: Timer,
-    enable_interrupts: u8,
+    inte: u8,
+    intf: u8,
     hdma: Hdma,
     hram: [u8; 0x7f],
     wram: [u8; 0x8000],
@@ -44,7 +44,6 @@ impl MemoryManagementUnit {
         };
         let mut r = Self {
             cartridge: cart,
-            interrupt: 0x00,
             gpu: Gpu::power_up(term),
             joypad: Joypad::power_up(),
             serial: Serial::power_up(),
@@ -53,7 +52,8 @@ impl MemoryManagementUnit {
             speed: Speed::Normal,
             term,
             timer: Timer::power_up(),
-            enable_interrupts: 0x00,
+            inte: 0x00,
+            intf: 0x00,
             hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
             wram: [0x00; 0x8000],
@@ -103,20 +103,20 @@ impl MemoryManagementUnit {
         let cpu_cycles = cycles + vram_cycles * cpu_divider;
 
         self.timer.next(cpu_cycles);
-        self.interrupt |= self.timer.interrupt;
-        self.timer.interrupt = 0;
+        self.intf |= self.timer.intf;
+        self.timer.intf = 0;
 
-        self.interrupt |= self.joypad.interrupt;
-        self.joypad.interrupt = 0;
+        self.intf |= self.joypad.intf;
+        self.joypad.intf = 0;
 
         self.gpu.next(gpu_cycles);
-        self.interrupt |= self.gpu.interrupt;
-        self.gpu.interrupt = 0;
+        self.intf |= self.gpu.intf;
+        self.gpu.intf = 0;
 
         self.sound.as_mut().map_or((), |s| s.do_cycle(gpu_cycles));
 
-        self.interrupt |= self.serial.interrupt;
-        self.serial.interrupt = 0;
+        self.intf |= self.serial.intf;
+        self.serial.intf = 0;
 
         gpu_cycles
     }
@@ -146,7 +146,7 @@ impl MemoryManagementUnit {
                 len * 8
             }
             HdmaMode::Hdma => {
-                if !self.gpu.blanked {
+                if !self.gpu.h_blank {
                     return 0;
                 }
                 self.run_dma_hrampart();
@@ -189,7 +189,7 @@ impl Memory for MemoryManagementUnit {
             0xff00 => self.joypad.get(a),
             0xff01...0xff02 => self.serial.get(a),
             0xff04...0xff07 => self.timer.get(a),
-            0xff0f => self.interrupt,
+            0xff0f => self.intf,
             0xff10...0xff3f => match &self.sound {
                 Some(some) => some.rb(a),
                 None => 0x00,
@@ -204,7 +204,7 @@ impl Memory for MemoryManagementUnit {
             0xff68...0xff6b => self.gpu.get(a),
             0xff70 => self.wram_bank as u8,
             0xff80...0xfffe => self.hram[a as usize - 0xff80],
-            0xffff => self.enable_interrupts,
+            0xffff => self.inte,
             _ => 0x00,
         }
     }
@@ -228,6 +228,7 @@ impl Memory for MemoryManagementUnit {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
                 // table).
                 // See: http://gbdev.gg8.se/wiki/articles/Video_Display#FF46_-_DMA_-_DMA_Transfer_and_Start_Address_.28R.2FW.29
+                assert!(v <= 0xf1);
                 let base = u16::from(v) << 8;
                 for i in 0..0xa0 {
                     let b = self.get(base + i);
@@ -238,7 +239,7 @@ impl Memory for MemoryManagementUnit {
             0xff40...0xff45 | 0xff47...0xff4b | 0xff4f => self.gpu.set(a, v),
             0xff51...0xff55 => self.hdma.set(a, v),
             0xff68...0xff6b => self.gpu.set(a, v),
-            0xff0f => self.interrupt = v,
+            0xff0f => self.intf = v,
             0xff70 => {
                 self.wram_bank = match v & 0x7 {
                     0 => 1,
@@ -246,7 +247,7 @@ impl Memory for MemoryManagementUnit {
                 };
             }
             0xff80...0xfffe => self.hram[a as usize - 0xff80] = v,
-            0xffff => self.enable_interrupts = v,
+            0xffff => self.inte = v,
             _ => {}
         }
     }

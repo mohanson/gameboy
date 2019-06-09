@@ -615,7 +615,6 @@ impl Sound {
         }
     }
 
-    #[allow(clippy::cognitive_complexity)]
     fn mix_buffers(&mut self) {
         let sample_count = self.channel1.blip.samples_avail() as usize;
         debug_assert!(sample_count == self.channel2.blip.samples_avail() as usize);
