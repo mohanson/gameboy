@@ -2,11 +2,13 @@
 
 Full featured Cross-platform GameBoy emulator. **Forever boys!**.
 
+![sample.gif](./res/imgs/sample.gif)
+
+You can start a game with the following command, here with a built-in game "Boxes" as an example:
+
 ```s
 $ cargo run -- "./res/boxes.gb"
 ```
-
-![sample.gif](./res/imgs/sample.gif)
 
 Gameboy is developed by Rust, and fully tested on Windows, Ubuntu and Mac.
 
@@ -39,8 +41,8 @@ Left/Right <--- ||_ O _|   ,-. "._,"|
 Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. You can find the way how to run tests in `./Cargo.py`.
 
 
-| Test Name    | Result                               |
-|--------------|--------------------------------------|
+| Test Name    | Result                              |
+|--------------|-------------------------------------|
 | cpu_instrs   | ![img](./res/imgs/cpu_instrs.png)   |
 | instr_timing | ![img](./res/imgs/instr_timing.png) |
 
