@@ -38,7 +38,7 @@ pub struct Joypad {
 impl Joypad {
     pub fn power_up() -> Self {
         Self {
-            intf: 0,
+            intf: 0x00,
             matrix: 0xff,
             select: 0x00,
         }
