@@ -4,12 +4,15 @@
 // with the contents of Timer Modulo (TMA).
 //
 // See: http://gbdev.gg8.se/wiki/articles/Timer_and_Divider_Registers
-#[derive(Default)]
+use super::intf::{Flag, Intf};
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub struct Timer {
     // Each time when the timer overflows (ie. when TIMA gets bigger than FFh), then an interrupt is requested by
     // setting Bit 2 in the IF Register (FF0F). When that interrupt is enabled, then the CPU will execute it by calling
     // the timer interrupt vector at 0050h.
-    pub intf: u8,
+    intf: Rc<RefCell<Intf>>,
 
     // This register is incremented at rate of 16384Hz (~16779Hz on SGB). Writing any value to this register resets it
     // to 00h.
@@ -37,10 +40,16 @@ pub struct Timer {
 }
 
 impl Timer {
-    pub fn power_up() -> Self {
+    pub fn power_up(intf: Rc<RefCell<Intf>>) -> Self {
         Timer {
+            intf,
+            div: 0x00,
+            tima: 0x00,
+            tma: 0x00,
+            tac: 0x00,
             freq: 256,
-            ..Timer::default()
+            tmp1: 0x00,
+            tmp2: 0x00,
         }
     }
 
@@ -89,7 +98,7 @@ impl Timer {
                 self.tima = self.tima.wrapping_add(1);
                 if self.tima == 0x00 {
                     self.tima = self.tma;
-                    self.intf |= 0x04;
+                    self.intf.borrow_mut().hi(Flag::Timer);
                 }
                 self.tmp2 -= self.freq;
             }

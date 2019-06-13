@@ -11,6 +11,7 @@ def call(command):
 
 
 c_disable_clippy_lint = [
+    'clippy::assign_op_pattern',
     'clippy::cognitive_complexity',
     'clippy::collapsible_if',
     'clippy::many_single_char_names',

@@ -1,19 +1,19 @@
 use super::cpu::Rtc;
 use super::memory::Memory;
-use super::mmunit::MemoryManagementUnit;
+use super::mmunit::Mmunit;
 use super::sound::{AudioPlayer, Sound};
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
 pub struct MotherBoard {
-    pub mmu: Rc<RefCell<MemoryManagementUnit>>,
+    pub mmu: Rc<RefCell<Mmunit>>,
     pub cpu: Rtc,
 }
 
 impl MotherBoard {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
-        let mmu = Rc::new(RefCell::new(MemoryManagementUnit::power_up(path)));
+        let mmu = Rc::new(RefCell::new(Mmunit::power_up(path)));
         let cpu = Rtc::power_up(mmu.borrow().term, mmu.clone());
         Self { mmu, cpu }
     }

@@ -5,9 +5,12 @@
 // next byte but the last one hasn't gone out yet, it has no choice but to wait.
 //
 // See: http://gbdev.gg8.se/wiki/articles/Serial_Data_Transfer_(Link_Cable)
-#[derive(Default)]
+use super::intf::Intf;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub struct Serial {
-    pub intf: u8,
+    _intf: Rc<RefCell<Intf>>,
 
     // Before a transfer, it holds the next byte that will go out.
     // During a transfer, it has a blend of the outgoing and incoming bytes. Each cycle, the leftmost bit is shifted
@@ -20,8 +23,12 @@ pub struct Serial {
 }
 
 impl Serial {
-    pub fn power_up() -> Self {
-        Serial::default()
+    pub fn power_up(intf: Rc<RefCell<Intf>>) -> Self {
+        Self {
+            _intf: intf,
+            data: 0x00,
+            control: 0x00,
+        }
     }
 
     pub fn get(&self, a: u16) -> u8 {
