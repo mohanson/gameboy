@@ -4,12 +4,15 @@
 use super::cartridge::{self, Cartridge};
 use super::convention::Term;
 use super::gpu::{Gpu, Hdma, HdmaMode};
+use super::intf::Intf;
 use super::joypad::Joypad;
 use super::memory::Memory;
 use super::serial::Serial;
 use super::sound::Sound;
 use super::timer::Timer;
+use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Speed {
@@ -17,7 +20,7 @@ pub enum Speed {
     Double = 0x02,
 }
 
-pub struct MemoryManagementUnit {
+pub struct Mmunit {
     pub cartridge: Box<Cartridge>,
     pub gpu: Gpu,
     pub joypad: Joypad,
@@ -28,32 +31,33 @@ pub struct MemoryManagementUnit {
     pub term: Term,
     pub timer: Timer,
     inte: u8,
-    intf: u8,
+    intf: Rc<RefCell<Intf>>,
     hdma: Hdma,
     hram: [u8; 0x7f],
     wram: [u8; 0x8000],
     wram_bank: usize,
 }
 
-impl MemoryManagementUnit {
+impl Mmunit {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let cart = cartridge::power_up(path);
         let term = match cart.get(0x0143) & 0x80 {
             0x80 => Term::GBC,
             _ => Term::GB,
         };
+        let intf = Rc::new(RefCell::new(Intf::power_up()));
         let mut r = Self {
             cartridge: cart,
-            gpu: Gpu::power_up(term),
-            joypad: Joypad::power_up(),
-            serial: Serial::power_up(),
+            gpu: Gpu::power_up(term, intf.clone()),
+            joypad: Joypad::power_up(intf.clone()),
+            serial: Serial::power_up(intf.clone()),
             shift: false,
             sound: None,
             speed: Speed::Normal,
             term,
-            timer: Timer::power_up(),
+            timer: Timer::power_up(intf.clone()),
             inte: 0x00,
-            intf: 0x00,
+            intf: intf.clone(),
             hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
             wram: [0x00; 0x8000],
@@ -94,30 +98,15 @@ impl MemoryManagementUnit {
     }
 }
 
-impl MemoryManagementUnit {
+impl Mmunit {
     pub fn next(&mut self, cycles: u32) -> u32 {
         let cpu_divider = self.speed as u32;
         let vram_cycles = self.run_dma();
-
         let gpu_cycles = cycles / cpu_divider + vram_cycles;
         let cpu_cycles = cycles + vram_cycles * cpu_divider;
-
         self.timer.next(cpu_cycles);
-        self.intf |= self.timer.intf;
-        self.timer.intf = 0;
-
-        self.intf |= self.joypad.intf;
-        self.joypad.intf = 0;
-
         self.gpu.next(gpu_cycles);
-        self.intf |= self.gpu.intf;
-        self.gpu.intf = 0;
-
         self.sound.as_mut().map_or((), |s| s.do_cycle(gpu_cycles));
-
-        self.intf |= self.serial.intf;
-        self.serial.intf = 0;
-
         gpu_cycles
     }
 
@@ -174,7 +163,7 @@ impl MemoryManagementUnit {
     }
 }
 
-impl Memory for MemoryManagementUnit {
+impl Memory for Mmunit {
     fn get(&self, a: u16) -> u8 {
         match a {
             0x0000...0x7fff => self.cartridge.get(a),
@@ -189,7 +178,7 @@ impl Memory for MemoryManagementUnit {
             0xff00 => self.joypad.get(a),
             0xff01...0xff02 => self.serial.get(a),
             0xff04...0xff07 => self.timer.get(a),
-            0xff0f => self.intf,
+            0xff0f => self.intf.borrow().data,
             0xff10...0xff3f => match &self.sound {
                 Some(some) => some.rb(a),
                 None => 0x00,
@@ -239,7 +228,7 @@ impl Memory for MemoryManagementUnit {
             0xff40...0xff45 | 0xff47...0xff4b | 0xff4f => self.gpu.set(a, v),
             0xff51...0xff55 => self.hdma.set(a, v),
             0xff68...0xff6b => self.gpu.set(a, v),
-            0xff0f => self.intf = v,
+            0xff0f => self.intf.borrow_mut().data = v,
             0xff70 => {
                 self.wram_bank = match v & 0x7 {
                     0 => 1,
