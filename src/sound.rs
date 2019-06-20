@@ -1,4 +1,5 @@
 use blip_buf::BlipBuf;
+use std::sync::{Arc, Mutex};
 
 const WAVE_PATTERN: [[i32; 8]; 4] = [
     [-1, -1, -1, -1, 1, -1, -1, -1],
@@ -8,12 +9,6 @@ const WAVE_PATTERN: [[i32; 8]; 4] = [
 ];
 const CLOCKS_PER_SECOND: u32 = 1 << 22;
 const OUTPUT_SAMPLE_COUNT: usize = 2000; // this should be less than blip_buf::MAX_FRAME
-
-pub trait AudioPlayer: Send {
-    fn play(&mut self, left_channel: &[f32], right_channel: &[f32]);
-    fn samples_rate(&self) -> u32;
-    fn underflowed(&self) -> bool;
-}
 
 struct VolumeEnvelope {
     period: u8,
@@ -470,18 +465,18 @@ pub struct Sound {
     volume_left: u8,
     volume_right: u8,
     need_sync: bool,
-    player: Box<AudioPlayer>,
+    pub buffer: Arc<Mutex<Vec<(f32, f32)>>>,
+    sample_rate: u32,
 }
 
 impl Sound {
-    pub fn new(player: Box<AudioPlayer>) -> Sound {
-        let blipbuf1 = create_blipbuf(player.samples_rate());
-        let blipbuf2 = create_blipbuf(player.samples_rate());
-        let blipbuf3 = create_blipbuf(player.samples_rate());
-        let blipbuf4 = create_blipbuf(player.samples_rate());
+    pub fn new(sample_rate: u32) -> Sound {
+        let blipbuf1 = create_blipbuf(sample_rate);
+        let blipbuf2 = create_blipbuf(sample_rate);
+        let blipbuf3 = create_blipbuf(sample_rate);
+        let blipbuf4 = create_blipbuf(sample_rate);
 
-        let output_period =
-            (OUTPUT_SAMPLE_COUNT as u64 * u64::from(CLOCKS_PER_SECOND)) / u64::from(player.samples_rate());
+        let output_period = (OUTPUT_SAMPLE_COUNT as u64 * u64::from(CLOCKS_PER_SECOND)) / u64::from(sample_rate);
 
         Sound {
             on: false,
@@ -498,8 +493,26 @@ impl Sound {
             volume_left: 7,
             volume_right: 7,
             need_sync: false,
-            player,
+            buffer: Arc::new(Mutex::new(Vec::new())),
+            sample_rate,
         }
+    }
+
+    fn play(&mut self, l: &[f32], r: &[f32]) {
+        assert_eq!(l.len(), r.len());
+        let mut buffer = self.buffer.lock().unwrap();
+        for (l, r) in l.iter().zip(r) {
+            // Do not fill the buffer with more than 1 second of data
+            // This speeds up the resync after the turning on and off the speed limiter
+            if buffer.len() > self.sample_rate as usize {
+                return;
+            }
+            buffer.push((*l, *r));
+        }
+    }
+
+    fn underflowed(&self) -> bool {
+        (*self.buffer.lock().unwrap()).is_empty()
     }
 
     pub fn rb(&self, a: u16) -> u8 {
@@ -571,7 +584,7 @@ impl Sound {
         self.time = 0;
         self.prev_time = 0;
 
-        if !self.need_sync || self.player.underflowed() {
+        if !self.need_sync || self.underflowed() {
             self.need_sync = false;
             self.mix_buffers();
         } else {
@@ -675,7 +688,7 @@ impl Sound {
             debug_assert!(count1 == count3);
             debug_assert!(count1 == count4);
 
-            self.player.play(&buf_left[..count1], &buf_right[..count1]);
+            self.play(&buf_left[..count1], &buf_right[..count1]);
 
             outputted += count1;
         }
@@ -689,8 +702,8 @@ impl Sound {
     }
 }
 
-fn create_blipbuf(samples_rate: u32) -> BlipBuf {
-    let mut blipbuf = BlipBuf::new(samples_rate);
-    blipbuf.set_rates(f64::from(CLOCKS_PER_SECOND), f64::from(samples_rate));
+fn create_blipbuf(sample_rate: u32) -> BlipBuf {
+    let mut blipbuf = BlipBuf::new(sample_rate);
+    blipbuf.set_rates(f64::from(CLOCKS_PER_SECOND), f64::from(sample_rate));
     blipbuf
 }

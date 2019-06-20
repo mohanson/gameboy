@@ -1,7 +1,6 @@
 use super::cpu::Rtc;
 use super::memory::Memory;
 use super::mmunit::Mmunit;
-use super::sound::{AudioPlayer, Sound};
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
@@ -31,15 +30,5 @@ impl MotherBoard {
         let result = self.mmu.borrow().gpu.v_blank;
         self.mmu.borrow_mut().gpu.v_blank = false;
         result
-    }
-
-    pub fn enable_audio(&mut self, player: Box<AudioPlayer>) {
-        self.mmu.borrow_mut().sound = Some(Sound::new(player));
-    }
-
-    pub fn sync_audio(&mut self) {
-        if let Some(ref mut sound) = self.mmu.borrow_mut().sound {
-            sound.sync();
-        }
     }
 }
