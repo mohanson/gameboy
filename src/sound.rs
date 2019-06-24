@@ -75,6 +75,14 @@ impl Register {
         self.nrx1 >> 6
     }
 
+    fn get_length_load(&self) -> u16 {
+        if self.channel == Channel::Wave {
+            (1 << 8) - u16::from(self.nrx1)
+        } else {
+            (1 << 6) - u16::from(self.nrx1 & 0x3f)
+        }
+    }
+
     fn get_trigger(&self) -> bool {
         self.nrx4 & 0x80 != 0x00
     }
@@ -85,6 +93,10 @@ impl Register {
         } else {
             self.nrx4 &= 0x7f;
         };
+    }
+
+    fn get_length_enable(&self) -> bool {
+        self.nrx4 & 0x40 != 0x00
     }
 }
 
@@ -167,8 +179,6 @@ struct SquareChannel {
     reg: Rc<RefCell<Register>>,
     phase: u8,
     length: u8,
-    new_length: u8,
-    length_enabled: bool,
     frequency: u16,
     period: u32,
     last_amp: i32,
@@ -194,8 +204,6 @@ impl SquareChannel {
             reg: reg.clone(),
             phase: 1,
             length: 0,
-            new_length: 0,
-            length_enabled: false,
             frequency: 0,
             period: 2048,
             last_amp: 0,
@@ -221,23 +229,21 @@ impl SquareChannel {
             }
             0xFF11 | 0xFF16 => {
                 self.reg.borrow_mut().nrx1 = v;
-                self.new_length = 64 - (v & 0x3F);
             }
             0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
             0xFF13 | 0xFF18 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.frequency = (self.frequency & 0x0700) | u16::from(v);
-                self.length = self.new_length;
+                self.length = self.reg.borrow().get_length_load() as u8;
                 self.calculate_period();
             }
             0xFF14 | 0xFF19 => {
                 self.reg.borrow_mut().nrx4 = v;
                 self.frequency = (self.frequency & 0x00FF) | (u16::from(v & 0b0000_0111) << 8);
                 self.calculate_period();
-                self.length_enabled = v & 0x40 == 0x40;
 
                 if self.reg.borrow().get_trigger() {
-                    self.length = self.new_length;
+                    self.length = self.reg.borrow().get_length_load() as u8;
 
                     self.sweep_frequency = self.frequency;
                     if self.has_sweep && self.sweep_period > 0 && self.sweep_shift > 0 {
@@ -288,7 +294,7 @@ impl SquareChannel {
     }
 
     fn step_length(&mut self) {
-        if self.length_enabled && self.length != 0 {
+        if self.reg.borrow().get_length_enable() && self.length != 0 {
             self.length -= 1;
             if self.length == 0 {
                 self.reg.borrow_mut().set_trigger(false);
@@ -333,8 +339,6 @@ impl SquareChannel {
 struct WaveChannel {
     reg: Rc<RefCell<Register>>,
     length: u16,
-    new_length: u16,
-    length_enabled: bool,
     frequency: u16,
     period: u32,
     last_amp: i32,
@@ -351,8 +355,6 @@ impl WaveChannel {
         WaveChannel {
             reg: reg.clone(),
             length: 0,
-            new_length: 0,
-            length_enabled: false,
             frequency: 0,
             period: 2048,
             last_amp: 0,
@@ -371,7 +373,6 @@ impl WaveChannel {
             }
             0xFF1B => {
                 self.reg.borrow_mut().nrx1 = v;
-                self.new_length = 256 - u16::from(v);
             }
             0xFF1C => {
                 self.reg.borrow_mut().nrx2 = v;
@@ -386,9 +387,8 @@ impl WaveChannel {
                 self.reg.borrow_mut().nrx4 = v;
                 self.frequency = (self.frequency & 0x00FF) | ((u16::from(v & 0b111)) << 8);
                 self.calculate_period();
-                self.length_enabled = v & 0x40 == 0x40;
                 if self.reg.borrow().get_trigger() && self.reg.borrow().get_dac_power() {
-                    self.length = self.new_length;
+                    self.length = self.reg.borrow().get_length_load();
                     self.current_wave = 0;
                     self.delay = 0;
                 }
@@ -447,7 +447,7 @@ impl WaveChannel {
     }
 
     fn step_length(&mut self) {
-        if self.length_enabled && self.length != 0 {
+        if self.reg.borrow().get_length_enable() && self.length != 0 {
             self.length -= 1;
             if self.length == 0 {
                 self.reg.borrow_mut().set_trigger(false);
@@ -459,8 +459,6 @@ impl WaveChannel {
 struct NoiseChannel {
     reg: Rc<RefCell<Register>>,
     length: u8,
-    new_length: u8,
-    length_enabled: bool,
     volume_envelope: VolumeEnvelope,
     period: u32,
     shift_width: u8,
@@ -476,8 +474,6 @@ impl NoiseChannel {
         NoiseChannel {
             reg: reg.clone(),
             length: 0,
-            new_length: 0,
-            length_enabled: false,
             volume_envelope: VolumeEnvelope::new(),
             period: 2048,
             shift_width: 14,
@@ -492,7 +488,6 @@ impl NoiseChannel {
         match a {
             0xFF20 => {
                 self.reg.borrow_mut().nrx1 = v;
-                self.new_length = 64 - (v & 0x3F);
             }
             0xFF21 => self.reg.borrow_mut().nrx2 = v,
             0xFF22 => {
@@ -507,7 +502,7 @@ impl NoiseChannel {
             0xFF23 => {
                 self.reg.borrow_mut().nrx4 = v;
                 if self.reg.borrow().get_trigger() {
-                    self.length = self.new_length;
+                    self.length = self.reg.borrow().get_length_load() as u8;
                     self.state = 0xFF;
                     self.delay = 0;
                 }
@@ -549,7 +544,7 @@ impl NoiseChannel {
     }
 
     fn step_length(&mut self) {
-        if self.length_enabled && self.length != 0 {
+        if self.reg.borrow().get_length_enable() && self.length != 0 {
             self.length -= 1;
             if self.length == 0 {
                 self.reg.borrow_mut().set_trigger(false);
