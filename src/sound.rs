@@ -96,6 +96,21 @@ impl Register {
         self.nrx3 = l;
     }
 
+    fn get_clock_shift(&self) -> u8 {
+        assert!(self.channel == Channel::Noise);
+        self.nrx3 >> 4
+    }
+
+    fn get_width_mode_of_lfsr(&self) -> bool {
+        assert!(self.channel == Channel::Noise);
+        self.nrx3 & 0x08 != 0x00
+    }
+
+    fn get_dividor_code(&self) -> u8 {
+        assert!(self.channel == Channel::Noise);
+        self.nrx3 & 0x07
+    }
+
     fn get_trigger(&self) -> bool {
         self.nrx4 & 0x80 != 0x00
     }
@@ -126,6 +141,44 @@ impl Register {
             nrx2: 0x00,
             nrx3: 0x00,
             nrx4: 0x00,
+        }
+    }
+}
+
+// A length counter disables a channel when it decrements to zero. It contains an internal counter and enabled flag.
+// Writing a byte to NRx1 loads the counter with 64-data (256-data for wave channel). The counter can be reloaded at any
+// time.
+// A channel is said to be disabled when the internal enabled flag is clear. When a channel is disabled, its volume unit
+// receives 0, otherwise its volume unit receives the output of the waveform generator. Other units besides the length
+// counter can enable/disable the channel as well.
+// Each length counter is clocked at 256 Hz by the frame sequencer. When clocked while enabled by NRx4 and the counter
+// is not zero, it is decremented. If it becomes zero, the channel is disabled.
+struct LengthCounter {
+    reg: Rc<RefCell<Register>>,
+    n: u16,
+}
+
+impl LengthCounter {
+    fn power_up(reg: Rc<RefCell<Register>>) -> Self {
+        Self { reg, n: 0x0000 }
+    }
+
+    fn next(&mut self) {
+        if self.reg.borrow().get_length_enable() && self.n != 0 {
+            self.n -= 1;
+            if self.n == 0 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+    }
+
+    fn reload(&mut self) {
+        if self.n == 0x0000 {
+            self.n = if self.reg.borrow().channel == Channel::Wave {
+                1 << 8
+            } else {
+                1 << 6
+            };
         }
     }
 }
@@ -190,8 +243,8 @@ impl VolumeEnvelope {
 
 struct SquareChannel {
     reg: Rc<RefCell<Register>>,
+    lc: LengthCounter,
     phase: u8,
-    length: u8,
     period: u32,
     last_amp: i32,
     delay: u32,
@@ -214,8 +267,8 @@ impl SquareChannel {
         };
         SquareChannel {
             reg: reg.clone(),
+            lc: LengthCounter::power_up(reg.clone()),
             phase: 1,
-            length: 0,
             period: 2048,
             last_amp: 0,
             delay: 0,
@@ -240,11 +293,11 @@ impl SquareChannel {
             }
             0xFF11 | 0xFF16 => {
                 self.reg.borrow_mut().nrx1 = v;
+                self.lc.n = self.reg.borrow().get_length_load();
             }
             0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
             0xFF13 | 0xFF18 => {
                 self.reg.borrow_mut().nrx3 = v;
-                self.length = self.reg.borrow().get_length_load() as u8;
                 self.calculate_period();
             }
             0xFF14 | 0xFF19 => {
@@ -252,7 +305,7 @@ impl SquareChannel {
                 self.calculate_period();
 
                 if self.reg.borrow().get_trigger() {
-                    self.length = self.reg.borrow().get_length_load() as u8;
+                    self.lc.reload();
 
                     self.sweep_frequency = self.reg.borrow().get_frequency();
                     if self.has_sweep && self.sweep_period > 0 && self.sweep_shift > 0 {
@@ -302,15 +355,6 @@ impl SquareChannel {
         }
     }
 
-    fn step_length(&mut self) {
-        if self.reg.borrow().get_length_enable() && self.length != 0 {
-            self.length -= 1;
-            if self.length == 0 {
-                self.reg.borrow_mut().set_trigger(false);
-            }
-        }
-    }
-
     fn step_sweep(&mut self) {
         if !self.has_sweep || self.sweep_period == 0 {
             return;
@@ -347,7 +391,7 @@ impl SquareChannel {
 
 struct WaveChannel {
     reg: Rc<RefCell<Register>>,
-    length: u16,
+    lc: LengthCounter,
     period: u32,
     last_amp: i32,
     delay: u32,
@@ -362,7 +406,7 @@ impl WaveChannel {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         WaveChannel {
             reg: reg.clone(),
-            length: 0,
+            lc: LengthCounter::power_up(reg.clone()),
             period: 2048,
             last_amp: 0,
             delay: 0,
@@ -380,6 +424,7 @@ impl WaveChannel {
             }
             0xFF1B => {
                 self.reg.borrow_mut().nrx1 = v;
+                self.lc.n = self.reg.borrow().get_length_load();
             }
             0xFF1C => {
                 self.reg.borrow_mut().nrx2 = v;
@@ -393,7 +438,7 @@ impl WaveChannel {
                 self.reg.borrow_mut().nrx4 = v;
                 self.calculate_period();
                 if self.reg.borrow().get_trigger() && self.reg.borrow().get_dac_power() {
-                    self.length = self.reg.borrow().get_length_load();
+                    self.lc.reload();
                     self.current_wave = 0;
                     self.delay = 0;
                 }
@@ -450,20 +495,11 @@ impl WaveChannel {
             self.delay = time - end_time;
         }
     }
-
-    fn step_length(&mut self) {
-        if self.reg.borrow().get_length_enable() && self.length != 0 {
-            self.length -= 1;
-            if self.length == 0 {
-                self.reg.borrow_mut().set_trigger(false);
-            }
-        }
-    }
 }
 
 struct NoiseChannel {
     reg: Rc<RefCell<Register>>,
-    length: u8,
+    lc: LengthCounter,
     volume_envelope: VolumeEnvelope,
     period: u32,
     shift_width: u8,
@@ -478,7 +514,7 @@ impl NoiseChannel {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Noise)));
         NoiseChannel {
             reg: reg.clone(),
-            length: 0,
+            lc: LengthCounter::power_up(reg.clone()),
             volume_envelope: VolumeEnvelope::new(),
             period: 2048,
             shift_width: 14,
@@ -493,21 +529,26 @@ impl NoiseChannel {
         match a {
             0xFF20 => {
                 self.reg.borrow_mut().nrx1 = v;
+                self.lc.n = self.reg.borrow().get_length_load();
             }
             0xFF21 => self.reg.borrow_mut().nrx2 = v,
             0xFF22 => {
                 self.reg.borrow_mut().nrx3 = v;
-                self.shift_width = if v & 8 == 8 { 6 } else { 14 };
-                let freq_div = match v & 7 {
+                self.shift_width = if self.reg.borrow().get_width_mode_of_lfsr() {
+                    6
+                } else {
+                    14
+                };
+                let freq_div = match self.reg.borrow().get_dividor_code() {
                     0 => 8,
                     n => (u32::from(n) + 1) * 16,
                 };
-                self.period = freq_div << (v >> 4);
+                self.period = freq_div << self.reg.borrow().get_clock_shift();
             }
             0xFF23 => {
                 self.reg.borrow_mut().nrx4 = v;
                 if self.reg.borrow().get_trigger() {
-                    self.length = self.reg.borrow().get_length_load() as u8;
+                    self.lc.reload();
                     self.state = 0xFF;
                     self.delay = 0;
                 }
@@ -545,15 +586,6 @@ impl NoiseChannel {
                 time += self.period;
             }
             self.delay = time - end_time;
-        }
-    }
-
-    fn step_length(&mut self) {
-        if self.reg.borrow().get_length_enable() && self.length != 0 {
-            self.length -= 1;
-            if self.length == 0 {
-                self.reg.borrow_mut().set_trigger(false);
-            }
         }
     }
 }
@@ -712,10 +744,10 @@ impl Sound {
             self.channel3.run(self.prev_time, self.next_time);
             self.channel4.run(self.prev_time, self.next_time);
 
-            self.channel1.step_length();
-            self.channel2.step_length();
-            self.channel3.step_length();
-            self.channel4.step_length();
+            self.channel1.lc.next();
+            self.channel2.lc.next();
+            self.channel3.lc.next();
+            self.channel4.lc.next();
 
             if self.time_divider == 0 {
                 self.channel1.volume_envelope.step();
