@@ -1,5 +1,94 @@
 use blip_buf::BlipBuf;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+
+enum Channel {
+    Square1,
+    Square2,
+    Wave,
+    Noise,
+}
+
+// Name Addr 7654 3210 Function
+// -----------------------------------------------------------------
+//        Square 1
+// NR10 FF10 -PPP NSSS Sweep period, negate, shift
+// NR11 FF11 DDLL LLLL Duty, Length load (64-L)
+// NR12 FF12 VVVV APPP Starting volume, Envelope add mode, period
+// NR13 FF13 FFFF FFFF Frequency LSB
+// NR14 FF14 TL-- -FFF Trigger, Length enable, Frequency MSB
+//
+//        Square 2
+//      FF15 ---- ---- Not used
+// NR21 FF16 DDLL LLLL Duty, Length load (64-L)
+// NR22 FF17 VVVV APPP Starting volume, Envelope add mode, period
+// NR23 FF18 FFFF FFFF Frequency LSB
+// NR24 FF19 TL-- -FFF Trigger, Length enable, Frequency MSB
+//
+//        Wave
+// NR30 FF1A E--- ---- DAC power
+// NR31 FF1B LLLL LLLL Length load (256-L)
+// NR32 FF1C -VV- ---- Volume code (00=0%, 01=100%, 10=50%, 11=25%)
+// NR33 FF1D FFFF FFFF Frequency LSB
+// NR34 FF1E TL-- -FFF Trigger, Length enable, Frequency MSB
+//
+//        Noise
+//      FF1F ---- ---- Not used
+// NR41 FF20 --LL LLLL Length load (64-L)
+// NR42 FF21 VVVV APPP Starting volume, Envelope add mode, period
+// NR43 FF22 SSSS WDDD Clock shift, Width mode of LFSR, Divisor code
+// NR44 FF23 TL-- ---- Trigger, Length enable
+//
+//        Control/Status
+// NR50 FF24 ALLL BRRR Vin L enable, Left vol, Vin R enable, Right vol
+// NR51 FF25 NW21 NW21 Left enables, Right enables
+// NR52 FF26 P--- NW21 Power control/status, Channel length statuses
+//
+//        Not used
+//      FF27 ---- ----
+//      .... ---- ----
+//      FF2F ---- ----
+//
+//        Wave Table
+//      FF30 0000 1111 Samples 0 and 1
+//      ....
+//      FF3F 0000 1111 Samples 30 and 31
+struct Register {
+    channel: Channel,
+    nrx0: u8,
+    nrx1: u8,
+    nrx2: u8,
+    nrx3: u8,
+    nrx4: u8,
+}
+
+impl Register {
+    fn get_trigger(&self) -> bool {
+        self.nrx4 & 0x80 != 0x00
+    }
+
+    fn set_trigger(&mut self, b: bool) {
+        if b {
+            self.nrx4 |= 0x80;
+        } else {
+            self.nrx4 &= 0x7f;
+        };
+    }
+}
+
+impl Register {
+    fn power_up(channel: Channel) -> Self {
+        Self {
+            channel,
+            nrx0: 0x00,
+            nrx1: 0x00,
+            nrx2: 0x00,
+            nrx3: 0x00,
+            nrx4: 0x00,
+        }
+    }
+}
 
 const WAVE_PATTERN: [[i32; 8]; 4] = [
     [-1, -1, -1, -1, 1, -1, -1, -1],
@@ -60,7 +149,7 @@ impl VolumeEnvelope {
 }
 
 struct SquareChannel {
-    enabled: bool,
+    reg: Rc<RefCell<Register>>,
     duty: u8,
     phase: u8,
     length: u8,
@@ -82,8 +171,13 @@ struct SquareChannel {
 
 impl SquareChannel {
     fn new(blip: BlipBuf, with_sweep: bool) -> SquareChannel {
+        let reg = if with_sweep {
+            Rc::new(RefCell::new(Register::power_up(Channel::Square1)))
+        } else {
+            Rc::new(RefCell::new(Register::power_up(Channel::Square2)))
+        };
         SquareChannel {
-            enabled: false,
+            reg: reg.clone(),
             duty: 1,
             phase: 1,
             length: 0,
@@ -104,33 +198,33 @@ impl SquareChannel {
         }
     }
 
-    fn on(&self) -> bool {
-        self.enabled
-    }
-
     fn wb(&mut self, a: u16, v: u8) {
         match a {
             0xFF10 => {
+                self.reg.borrow_mut().nrx0 = v;
                 self.sweep_period = (v >> 4) & 0x7;
                 self.sweep_shift = v & 0x7;
                 self.sweep_frequency_increase = v & 0x8 == 0x8;
             }
             0xFF11 | 0xFF16 => {
+                self.reg.borrow_mut().nrx1 = v;
                 self.duty = v >> 6;
                 self.new_length = 64 - (v & 0x3F);
             }
+            0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
             0xFF13 | 0xFF18 => {
+                self.reg.borrow_mut().nrx3 = v;
                 self.frequency = (self.frequency & 0x0700) | u16::from(v);
                 self.length = self.new_length;
                 self.calculate_period();
             }
             0xFF14 | 0xFF19 => {
+                self.reg.borrow_mut().nrx4 = v;
                 self.frequency = (self.frequency & 0x00FF) | (u16::from(v & 0b0000_0111) << 8);
                 self.calculate_period();
                 self.length_enabled = v & 0x40 == 0x40;
 
                 if v & 0x80 == 0x80 {
-                    self.enabled = true;
                     self.length = self.new_length;
 
                     self.sweep_frequency = self.frequency;
@@ -155,7 +249,7 @@ impl SquareChannel {
 
     // This assumes no volume or sweep adjustments need to be done in the meantime
     fn run(&mut self, start_time: u32, end_time: u32) {
-        if !self.enabled || self.period == 0 || self.volume_envelope.volume == 0 {
+        if !self.reg.borrow().get_trigger() || self.period == 0 || self.volume_envelope.volume == 0 {
             if self.last_amp != 0 {
                 self.blip.add_delta(start_time, -self.last_amp);
                 self.last_amp = 0;
@@ -185,7 +279,7 @@ impl SquareChannel {
         if self.length_enabled && self.length != 0 {
             self.length -= 1;
             if self.length == 0 {
-                self.enabled = false;
+                self.reg.borrow_mut().set_trigger(false);
             }
         }
     }
@@ -201,7 +295,7 @@ impl SquareChannel {
             self.sweep_delay = self.sweep_period;
             self.frequency = self.sweep_frequency;
             if self.frequency == 2048 {
-                self.enabled = false;
+                self.reg.borrow_mut().set_trigger(false);
             }
             self.calculate_period();
 
@@ -225,7 +319,7 @@ impl SquareChannel {
 }
 
 struct WaveChannel {
-    enabled: bool,
+    reg: Rc<RefCell<Register>>,
     enabled_flag: bool,
     length: u16,
     new_length: u16,
@@ -242,8 +336,9 @@ struct WaveChannel {
 
 impl WaveChannel {
     fn new(blip: BlipBuf) -> WaveChannel {
+        let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         WaveChannel {
-            enabled: false,
+            reg: reg.clone(),
             enabled_flag: false,
             length: 0,
             new_length: 0,
@@ -262,22 +357,29 @@ impl WaveChannel {
     fn wb(&mut self, a: u16, v: u8) {
         match a {
             0xFF1A => {
+                self.reg.borrow_mut().nrx0 = v;
                 self.enabled_flag = true;
-                self.enabled = self.enabled && self.enabled_flag;
             }
-            0xFF1B => self.new_length = 256 - u16::from(v),
-            0xFF1C => self.volume_shift = (v >> 5) & 0b11,
+            0xFF1B => {
+                self.reg.borrow_mut().nrx1 = v;
+                self.new_length = 256 - u16::from(v);
+            }
+            0xFF1C => {
+                self.reg.borrow_mut().nrx2 = v;
+                self.volume_shift = (v >> 5) & 0b11
+            }
             0xFF1D => {
+                self.reg.borrow_mut().nrx3 = v;
                 self.frequency = (self.frequency & 0x0700) | u16::from(v);
                 self.calculate_period();
             }
             0xFF1E => {
+                self.reg.borrow_mut().nrx4 = v;
                 self.frequency = (self.frequency & 0x00FF) | ((u16::from(v & 0b111)) << 8);
                 self.calculate_period();
                 self.length_enabled = v & 0x40 == 0x40;
                 if v & 0x80 == 0x80 && self.enabled_flag {
                     self.length = self.new_length;
-                    self.enabled = true;
                     self.current_wave = 0;
                     self.delay = 0;
                 }
@@ -298,12 +400,8 @@ impl WaveChannel {
         }
     }
 
-    fn on(&self) -> bool {
-        self.enabled
-    }
-
     fn run(&mut self, start_time: u32, end_time: u32) {
-        if !self.enabled || self.period == 0 {
+        if !self.reg.borrow().get_trigger() || self.period == 0 {
             if self.last_amp != 0 {
                 self.blip.add_delta(start_time, -self.last_amp);
                 self.last_amp = 0;
@@ -343,14 +441,14 @@ impl WaveChannel {
         if self.length_enabled && self.length != 0 {
             self.length -= 1;
             if self.length == 0 {
-                self.enabled = false;
+                self.reg.borrow_mut().set_trigger(false);
             }
         }
     }
 }
 
 struct NoiseChannel {
-    enabled: bool,
+    reg: Rc<RefCell<Register>>,
     length: u8,
     new_length: u8,
     length_enabled: bool,
@@ -365,8 +463,9 @@ struct NoiseChannel {
 
 impl NoiseChannel {
     fn new(blip: BlipBuf) -> NoiseChannel {
+        let reg = Rc::new(RefCell::new(Register::power_up(Channel::Noise)));
         NoiseChannel {
-            enabled: false,
+            reg: reg.clone(),
             length: 0,
             new_length: 0,
             length_enabled: false,
@@ -382,9 +481,13 @@ impl NoiseChannel {
 
     fn wb(&mut self, a: u16, v: u8) {
         match a {
-            0xFF20 => self.new_length = 64 - (v & 0x3F),
-            0xFF21 => (),
+            0xFF20 => {
+                self.reg.borrow_mut().nrx1 = v;
+                self.new_length = 64 - (v & 0x3F);
+            }
+            0xFF21 => self.reg.borrow_mut().nrx2 = v,
             0xFF22 => {
+                self.reg.borrow_mut().nrx3 = v;
                 self.shift_width = if v & 8 == 8 { 6 } else { 14 };
                 let freq_div = match v & 7 {
                     0 => 8,
@@ -393,8 +496,8 @@ impl NoiseChannel {
                 self.period = freq_div << (v >> 4);
             }
             0xFF23 => {
+                self.reg.borrow_mut().nrx4 = v;
                 if v & 0x80 == 0x80 {
-                    self.enabled = true;
                     self.length = self.new_length;
                     self.state = 0xFF;
                     self.delay = 0;
@@ -405,12 +508,8 @@ impl NoiseChannel {
         self.volume_envelope.wb(a, v);
     }
 
-    fn on(&self) -> bool {
-        self.enabled
-    }
-
     fn run(&mut self, start_time: u32, end_time: u32) {
-        if !self.enabled || self.volume_envelope.volume == 0 {
+        if !self.reg.borrow().get_trigger() || self.volume_envelope.volume == 0 {
             if self.last_amp != 0 {
                 self.blip.add_delta(start_time, -self.last_amp);
                 self.last_amp = 0;
@@ -444,7 +543,7 @@ impl NoiseChannel {
         if self.length_enabled && self.length != 0 {
             self.length -= 1;
             if self.length == 0 {
-                self.enabled = false;
+                self.reg.borrow_mut().set_trigger(false);
             }
         }
     }
@@ -521,10 +620,14 @@ impl Sound {
             0xFF10...0xFF25 => self.registerdata[a as usize - 0xFF10],
             0xFF26 => {
                 (self.registerdata[a as usize - 0xFF10] & 0xF0)
-                    | (if self.channel1.on() { 1 } else { 0 })
-                    | (if self.channel2.on() { 2 } else { 0 })
-                    | (if self.channel3.on() { 4 } else { 0 })
-                    | (if self.channel4.on() { 8 } else { 0 })
+                    | (if self.channel1.reg.borrow().get_trigger() { 1 } else { 0 })
+                    | (if self.channel2.reg.borrow().get_trigger() { 2 } else { 0 })
+                    | (if self.channel3.reg.borrow().get_trigger() && self.channel3.enabled_flag {
+                        4
+                    } else {
+                        0
+                    })
+                    | (if self.channel4.reg.borrow().get_trigger() { 8 } else { 0 })
             }
             0xFF30...0xFF3F => {
                 (self.channel3.waveram[(a as usize - 0xFF30) / 2] << 4)

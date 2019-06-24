@@ -44,7 +44,7 @@ fn main() {
     // Initialize audio related
     if c_audio {
         let device = cpal::default_output_device().unwrap();
-        rog::debugln!("Open the audio player {}", device.name());
+        rog::debugln!("Open the audio player: {}", device.name());
         let format = device.default_output_format().unwrap();
         let format = cpal::Format {
             channels: 2,
