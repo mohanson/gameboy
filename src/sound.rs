@@ -83,6 +83,19 @@ impl Register {
         }
     }
 
+    fn get_frequency(&self) -> u16 {
+        assert!(self.channel != Channel::Noise);
+        u16::from(self.nrx4 & 0x07) << 8 | u16::from(self.nrx3)
+    }
+
+    fn set_frequency(&mut self, f: u16) {
+        assert!(self.channel != Channel::Noise);
+        let h = ((f >> 8) & 0x07) as u8;
+        let l = f as u8;
+        self.nrx4 = (self.nrx4 & 0xf8) | h;
+        self.nrx3 = l;
+    }
+
     fn get_trigger(&self) -> bool {
         self.nrx4 & 0x80 != 0x00
     }
@@ -179,7 +192,6 @@ struct SquareChannel {
     reg: Rc<RefCell<Register>>,
     phase: u8,
     length: u8,
-    frequency: u16,
     period: u32,
     last_amp: i32,
     delay: u32,
@@ -204,7 +216,6 @@ impl SquareChannel {
             reg: reg.clone(),
             phase: 1,
             length: 0,
-            frequency: 0,
             period: 2048,
             last_amp: 0,
             delay: 0,
@@ -233,19 +244,17 @@ impl SquareChannel {
             0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
             0xFF13 | 0xFF18 => {
                 self.reg.borrow_mut().nrx3 = v;
-                self.frequency = (self.frequency & 0x0700) | u16::from(v);
                 self.length = self.reg.borrow().get_length_load() as u8;
                 self.calculate_period();
             }
             0xFF14 | 0xFF19 => {
                 self.reg.borrow_mut().nrx4 = v;
-                self.frequency = (self.frequency & 0x00FF) | (u16::from(v & 0b0000_0111) << 8);
                 self.calculate_period();
 
                 if self.reg.borrow().get_trigger() {
                     self.length = self.reg.borrow().get_length_load() as u8;
 
-                    self.sweep_frequency = self.frequency;
+                    self.sweep_frequency = self.reg.borrow().get_frequency();
                     if self.has_sweep && self.sweep_period > 0 && self.sweep_shift > 0 {
                         self.sweep_delay = 1;
                         self.step_sweep();
@@ -258,10 +267,10 @@ impl SquareChannel {
     }
 
     fn calculate_period(&mut self) {
-        if self.frequency > 2048 {
+        if self.reg.borrow().get_frequency() > 2048 {
             self.period = 0;
         } else {
-            self.period = (2048 - u32::from(self.frequency)) * 4;
+            self.period = (2048 - u32::from(self.reg.borrow().get_frequency())) * 4;
         }
     }
 
@@ -311,8 +320,8 @@ impl SquareChannel {
             self.sweep_delay -= 1;
         } else {
             self.sweep_delay = self.sweep_period;
-            self.frequency = self.sweep_frequency;
-            if self.frequency == 2048 {
+            self.reg.borrow_mut().set_frequency(self.sweep_frequency);
+            if self.reg.borrow().get_frequency() == 2048 {
                 self.reg.borrow_mut().set_trigger(false);
             }
             self.calculate_period();
@@ -339,7 +348,6 @@ impl SquareChannel {
 struct WaveChannel {
     reg: Rc<RefCell<Register>>,
     length: u16,
-    frequency: u16,
     period: u32,
     last_amp: i32,
     delay: u32,
@@ -355,7 +363,6 @@ impl WaveChannel {
         WaveChannel {
             reg: reg.clone(),
             length: 0,
-            frequency: 0,
             period: 2048,
             last_amp: 0,
             delay: 0,
@@ -380,12 +387,10 @@ impl WaveChannel {
             }
             0xFF1D => {
                 self.reg.borrow_mut().nrx3 = v;
-                self.frequency = (self.frequency & 0x0700) | u16::from(v);
                 self.calculate_period();
             }
             0xFF1E => {
                 self.reg.borrow_mut().nrx4 = v;
-                self.frequency = (self.frequency & 0x00FF) | ((u16::from(v & 0b111)) << 8);
                 self.calculate_period();
                 if self.reg.borrow().get_trigger() && self.reg.borrow().get_dac_power() {
                     self.length = self.reg.borrow().get_length_load();
@@ -402,10 +407,10 @@ impl WaveChannel {
     }
 
     fn calculate_period(&mut self) {
-        if self.frequency > 2048 {
+        if self.reg.borrow().get_frequency() > 2048 {
             self.period = 0;
         } else {
-            self.period = (2048 - u32::from(self.frequency)) * 2;
+            self.period = (2048 - u32::from(self.reg.borrow().get_frequency())) * 2;
         }
     }
 
