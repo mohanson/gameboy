@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+#[derive(Clone, Eq, PartialEq)]
 enum Channel {
     Square1,
     Square2,
@@ -64,6 +65,16 @@ struct Register {
 }
 
 impl Register {
+    fn get_dac_power(&self) -> bool {
+        assert!(self.channel == Channel::Wave);
+        self.nrx0 & 0x80 != 0x00
+    }
+
+    fn get_duty(&self) -> u8 {
+        assert!(self.channel == Channel::Square1 || self.channel == Channel::Square2);
+        self.nrx1 >> 6
+    }
+
     fn get_trigger(&self) -> bool {
         self.nrx4 & 0x80 != 0x00
     }
@@ -79,10 +90,14 @@ impl Register {
 
 impl Register {
     fn power_up(channel: Channel) -> Self {
+        let nrx1 = match channel {
+            Channel::Square1 | Channel::Square2 => 0x40,
+            _ => 0x00,
+        };
         Self {
             channel,
             nrx0: 0x00,
-            nrx1: 0x00,
+            nrx1,
             nrx2: 0x00,
             nrx3: 0x00,
             nrx4: 0x00,
@@ -150,7 +165,6 @@ impl VolumeEnvelope {
 
 struct SquareChannel {
     reg: Rc<RefCell<Register>>,
-    duty: u8,
     phase: u8,
     length: u8,
     new_length: u8,
@@ -178,7 +192,6 @@ impl SquareChannel {
         };
         SquareChannel {
             reg: reg.clone(),
-            duty: 1,
             phase: 1,
             length: 0,
             new_length: 0,
@@ -208,7 +221,6 @@ impl SquareChannel {
             }
             0xFF11 | 0xFF16 => {
                 self.reg.borrow_mut().nrx1 = v;
-                self.duty = v >> 6;
                 self.new_length = 64 - (v & 0x3F);
             }
             0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
@@ -224,7 +236,7 @@ impl SquareChannel {
                 self.calculate_period();
                 self.length_enabled = v & 0x40 == 0x40;
 
-                if v & 0x80 == 0x80 {
+                if self.reg.borrow().get_trigger() {
                     self.length = self.new_length;
 
                     self.sweep_frequency = self.frequency;
@@ -257,7 +269,7 @@ impl SquareChannel {
             }
         } else {
             let mut time = start_time + self.delay;
-            let pattern = WAVE_PATTERN[self.duty as usize];
+            let pattern = WAVE_PATTERN[self.reg.borrow().get_duty() as usize];
             let vol = i32::from(self.volume_envelope.volume);
 
             while time < end_time {
@@ -320,7 +332,6 @@ impl SquareChannel {
 
 struct WaveChannel {
     reg: Rc<RefCell<Register>>,
-    enabled_flag: bool,
     length: u16,
     new_length: u16,
     length_enabled: bool,
@@ -339,7 +350,6 @@ impl WaveChannel {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         WaveChannel {
             reg: reg.clone(),
-            enabled_flag: false,
             length: 0,
             new_length: 0,
             length_enabled: false,
@@ -358,7 +368,6 @@ impl WaveChannel {
         match a {
             0xFF1A => {
                 self.reg.borrow_mut().nrx0 = v;
-                self.enabled_flag = true;
             }
             0xFF1B => {
                 self.reg.borrow_mut().nrx1 = v;
@@ -378,7 +387,7 @@ impl WaveChannel {
                 self.frequency = (self.frequency & 0x00FF) | ((u16::from(v & 0b111)) << 8);
                 self.calculate_period();
                 self.length_enabled = v & 0x40 == 0x40;
-                if v & 0x80 == 0x80 && self.enabled_flag {
+                if self.reg.borrow().get_trigger() && self.reg.borrow().get_dac_power() {
                     self.length = self.new_length;
                     self.current_wave = 0;
                     self.delay = 0;
@@ -497,7 +506,7 @@ impl NoiseChannel {
             }
             0xFF23 => {
                 self.reg.borrow_mut().nrx4 = v;
-                if v & 0x80 == 0x80 {
+                if self.reg.borrow().get_trigger() {
                     self.length = self.new_length;
                     self.state = 0xFF;
                     self.delay = 0;
@@ -622,7 +631,7 @@ impl Sound {
                 (self.registerdata[a as usize - 0xFF10] & 0xF0)
                     | (if self.channel1.reg.borrow().get_trigger() { 1 } else { 0 })
                     | (if self.channel2.reg.borrow().get_trigger() { 2 } else { 0 })
-                    | (if self.channel3.reg.borrow().get_trigger() && self.channel3.enabled_flag {
+                    | (if self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power() {
                         4
                     } else {
                         0
