@@ -306,22 +306,22 @@ impl SquareChannel {
 
     fn wb(&mut self, a: u16, v: u8) {
         match a {
-            0xFF10 => {
+            0xff10 => {
                 self.reg.borrow_mut().nrx0 = v;
                 self.sweep_period = (v >> 4) & 0x7;
                 self.sweep_shift = v & 0x7;
                 self.sweep_frequency_increase = v & 0x8 == 0x8;
             }
-            0xFF11 | 0xFF16 => {
+            0xff11 | 0xff16 => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
             0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
-            0xFF13 | 0xFF18 => {
+            0xff13 | 0xff18 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.calculate_period();
             }
-            0xFF14 | 0xFF19 => {
+            0xff14 | 0xff19 => {
                 self.reg.borrow_mut().nrx4 = v;
                 self.calculate_period();
 
@@ -438,21 +438,21 @@ impl WaveChannel {
 
     fn wb(&mut self, a: u16, v: u8) {
         match a {
-            0xFF1A => {
+            0xff1a => {
                 self.reg.borrow_mut().nrx0 = v;
             }
-            0xFF1B => {
+            0xff1b => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xFF1C => {
+            0xff1c => {
                 self.reg.borrow_mut().nrx2 = v;
             }
-            0xFF1D => {
+            0xff1d => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.calculate_period();
             }
-            0xFF1E => {
+            0xff1e => {
                 self.reg.borrow_mut().nrx4 = v;
                 self.calculate_period();
                 if self.reg.borrow().get_trigger() && self.reg.borrow().get_dac_power() {
@@ -461,11 +461,11 @@ impl WaveChannel {
                     self.delay = 0;
                 }
             }
-            0xFF30...0xFF3F => {
+            0xff30...0xff3f => {
                 self.waveram[(a as usize - 0xFF30) / 2] = v >> 4;
                 self.waveram[(a as usize - 0xFF30) / 2 + 1] = v & 0xF;
             }
-            _ => (),
+            _ => {}
         }
     }
 
@@ -515,13 +515,44 @@ impl WaveChannel {
     }
 }
 
+// The linear feedback shift register (LFSR) generates a pseudo-random bit sequence. It has a 15-bit shift register
+// with feedback. When clocked by the frequency timer, the low two bits (0 and 1) are XORed, all bits are shifted right
+// by one, and the result of the XOR is put into the now-empty high bit. If width mode is 1 (NR43), the XOR result is
+// ALSO put into bit 6 AFTER the shift, resulting in a 7-bit LFSR. The waveform output is bit 0 of the LFSR, INVERTED.
+struct Lfsr {
+    reg: Rc<RefCell<Register>>,
+    n: u16,
+}
+
+impl Lfsr {
+    fn power_up(reg: Rc<RefCell<Register>>) -> Self {
+        Self { reg, n: 0x0001 }
+    }
+
+    fn next(&mut self) -> bool {
+        let s = if self.reg.borrow().get_width_mode_of_lfsr() {
+            0x06
+        } else {
+            0x0e
+        };
+        let src = self.n;
+        self.n <<= 1;
+        let bit = ((src >> s) ^ (self.n >> s)) & 0x0001;
+        self.n |= bit;
+        (src >> s) & 0x0001 != 0x0000
+    }
+
+    fn reload(&mut self) {
+        self.n = 0x0001
+    }
+}
+
 struct NoiseChannel {
     reg: Rc<RefCell<Register>>,
     lc: LengthCounter,
     ve: VolumeEnvelope,
+    lfsr: Lfsr,
     period: u32,
-    shift_width: u8,
-    state: u16,
     delay: u32,
     last_amp: i32,
     blip: BlipBuf,
@@ -534,9 +565,8 @@ impl NoiseChannel {
             reg: reg.clone(),
             lc: LengthCounter::power_up(reg.clone()),
             ve: VolumeEnvelope::power_up(reg.clone()),
+            lfsr: Lfsr::power_up(reg.clone()),
             period: 2048,
-            shift_width: 14,
-            state: 1,
             delay: 0,
             last_amp: 0,
             blip,
@@ -545,34 +575,29 @@ impl NoiseChannel {
 
     fn wb(&mut self, a: u16, v: u8) {
         match a {
-            0xFF20 => {
+            0xff20 => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xFF21 => self.reg.borrow_mut().nrx2 = v,
-            0xFF22 => {
+            0xff21 => self.reg.borrow_mut().nrx2 = v,
+            0xff22 => {
                 self.reg.borrow_mut().nrx3 = v;
-                self.shift_width = if self.reg.borrow().get_width_mode_of_lfsr() {
-                    6
-                } else {
-                    14
-                };
                 let freq_div = match self.reg.borrow().get_dividor_code() {
                     0 => 8,
                     n => (u32::from(n) + 1) * 16,
                 };
                 self.period = freq_div << self.reg.borrow().get_clock_shift();
             }
-            0xFF23 => {
+            0xff23 => {
                 self.reg.borrow_mut().nrx4 = v;
                 if self.reg.borrow().get_trigger() {
                     self.lc.reload();
                     self.ve.reload();
-                    self.state = 0xFF;
+                    self.lfsr.reload();
                     self.delay = 0;
                 }
             }
-            _ => (),
+            _ => {}
         }
     }
 
@@ -586,16 +611,11 @@ impl NoiseChannel {
         } else {
             let mut time = start_time + self.delay;
             while time < end_time {
-                let oldstate = self.state;
-                self.state <<= 1;
-                let bit = ((oldstate >> self.shift_width) ^ (self.state >> self.shift_width)) & 1;
-                self.state |= bit;
-
-                let amp = match (oldstate >> self.shift_width) & 1 {
-                    0 => -i32::from(self.ve.volume),
-                    _ => i32::from(self.ve.volume),
+                let amp = if self.lfsr.next() {
+                    i32::from(self.ve.volume)
+                } else {
+                    -i32::from(self.ve.volume)
                 };
-
                 if self.last_amp != amp {
                     self.blip.add_delta(time, amp - self.last_amp);
                     self.last_amp = amp;
