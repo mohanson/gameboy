@@ -83,6 +83,26 @@ impl Register {
         }
     }
 
+    fn get_starting_volume(&self) -> u8 {
+        assert!(self.channel != Channel::Wave);
+        self.nrx2 >> 4
+    }
+
+    fn get_volume_code(&self) -> u8 {
+        assert!(self.channel == Channel::Wave);
+        (self.nrx2 >> 5) & 0x03
+    }
+
+    fn get_envelope_add_mode(&self) -> bool {
+        assert!(self.channel != Channel::Wave);
+        self.nrx2 & 0x08 != 0x00
+    }
+
+    fn get_period(&self) -> u8 {
+        assert!(self.channel != Channel::Wave);
+        self.nrx2 & 0x07
+    }
+
     fn get_frequency(&self) -> u16 {
         assert!(self.channel != Channel::Noise);
         u16::from(self.nrx4 & 0x07) << 8 | u16::from(self.nrx3)
@@ -183,6 +203,56 @@ impl LengthCounter {
     }
 }
 
+// A volume envelope has a volume counter and an internal timer clocked at 64 Hz by the frame sequencer. When the timer
+// generates a clock and the envelope period is not zero, a new volume is calculated by adding or subtracting
+// (as set by NRx2) one from the current volume. If this new volume within the 0 to 15 range, the volume is updated,
+// otherwise it is left unchanged and no further automatic increments/decrements are made to the volume until the
+// channel is triggered again.
+// When the waveform input is zero the envelope outputs zero, otherwise it outputs the current volume.
+// Writing to NRx2 causes obscure effects on the volume that differ on different Game Boy models (see obscure behavior).
+//
+// NRX2 ---- VVVV APPP Starting volume, Envelope add mode, period
+struct VolumeEnvelope {
+    reg: Rc<RefCell<Register>>,
+    volume: u8,
+    d: u8,
+}
+
+impl VolumeEnvelope {
+    fn power_up(reg: Rc<RefCell<Register>>) -> Self {
+        Self {
+            reg,
+            volume: 0x00,
+            d: 0x00,
+        }
+    }
+
+    fn reload(&mut self) {
+        self.d = self.reg.borrow().get_period();
+        self.volume = self.reg.borrow().get_starting_volume();
+    }
+
+    fn next(&mut self) {
+        if self.d == 0 {
+            return;
+        }
+        if self.d == 1 {
+            self.d = self.reg.borrow().get_period();
+            // If this new volume within the 0 to 15 range, the volume is updated
+            let v = if self.reg.borrow().get_envelope_add_mode() {
+                self.volume.wrapping_add(1)
+            } else {
+                self.volume.wrapping_sub(1)
+            };
+            if v <= 15 {
+                self.volume = v;
+            }
+            return;
+        }
+        self.d -= 1;
+    }
+}
+
 const WAVE_PATTERN: [[i32; 8]; 4] = [
     [-1, -1, -1, -1, 1, -1, -1, -1],
     [-1, -1, -1, -1, 1, 1, -1, -1],
@@ -192,58 +262,10 @@ const WAVE_PATTERN: [[i32; 8]; 4] = [
 const CLOCKS_PER_SECOND: u32 = 1 << 22;
 const OUTPUT_SAMPLE_COUNT: usize = 2000; // this should be less than blip_buf::MAX_FRAME
 
-struct VolumeEnvelope {
-    period: u8,
-    goes_up: bool,
-    delay: u8,
-    initial_volume: u8,
-    volume: u8,
-}
-
-impl VolumeEnvelope {
-    fn new() -> VolumeEnvelope {
-        VolumeEnvelope {
-            period: 0,
-            goes_up: false,
-            delay: 0,
-            initial_volume: 0,
-            volume: 0,
-        }
-    }
-
-    fn wb(&mut self, a: u16, v: u8) {
-        match a {
-            0xFF12 | 0xFF17 | 0xFF21 => {
-                self.period = v & 0x7;
-                self.goes_up = v & 0x8 == 0x8;
-                self.initial_volume = v >> 4;
-                self.volume = self.initial_volume;
-            }
-            0xFF14 | 0xFF19 | 0xFF23 if v & 0x80 == 0x80 => {
-                self.delay = self.period;
-                self.volume = self.initial_volume;
-            }
-            _ => (),
-        }
-    }
-
-    fn step(&mut self) {
-        if self.delay > 1 {
-            self.delay -= 1;
-        } else if self.delay == 1 {
-            self.delay = self.period;
-            if self.goes_up && self.volume < 15 {
-                self.volume += 1;
-            } else if !self.goes_up && self.volume > 0 {
-                self.volume -= 1;
-            }
-        }
-    }
-}
-
 struct SquareChannel {
     reg: Rc<RefCell<Register>>,
     lc: LengthCounter,
+    ve: VolumeEnvelope,
     phase: u8,
     period: u32,
     last_amp: i32,
@@ -254,7 +276,6 @@ struct SquareChannel {
     sweep_period: u8,
     sweep_shift: u8,
     sweep_frequency_increase: bool,
-    volume_envelope: VolumeEnvelope,
     blip: BlipBuf,
 }
 
@@ -268,6 +289,7 @@ impl SquareChannel {
         SquareChannel {
             reg: reg.clone(),
             lc: LengthCounter::power_up(reg.clone()),
+            ve: VolumeEnvelope::power_up(reg.clone()),
             phase: 1,
             period: 2048,
             last_amp: 0,
@@ -278,7 +300,6 @@ impl SquareChannel {
             sweep_period: 0,
             sweep_shift: 0,
             sweep_frequency_increase: false,
-            volume_envelope: VolumeEnvelope::new(),
             blip,
         }
     }
@@ -306,6 +327,7 @@ impl SquareChannel {
 
                 if self.reg.borrow().get_trigger() {
                     self.lc.reload();
+                    self.ve.reload();
 
                     self.sweep_frequency = self.reg.borrow().get_frequency();
                     if self.has_sweep && self.sweep_period > 0 && self.sweep_shift > 0 {
@@ -314,9 +336,8 @@ impl SquareChannel {
                     }
                 }
             }
-            _ => (),
+            _ => {}
         }
-        self.volume_envelope.wb(a, v);
     }
 
     fn calculate_period(&mut self) {
@@ -329,7 +350,7 @@ impl SquareChannel {
 
     // This assumes no volume or sweep adjustments need to be done in the meantime
     fn run(&mut self, start_time: u32, end_time: u32) {
-        if !self.reg.borrow().get_trigger() || self.period == 0 || self.volume_envelope.volume == 0 {
+        if !self.reg.borrow().get_trigger() || self.period == 0 || self.ve.volume == 0 {
             if self.last_amp != 0 {
                 self.blip.add_delta(start_time, -self.last_amp);
                 self.last_amp = 0;
@@ -338,7 +359,7 @@ impl SquareChannel {
         } else {
             let mut time = start_time + self.delay;
             let pattern = WAVE_PATTERN[self.reg.borrow().get_duty() as usize];
-            let vol = i32::from(self.volume_envelope.volume);
+            let vol = i32::from(self.ve.volume);
 
             while time < end_time {
                 let amp = vol * pattern[self.phase as usize];
@@ -395,7 +416,6 @@ struct WaveChannel {
     period: u32,
     last_amp: i32,
     delay: u32,
-    volume_shift: u8,
     waveram: [u8; 32],
     current_wave: u8,
     blip: BlipBuf,
@@ -410,7 +430,6 @@ impl WaveChannel {
             period: 2048,
             last_amp: 0,
             delay: 0,
-            volume_shift: 0,
             waveram: [0; 32],
             current_wave: 0,
             blip,
@@ -428,7 +447,6 @@ impl WaveChannel {
             }
             0xFF1C => {
                 self.reg.borrow_mut().nrx2 = v;
-                self.volume_shift = (v >> 5) & 0b11
             }
             0xFF1D => {
                 self.reg.borrow_mut().nrx3 = v;
@@ -469,7 +487,7 @@ impl WaveChannel {
         } else {
             let mut time = start_time + self.delay;
 
-            let volshift = match self.volume_shift {
+            let volshift = match self.reg.borrow().get_volume_code() {
                 0 => 4,
                 1 => 0,
                 2 => 1,
@@ -500,7 +518,7 @@ impl WaveChannel {
 struct NoiseChannel {
     reg: Rc<RefCell<Register>>,
     lc: LengthCounter,
-    volume_envelope: VolumeEnvelope,
+    ve: VolumeEnvelope,
     period: u32,
     shift_width: u8,
     state: u16,
@@ -515,7 +533,7 @@ impl NoiseChannel {
         NoiseChannel {
             reg: reg.clone(),
             lc: LengthCounter::power_up(reg.clone()),
-            volume_envelope: VolumeEnvelope::new(),
+            ve: VolumeEnvelope::power_up(reg.clone()),
             period: 2048,
             shift_width: 14,
             state: 1,
@@ -549,17 +567,17 @@ impl NoiseChannel {
                 self.reg.borrow_mut().nrx4 = v;
                 if self.reg.borrow().get_trigger() {
                     self.lc.reload();
+                    self.ve.reload();
                     self.state = 0xFF;
                     self.delay = 0;
                 }
             }
             _ => (),
         }
-        self.volume_envelope.wb(a, v);
     }
 
     fn run(&mut self, start_time: u32, end_time: u32) {
-        if !self.reg.borrow().get_trigger() || self.volume_envelope.volume == 0 {
+        if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
             if self.last_amp != 0 {
                 self.blip.add_delta(start_time, -self.last_amp);
                 self.last_amp = 0;
@@ -574,8 +592,8 @@ impl NoiseChannel {
                 self.state |= bit;
 
                 let amp = match (oldstate >> self.shift_width) & 1 {
-                    0 => -i32::from(self.volume_envelope.volume),
-                    _ => i32::from(self.volume_envelope.volume),
+                    0 => -i32::from(self.ve.volume),
+                    _ => i32::from(self.ve.volume),
                 };
 
                 if self.last_amp != amp {
@@ -750,9 +768,9 @@ impl Sound {
             self.channel4.lc.next();
 
             if self.time_divider == 0 {
-                self.channel1.volume_envelope.step();
-                self.channel2.volume_envelope.step();
-                self.channel4.volume_envelope.step();
+                self.channel1.ve.next();
+                self.channel2.ve.next();
+                self.channel4.ve.next();
             } else if self.time_divider & 1 == 1 {
                 self.channel1.step_sweep();
             }
