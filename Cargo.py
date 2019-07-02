@@ -15,6 +15,7 @@ c_disable_clippy_lint = [
     'clippy::cognitive_complexity',
     'clippy::collapsible_if',
     'clippy::many_single_char_names',
+    'clippy::neg_multiply',
     'clippy::should_implement_trait',
     'clippy::unnecessary_cast',
 ]

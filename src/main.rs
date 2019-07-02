@@ -1,8 +1,8 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
+use gameboy::apu::Apu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;
-use gameboy::sound::Sound;
 use std::cmp;
 use std::thread;
 
@@ -56,24 +56,24 @@ fn main() {
         let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
         event_loop.play_stream(stream_id);
 
-        let snd = Sound::new(format.sample_rate.0);
-        let snd_data = snd.buffer.clone();
-        mbrd.mmu.borrow_mut().sound = Some(snd);
+        let apu = Apu::power_up(format.sample_rate.0);
+        let apu_data = apu.buffer.clone();
+        mbrd.mmu.borrow_mut().apu = Some(apu);
 
         thread::spawn(move || {
             event_loop.run(move |_, stream_data| {
-                let mut snd_data = snd_data.lock().unwrap();
+                let mut apu_data = apu_data.lock().unwrap();
                 if let cpal::StreamData::Output { buffer } = stream_data {
-                    let len = cmp::min(buffer.len() / 2, snd_data.len());
+                    let len = cmp::min(buffer.len() / 2, apu_data.len());
                     match buffer {
                         cpal::UnknownTypeOutputBuffer::F32(mut buffer) => {
-                            for (i, (data_l, data_r)) in snd_data.drain(..len).enumerate() {
+                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
                                 buffer[i * 2] = data_l;
                                 buffer[i * 2 + 1] = data_r;
                             }
                         }
                         cpal::UnknownTypeOutputBuffer::U16(mut buffer) => {
-                            for (i, (data_l, data_r)) in snd_data.drain(..len).enumerate() {
+                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
                                 buffer[i * 2] =
                                     (data_l * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
                                 buffer[i * 2 + 1] =
@@ -81,7 +81,7 @@ fn main() {
                             }
                         }
                         cpal::UnknownTypeOutputBuffer::I16(mut buffer) => {
-                            for (i, (data_l, data_r)) in snd_data.drain(..len).enumerate() {
+                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
                                 buffer[i * 2] = (data_l * f32::from(std::i16::MAX)) as i16;
                                 buffer[i * 2 + 1] = (data_r * f32::from(std::i16::MAX)) as i16;
                             }

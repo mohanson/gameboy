@@ -1,6 +1,7 @@
 // A memory management unit (MMU), sometimes called paged memory management unit (PMMU), is a computer hardware unit
 // having all memory references passed through itself, primarily performing the translation of virtual memory addresses
 // to physical addresses.
+use super::apu::Apu;
 use super::cartridge::{self, Cartridge};
 use super::convention::Term;
 use super::gpu::{Gpu, Hdma, HdmaMode};
@@ -8,7 +9,6 @@ use super::intf::Intf;
 use super::joypad::Joypad;
 use super::memory::Memory;
 use super::serial::Serial;
-use super::sound::Sound;
 use super::timer::Timer;
 use std::cell::RefCell;
 use std::path::Path;
@@ -22,11 +22,11 @@ pub enum Speed {
 
 pub struct Mmunit {
     pub cartridge: Box<Cartridge>,
+    pub apu: Option<Apu>,
     pub gpu: Gpu,
     pub joypad: Joypad,
     pub serial: Serial,
     pub shift: bool,
-    pub sound: Option<Sound>,
     pub speed: Speed,
     pub term: Term,
     pub timer: Timer,
@@ -48,11 +48,11 @@ impl Mmunit {
         let intf = Rc::new(RefCell::new(Intf::power_up()));
         let mut r = Self {
             cartridge: cart,
+            apu: None,
             gpu: Gpu::power_up(term, intf.clone()),
             joypad: Joypad::power_up(intf.clone()),
             serial: Serial::power_up(intf.clone()),
             shift: false,
-            sound: None,
             speed: Speed::Normal,
             term,
             timer: Timer::power_up(intf.clone()),
@@ -106,7 +106,7 @@ impl Mmunit {
         let cpu_cycles = cycles + vram_cycles * cpu_divider;
         self.timer.next(cpu_cycles);
         self.gpu.next(gpu_cycles);
-        self.sound.as_mut().map_or((), |s| s.do_cycle(gpu_cycles));
+        self.apu.as_mut().map_or((), |s| s.next(gpu_cycles));
         gpu_cycles
     }
 
@@ -179,8 +179,8 @@ impl Memory for Mmunit {
             0xff01...0xff02 => self.serial.get(a),
             0xff04...0xff07 => self.timer.get(a),
             0xff0f => self.intf.borrow().data,
-            0xff10...0xff3f => match &self.sound {
-                Some(some) => some.rb(a),
+            0xff10...0xff3f => match &self.apu {
+                Some(some) => some.get(a),
                 None => 0x00,
             },
             0xff4d => {
@@ -212,7 +212,7 @@ impl Memory for Mmunit {
             0xff00 => self.joypad.set(a, v),
             0xff01...0xff02 => self.serial.set(a, v),
             0xff04...0xff07 => self.timer.set(a, v),
-            0xff10...0xff3f => self.sound.as_mut().map_or((), |s| s.wb(a, v)),
+            0xff10...0xff3f => self.apu.as_mut().map_or((), |s| s.set(a, v)),
             0xff46 => {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
                 // table).
