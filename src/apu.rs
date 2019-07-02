@@ -165,20 +165,10 @@ impl Register {
         self.nrx4 & 0x40 != 0x00
     }
 
-    // fn get_vin_l_enable(&self) -> bool {
-    //     assert!(self.channel == Channel::Mixer);
-    //     self.nrx0 & 0x80 != 0x00
-    // }
-
     fn get_l_vol(&self) -> u8 {
         assert!(self.channel == Channel::Mixer);
         (self.nrx0 >> 4) & 0x07
     }
-
-    // fn get_vin_r_enable(&self) -> bool {
-    //     assert!(self.channel == Channel::Mixer);
-    //     self.nrx0 & 0x08 != 0x00
-    // }
 
     fn get_r_vol(&self) -> u8 {
         assert!(self.channel == Channel::Mixer);
