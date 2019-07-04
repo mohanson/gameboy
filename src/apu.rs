@@ -556,7 +556,7 @@ struct ChannelWave {
     lc: LengthCounter,
     tick: Tick,
     blip: Blip,
-    waveram: [u8; 32],
+    waveram: [u8; 16],
     waveidx: usize,
 }
 
@@ -568,7 +568,7 @@ impl ChannelWave {
             lc: LengthCounter::power_up(reg.clone()),
             tick: Tick::power_up(reg.clone()),
             blip: Blip::power_up(blip),
-            waveram: [0x00; 32],
+            waveram: [0x00; 16],
             waveidx: 0x00,
         }
     }
@@ -587,7 +587,11 @@ impl ChannelWave {
             _ => unreachable!(),
         };
         for time in self.tick.next(tic, toc) {
-            let sample = self.waveram[self.waveidx];
+            let sample = if self.waveidx & 0x01 == 0x00 {
+                self.waveram[self.waveidx / 2] & 0x0f
+            } else {
+                self.waveram[self.waveidx / 2] >> 4
+            };
             let ampl = i32::from(sample >> s);
             self.blip.set(time, ampl);
             self.waveidx = (self.waveidx + 1) % 32;
@@ -603,11 +607,7 @@ impl Memory for ChannelWave {
             0xff1c => self.reg.borrow().nrx2,
             0xff1d => self.reg.borrow().nrx3,
             0xff1e => self.reg.borrow().nrx4,
-            0xff30...0xff3f => {
-                let h = self.waveram[(a as usize - 0xff30) / 2] & 0x0f;
-                let l = self.waveram[(a as usize - 0xff30) / 2 + 1] & 0x0f;
-                (h << 4) & l
-            }
+            0xff30...0xff3f => self.waveram[a as usize - 0xff30],
             _ => unreachable!(),
         }
     }
@@ -629,10 +629,7 @@ impl Memory for ChannelWave {
                     self.waveidx = 0;
                 }
             }
-            0xff30...0xff3f => {
-                self.waveram[(a as usize - 0xff30) / 2] = v >> 4;
-                self.waveram[(a as usize - 0xff30) / 2 + 1] = v & 0x0f;
-            }
+            0xff30...0xff3f => self.waveram[a as usize - 0xff30] = v,
             _ => unreachable!(),
         }
     }
@@ -811,7 +808,7 @@ impl Apu {
 
     fn output(&mut self) {
         self.run();
-        debug_assert!(self.time == self.prev_time);
+        assert_eq!(self.time, self.prev_time);
         self.channel1.blip.data.end_frame(self.time);
         self.channel2.blip.data.end_frame(self.time);
         self.channel3.blip.data.end_frame(self.time);
@@ -940,9 +937,16 @@ impl Apu {
     }
 }
 
+// Registers are ORed with this when reading
+const RD_MASK: [u8; 48] = [
+    0x80, 0x3f, 0x00, 0xff, 0xbf, 0xff, 0x3f, 0x00, 0xff, 0xbf, 0x7f, 0xff, 0x9f, 0xff, 0xbf, 0xff, 0xff, 0x00, 0x00,
+    0xbf, 0x00, 0x00, 0x70, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
 impl Memory for Apu {
     fn get(&self, a: u16) -> u8 {
-        match a {
+        let r = match a {
             0xff10...0xff14 => self.channel1.get(a),
             0xff15...0xff19 => self.channel2.get(a),
             0xff1a...0xff1e => self.channel3.get(a),
@@ -961,9 +965,11 @@ impl Memory for Apu {
                 let e = if self.channel4.reg.borrow().get_trigger() { 8 } else { 0 };
                 a | b | c | d | e
             }
+            0xff27...0xff2f => 0x00,
             0xff30...0xff3f => self.channel3.get(a),
             _ => unreachable!(),
-        }
+        };
+        r | RD_MASK[a as usize - 0xff10]
     }
 
     fn set(&mut self, a: u16, v: u8) {
@@ -978,7 +984,39 @@ impl Memory for Apu {
             0xff1f...0xff23 => self.channel4.set(a, v),
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
-            0xff26 => self.reg.nrx2 = v,
+            0xff26 => {
+                self.reg.nrx2 = v;
+                // Powering APU off should write 0 to all regs
+                // Powering APU off shouldn't affect wave, that wave RAM is unchanged
+                if !self.reg.get_power() {
+                    self.channel1.reg.borrow_mut().nrx0 = 0x00;
+                    self.channel1.reg.borrow_mut().nrx1 = 0x00;
+                    self.channel1.reg.borrow_mut().nrx2 = 0x00;
+                    self.channel1.reg.borrow_mut().nrx3 = 0x00;
+                    self.channel1.reg.borrow_mut().nrx4 = 0x00;
+                    self.channel2.reg.borrow_mut().nrx0 = 0x00;
+                    self.channel2.reg.borrow_mut().nrx1 = 0x00;
+                    self.channel2.reg.borrow_mut().nrx2 = 0x00;
+                    self.channel2.reg.borrow_mut().nrx3 = 0x00;
+                    self.channel2.reg.borrow_mut().nrx4 = 0x00;
+                    self.channel3.reg.borrow_mut().nrx0 = 0x00;
+                    self.channel3.reg.borrow_mut().nrx1 = 0x00;
+                    self.channel3.reg.borrow_mut().nrx2 = 0x00;
+                    self.channel3.reg.borrow_mut().nrx3 = 0x00;
+                    self.channel3.reg.borrow_mut().nrx4 = 0x00;
+                    self.channel4.reg.borrow_mut().nrx0 = 0x00;
+                    self.channel4.reg.borrow_mut().nrx1 = 0x00;
+                    self.channel4.reg.borrow_mut().nrx2 = 0x00;
+                    self.channel4.reg.borrow_mut().nrx3 = 0x00;
+                    self.channel4.reg.borrow_mut().nrx4 = 0x00;
+                    self.reg.nrx0 = 0x00;
+                    self.reg.nrx1 = 0x00;
+                    self.reg.nrx2 = 0x00;
+                    self.reg.nrx3 = 0x00;
+                    self.reg.nrx4 = 0x00;
+                }
+            }
+            0xff27...0xff2f => {}
             0xff30...0xff3f => self.channel3.set(a, v),
             _ => unreachable!(),
         }
