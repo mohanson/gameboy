@@ -779,9 +779,9 @@ impl Cpu {
                 let v = self.stack_pop();
                 match opcode {
                     0xc1 => self.reg.set_bc(v),
-                    0xf1 => self.reg.set_af(v),
                     0xd1 => self.reg.set_de(v),
                     0xe1 => self.reg.set_hl(v),
+                    0xf1 => self.reg.set_af(v),
                     _ => {}
                 }
             }
