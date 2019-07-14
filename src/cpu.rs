@@ -275,7 +275,7 @@ impl Cpu {
         let a = self.reg.get_hl();
         let r = a.wrapping_add(n);
         self.reg.set_flag(C, a > 0xffff - n);
-        self.reg.set_flag(H, (a & 0x07ff) + (n & 0x07ff) > 0x07ff);
+        self.reg.set_flag(H, (a & 0x0fff) + (n & 0x0fff) > 0x0fff);
         self.reg.set_flag(N, false);
         self.reg.set_hl(r);
     }
