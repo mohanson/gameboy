@@ -298,20 +298,8 @@ impl Tick {
 
     fn period(&self) -> u32 {
         match self.reg.borrow().channel {
-            Channel::Square1 | Channel::Square2 => {
-                if self.reg.borrow().get_frequency() > 2048 {
-                    0x0000_0000
-                } else {
-                    4 * (2048 - u32::from(self.reg.borrow().get_frequency()))
-                }
-            }
-            Channel::Wave => {
-                if self.reg.borrow().get_frequency() > 2048 {
-                    0x0000_0000
-                } else {
-                    2 * (2048 - u32::from(self.reg.borrow().get_frequency()))
-                }
-            }
+            Channel::Square1 | Channel::Square2 => 4 * (2048 - u32::from(self.reg.borrow().get_frequency())),
+            Channel::Wave => 2 * (2048 - u32::from(self.reg.borrow().get_frequency())),
             Channel::Noise => {
                 let d = match self.reg.borrow().get_dividor_code() {
                     0 => 8,
