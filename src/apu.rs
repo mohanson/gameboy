@@ -395,6 +395,7 @@ impl Tick {
 
 struct Blip {
     data: BlipBuf,
+    from: u32,
     ampl: i32,
 }
 
@@ -402,11 +403,13 @@ impl Blip {
     fn power_up(data: BlipBuf) -> Self {
         Self {
             data,
+            from: 0x0000_0000,
             ampl: 0x0000_0000,
         }
     }
 
     fn set(&mut self, time: u32, ampl: i32) {
+        self.from = time;
         let d = ampl - self.ampl;
         self.ampl = ampl;
         self.data.add_delta(time, d);
@@ -531,7 +534,7 @@ impl ChannelSquare {
 
     // This assumes no volume or sweep adjustments need to be done in the meantime
     fn next(&mut self, tic: u32, toc: u32) {
-        if !self.reg.borrow().get_trigger() || self.tick.period() == 0 || self.ve.volume == 0 {
+        if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
             self.tick.reload();
             self.blip.set(tic, 0);
             return;
@@ -628,7 +631,7 @@ impl ChannelWave {
     }
 
     fn next(&mut self, tic: u32, toc: u32) {
-        if !self.reg.borrow().get_trigger() || self.tick.period() == 0 {
+        if !self.reg.borrow().get_trigger() {
             self.tick.reload();
             self.blip.set(tic, 0);
             return;
