@@ -216,6 +216,23 @@ impl Timer {
     }
 }
 
+impl Timer {
+    fn update(&mut self, reg: Rc<RefCell<Register>>) {
+        self.period = match reg.borrow().channel {
+            Channel::Square1 | Channel::Square2 => 4 * (2048 - u32::from(reg.borrow().get_frequency())),
+            Channel::Wave => 2 * (2048 - u32::from(reg.borrow().get_frequency())),
+            Channel::Noise => {
+                let d = match reg.borrow().get_dividor_code() {
+                    0 => 8,
+                    n => (u32::from(n) + 1) * 16,
+                };
+                d << reg.borrow().get_clock_shift()
+            }
+            Channel::Mixer => 512,
+        };
+    }
+}
+
 // Frame Sequencer
 // The frame sequencer generates low frequency clocks for the modulation units. It is clocked by a 512 Hz timer.
 //
