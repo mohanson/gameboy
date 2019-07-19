@@ -198,6 +198,55 @@ impl Register {
     }
 }
 
+struct Timer {
+    period: u32,
+    n: u32,
+}
+
+impl Timer {
+    fn power_up(period: u32) -> Self {
+        Self { period, n: 0x0 }
+    }
+
+    fn next(&mut self, cycles: u32) -> u32 {
+        self.n += cycles;
+        let rs = self.n / self.period;
+        self.n = self.n % self.period;
+        rs
+    }
+}
+
+// Frame Sequencer
+// The frame sequencer generates low frequency clocks for the modulation units. It is clocked by a 512 Hz timer.
+//
+// Step   Length Ctr  Vol Env     Sweep
+// ---------------------------------------
+// 0      Clock       -           -
+// 1      -           -           -
+// 2      Clock       -           Clock
+// 3      -           -           -
+// 4      Clock       -           -
+// 5      -           -           -
+// 6      Clock       -           Clock
+// 7      -           Clock       -
+// ---------------------------------------
+// Rate   256 Hz      64 Hz       128 Hz
+struct FrameSequencer {
+    step: u8,
+}
+
+impl FrameSequencer {
+    fn power_up() -> Self {
+        Self { step: 0x00 }
+    }
+
+    fn next(&mut self) -> u8 {
+        self.step += 1;
+        self.step %= 8;
+        self.step
+    }
+}
+
 // A length counter disables a channel when it decrements to zero. It contains an internal counter and enabled flag.
 // Writing a byte to NRx1 loads the counter with 64-data (256-data for wave channel). The counter can be reloaded at any
 // time.
@@ -734,6 +783,8 @@ const OUTPUT_SAMPLE_COUNT: usize = 2000;
 pub struct Apu {
     pub buffer: Arc<Mutex<Vec<(f32, f32)>>>,
     reg: Register,
+    timer: Timer,
+    fs: FrameSequencer,
     channel1: ChannelSquare,
     channel2: ChannelSquare,
     channel3: ChannelWave,
@@ -744,7 +795,6 @@ pub struct Apu {
     next_time: u32,
     need_sync: bool,
     time: u32,
-    time_divider: u8,
 }
 
 impl Apu {
@@ -757,6 +807,8 @@ impl Apu {
         Self {
             buffer: Arc::new(Mutex::new(Vec::new())),
             reg: Register::power_up(Channel::Mixer),
+            timer: Timer::power_up(cpu::CLOCK_FREQUENCY / 512),
+            fs: FrameSequencer::power_up(),
             channel1: ChannelSquare::power_up(blipbuf1, Channel::Square1),
             channel2: ChannelSquare::power_up(blipbuf2, Channel::Square2),
             channel3: ChannelWave::power_up(blipbuf3),
@@ -767,7 +819,6 @@ impl Apu {
             next_time: cpu::CLOCK_FREQUENCY / 256,
             need_sync: false,
             time: 0,
-            time_divider: 0,
         }
     }
 
@@ -788,6 +839,25 @@ impl Apu {
         if !self.reg.get_power() {
             return;
         }
+
+        for _ in 0..self.timer.next(cycles) {
+            let step = self.fs.next();
+            if step == 0 || step == 2 || step == 4 || step == 6 {
+                self.channel1.lc.next();
+                self.channel2.lc.next();
+                self.channel3.lc.next();
+                self.channel4.lc.next();
+            }
+            if step == 7 {
+                self.channel1.ve.next();
+                self.channel2.ve.next();
+                self.channel4.ve.next();
+            }
+            if step == 2 || step == 6 {
+                self.channel1.fs.next();
+            }
+        }
+
         self.time += cycles;
         if self.time >= self.period {
             self.output();
@@ -823,25 +893,6 @@ impl Apu {
             self.channel2.next(self.prev_time, self.next_time);
             self.channel3.next(self.prev_time, self.next_time);
             self.channel4.next(self.prev_time, self.next_time);
-            self.channel1.lc.next();
-            self.channel2.lc.next();
-            self.channel3.lc.next();
-            self.channel4.lc.next();
-
-            match self.time_divider {
-                0 => {
-                    self.channel1.ve.next();
-                    self.channel2.ve.next();
-                    self.channel4.ve.next();
-                }
-                1 | 3 => {
-                    self.channel1.fs.next();
-                }
-                2 => {}
-                _ => unreachable!(),
-            }
-
-            self.time_divider = (self.time_divider + 1) % 4;
             self.prev_time = self.next_time;
             self.next_time += cpu::CLOCK_FREQUENCY / 256;
         }
