@@ -534,11 +534,6 @@ impl ChannelSquare {
 
     // This assumes no volume or sweep adjustments need to be done in the meantime
     fn next(&mut self, tic: u32, toc: u32) {
-        if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
-            self.tick.reload();
-            self.blip.set(tic, 0);
-            return;
-        }
         let pat = match self.reg.borrow().get_duty() {
             0 => 0b0000_0001,
             1 => 0b1000_0001,
@@ -548,7 +543,9 @@ impl ChannelSquare {
         };
         let vol = i32::from(self.ve.volume);
         for time in self.tick.next(tic, toc) {
-            let ampl = if (pat >> self.idx) & 0x01 != 0x00 {
+            let ampl = if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
+                0x00
+            } else if (pat >> self.idx) & 0x01 != 0x00 {
                 vol
             } else {
                 vol * -1
@@ -631,11 +628,6 @@ impl ChannelWave {
     }
 
     fn next(&mut self, tic: u32, toc: u32) {
-        if !self.reg.borrow().get_trigger() {
-            self.tick.reload();
-            self.blip.set(tic, 0);
-            return;
-        }
         let s = match self.reg.borrow().get_volume_code() {
             0 => 4,
             1 => 0,
@@ -649,7 +641,11 @@ impl ChannelWave {
             } else {
                 self.waveram[self.waveidx / 2] >> 4
             };
-            let ampl = i32::from(sample >> s);
+            let ampl = if !self.reg.borrow().get_trigger() {
+                0x00
+            } else {
+                i32::from(sample >> s)
+            };
             self.blip.set(time, ampl);
             self.waveidx = (self.waveidx + 1) % 32;
         }
@@ -747,13 +743,10 @@ impl ChannelNoise {
     }
 
     fn next(&mut self, tic: u32, toc: u32) {
-        if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
-            self.tick.reload();
-            self.blip.set(tic, 0);
-            return;
-        }
         for time in self.tick.next(tic, toc) {
-            let ampl = if self.lfsr.next() {
+            let ampl = if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
+                0x00
+            } else if self.lfsr.next() {
                 i32::from(self.ve.volume)
             } else {
                 i32::from(self.ve.volume) * -1
