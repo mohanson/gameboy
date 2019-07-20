@@ -335,47 +335,6 @@ impl VolumeEnvelope {
     }
 }
 
-struct Tick {
-    reg: Rc<RefCell<Register>>,
-    d: u32,
-}
-
-impl Tick {
-    fn power_up(reg: Rc<RefCell<Register>>) -> Self {
-        Self { reg, d: 0x0000_0000 }
-    }
-
-    fn period(&self) -> u32 {
-        match self.reg.borrow().channel {
-            Channel::Square1 | Channel::Square2 => 4 * (2048 - u32::from(self.reg.borrow().get_frequency())),
-            Channel::Wave => 2 * (2048 - u32::from(self.reg.borrow().get_frequency())),
-            Channel::Noise => {
-                let d = match self.reg.borrow().get_dividor_code() {
-                    0 => 8,
-                    n => (u32::from(n) + 1) * 16,
-                };
-                d << self.reg.borrow().get_clock_shift()
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn reload(&mut self) {
-        self.d = 0x0000_0000
-    }
-
-    fn next(&mut self, tic: u32, toc: u32) -> Vec<u32> {
-        let mut tic = tic + self.d;
-        let mut r = vec![];
-        while tic < toc {
-            r.push(tic);
-            tic += self.period();
-        }
-        self.d = tic - toc;
-        r
-    }
-}
-
 struct Blip {
     data: BlipBuf,
     from: u32,
@@ -493,10 +452,10 @@ impl FrequencySweep {
 // 3      01111110    75%
 struct ChannelSquare {
     reg: Rc<RefCell<Register>>,
+    timer: Timer,
     lc: LengthCounter,
     ve: VolumeEnvelope,
     fs: FrequencySweep,
-    tick: Tick,
     blip: Blip,
     idx: u8,
 }
@@ -506,17 +465,17 @@ impl ChannelSquare {
         let reg = Rc::new(RefCell::new(Register::power_up(mode.clone())));
         ChannelSquare {
             reg: reg.clone(),
+            timer: Timer::power_up(8192),
             lc: LengthCounter::power_up(reg.clone()),
             ve: VolumeEnvelope::power_up(reg.clone()),
             fs: FrequencySweep::power_up(reg.clone()),
-            tick: Tick::power_up(reg.clone()),
             blip: Blip::power_up(blip),
             idx: 1,
         }
     }
 
     // This assumes no volume or sweep adjustments need to be done in the meantime
-    fn next(&mut self, tic: u32, toc: u32) {
+    fn next(&mut self, cycles: u32) {
         let pat = match self.reg.borrow().get_duty() {
             0 => 0b0000_0001,
             1 => 0b1000_0001,
@@ -525,7 +484,7 @@ impl ChannelSquare {
             _ => unreachable!(),
         };
         let vol = i32::from(self.ve.volume);
-        for time in self.tick.next(tic, toc) {
+        for _ in 0..self.timer.next(cycles) {
             let ampl = if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
                 0x00
             } else if (pat >> self.idx) & 0x01 != 0x00 {
@@ -533,7 +492,7 @@ impl ChannelSquare {
             } else {
                 vol * -1
             };
-            self.blip.set(time, ampl);
+            self.blip.set(self.blip.from + self.timer.period, ampl);
             self.idx = (self.idx + 1) % 8;
         }
     }
@@ -559,9 +518,13 @@ impl Memory for ChannelSquare {
                 self.lc.n = self.reg.borrow().get_length_load();
             }
             0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
-            0xff13 | 0xff18 => self.reg.borrow_mut().nrx3 = v,
+            0xff13 | 0xff18 => {
+                self.reg.borrow_mut().nrx3 = v;
+                self.timer.period = period(self.reg.clone());
+            }
             0xff14 | 0xff19 => {
                 self.reg.borrow_mut().nrx4 = v;
+                self.timer.period = period(self.reg.clone());
                 if self.reg.borrow().get_trigger() {
                     self.lc.reload();
                     self.ve.reload();
@@ -590,8 +553,8 @@ impl Memory for ChannelSquare {
 // Wave RAM can only be properly accessed when the channel is disabled (see obscure behavior).
 struct ChannelWave {
     reg: Rc<RefCell<Register>>,
+    timer: Timer,
     lc: LengthCounter,
-    tick: Tick,
     blip: Blip,
     waveram: [u8; 16],
     waveidx: usize,
@@ -602,15 +565,15 @@ impl ChannelWave {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         ChannelWave {
             reg: reg.clone(),
+            timer: Timer::power_up(8192),
             lc: LengthCounter::power_up(reg.clone()),
-            tick: Tick::power_up(reg.clone()),
             blip: Blip::power_up(blip),
             waveram: [0x00; 16],
             waveidx: 0x00,
         }
     }
 
-    fn next(&mut self, tic: u32, toc: u32) {
+    fn next(&mut self, cycles: u32) {
         let s = match self.reg.borrow().get_volume_code() {
             0 => 4,
             1 => 0,
@@ -618,7 +581,7 @@ impl ChannelWave {
             3 => 2,
             _ => unreachable!(),
         };
-        for time in self.tick.next(tic, toc) {
+        for _ in 0..self.timer.next(cycles) {
             let sample = if self.waveidx & 0x01 == 0x00 {
                 self.waveram[self.waveidx / 2] & 0x0f
             } else {
@@ -629,7 +592,7 @@ impl ChannelWave {
             } else {
                 i32::from(sample >> s)
             };
-            self.blip.set(time, ampl);
+            self.blip.set(self.blip.from + self.timer.period, ampl);
             self.waveidx = (self.waveidx + 1) % 32;
         }
     }
@@ -656,13 +619,17 @@ impl Memory for ChannelWave {
                 self.lc.n = self.reg.borrow().get_length_load();
             }
             0xff1c => self.reg.borrow_mut().nrx2 = v,
-            0xff1d => self.reg.borrow_mut().nrx3 = v,
+            0xff1d => {
+                self.reg.borrow_mut().nrx3 = v;
+                self.timer.period = period(self.reg.clone());
+            }
             0xff1e => {
                 self.reg.borrow_mut().nrx4 = v;
+                self.timer.period = period(self.reg.clone());
                 if self.reg.borrow().get_trigger() && self.reg.borrow().get_dac_power() {
                     self.lc.reload();
-                    self.tick.reload();
-                    self.waveidx = 0;
+                    self.timer.n = 0x00;
+                    self.waveidx = 0x00;
                 }
             }
             0xff30...0xff3f => self.waveram[a as usize - 0xff30] = v,
@@ -705,10 +672,10 @@ impl Lfsr {
 
 struct ChannelNoise {
     reg: Rc<RefCell<Register>>,
+    timer: Timer,
     lc: LengthCounter,
     ve: VolumeEnvelope,
     lfsr: Lfsr,
-    tick: Tick,
     blip: Blip,
 }
 
@@ -717,16 +684,16 @@ impl ChannelNoise {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Noise)));
         ChannelNoise {
             reg: reg.clone(),
+            timer: Timer::power_up(4096),
             lc: LengthCounter::power_up(reg.clone()),
             ve: VolumeEnvelope::power_up(reg.clone()),
             lfsr: Lfsr::power_up(reg.clone()),
-            tick: Tick::power_up(reg.clone()),
             blip: Blip::power_up(blip),
         }
     }
 
-    fn next(&mut self, tic: u32, toc: u32) {
-        for time in self.tick.next(tic, toc) {
+    fn next(&mut self, cycles: u32) {
+        for _ in 0..self.timer.next(cycles) {
             let ampl = if !self.reg.borrow().get_trigger() || self.ve.volume == 0 {
                 0x00
             } else if self.lfsr.next() {
@@ -734,7 +701,7 @@ impl ChannelNoise {
             } else {
                 i32::from(self.ve.volume) * -1
             };
-            self.blip.set(time, ampl);
+            self.blip.set(self.blip.from + self.timer.period, ampl);
         }
     }
 }
@@ -759,14 +726,17 @@ impl Memory for ChannelNoise {
                 self.lc.n = self.reg.borrow().get_length_load();
             }
             0xff21 => self.reg.borrow_mut().nrx2 = v,
-            0xff22 => self.reg.borrow_mut().nrx3 = v,
+            0xff22 => {
+                self.reg.borrow_mut().nrx3 = v;
+                self.timer.period = period(self.reg.clone());
+            }
             0xff23 => {
                 self.reg.borrow_mut().nrx4 = v;
                 if self.reg.borrow().get_trigger() {
                     self.lc.reload();
                     self.ve.reload();
                     self.lfsr.reload();
-                    self.tick.reload();
+                    self.timer.n = 0x00;
                 }
             }
             _ => unreachable!(),
@@ -837,6 +807,11 @@ impl Apu {
         }
 
         for _ in 0..self.timer.next(cycles) {
+            self.channel1.next(self.timer.period);
+            self.channel2.next(self.timer.period);
+            self.channel3.next(self.timer.period);
+            self.channel4.next(self.timer.period);
+
             let step = self.fs.next();
             if step == 0 || step == 2 || step == 4 || step == 6 {
                 self.channel1.lc.next();
@@ -851,22 +826,28 @@ impl Apu {
             }
             if step == 2 || step == 6 {
                 self.channel1.fs.next();
+                self.channel1.timer.period = period(self.channel1.reg.clone());
             }
         }
 
         self.time += cycles;
         if self.time >= self.period {
+            self.run();
             self.output();
         }
     }
 
     fn output(&mut self) {
-        self.run();
         assert_eq!(self.time, self.prev_time);
         self.channel1.blip.data.end_frame(self.time);
         self.channel2.blip.data.end_frame(self.time);
         self.channel3.blip.data.end_frame(self.time);
         self.channel4.blip.data.end_frame(self.time);
+        self.channel1.blip.from -= self.time;
+        self.channel2.blip.from -= self.time;
+        self.channel3.blip.from -= self.time;
+        self.channel4.blip.from -= self.time;
+
         self.next_time -= self.time;
         self.time = 0;
         self.prev_time = 0;
@@ -885,19 +866,11 @@ impl Apu {
 
     fn run(&mut self) {
         while self.next_time <= self.time {
-            self.channel1.next(self.prev_time, self.next_time);
-            self.channel2.next(self.prev_time, self.next_time);
-            self.channel3.next(self.prev_time, self.next_time);
-            self.channel4.next(self.prev_time, self.next_time);
             self.prev_time = self.next_time;
             self.next_time += cpu::CLOCK_FREQUENCY / 256;
         }
 
         if self.prev_time != self.time {
-            self.channel1.next(self.prev_time, self.time);
-            self.channel2.next(self.prev_time, self.time);
-            self.channel3.next(self.prev_time, self.time);
-            self.channel4.next(self.prev_time, self.time);
             self.prev_time = self.time;
         }
     }
