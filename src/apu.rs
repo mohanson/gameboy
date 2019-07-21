@@ -754,11 +754,6 @@ pub struct Apu {
     channel3: ChannelWave,
     channel4: ChannelNoise,
     sample_rate: u32,
-    period: u32,
-    prev_time: u32,
-    next_time: u32,
-    need_sync: bool,
-    time: u32,
 }
 
 impl Apu {
@@ -767,7 +762,6 @@ impl Apu {
         let blipbuf2 = create_blipbuf(sample_rate);
         let blipbuf3 = create_blipbuf(sample_rate);
         let blipbuf4 = create_blipbuf(sample_rate);
-        let period = cpu::CLOCK_FREQUENCY.wrapping_mul(OUTPUT_SAMPLE_COUNT as u32) / sample_rate;
         Self {
             buffer: Arc::new(Mutex::new(Vec::new())),
             reg: Register::power_up(Channel::Mixer),
@@ -778,11 +772,6 @@ impl Apu {
             channel3: ChannelWave::power_up(blipbuf3),
             channel4: ChannelNoise::power_up(blipbuf4),
             sample_rate,
-            period,
-            prev_time: 0,
-            next_time: cpu::CLOCK_FREQUENCY / 256,
-            need_sync: false,
-            time: 0,
         }
     }
 
@@ -826,50 +815,16 @@ impl Apu {
                 self.channel1.fs.next();
                 self.channel1.timer.period = period(self.channel1.reg.clone());
             }
-        }
 
-        self.time += cycles;
-        if self.time >= self.period {
-            self.run();
-            self.output();
-        }
-    }
-
-    fn output(&mut self) {
-        assert_eq!(self.time, self.prev_time);
-        self.channel1.blip.data.end_frame(self.time);
-        self.channel2.blip.data.end_frame(self.time);
-        self.channel3.blip.data.end_frame(self.time);
-        self.channel4.blip.data.end_frame(self.time);
-        self.channel1.blip.from -= self.time;
-        self.channel2.blip.from -= self.time;
-        self.channel3.blip.from -= self.time;
-        self.channel4.blip.from -= self.time;
-
-        self.next_time -= self.time;
-        self.time = 0;
-        self.prev_time = 0;
-
-        if !self.need_sync || self.buffer.lock().unwrap().is_empty() {
-            self.need_sync = false;
+            self.channel1.blip.data.end_frame(self.timer.period);
+            self.channel2.blip.data.end_frame(self.timer.period);
+            self.channel3.blip.data.end_frame(self.timer.period);
+            self.channel4.blip.data.end_frame(self.timer.period);
+            self.channel1.blip.from -= self.timer.period;
+            self.channel2.blip.from -= self.timer.period;
+            self.channel3.blip.from -= self.timer.period;
+            self.channel4.blip.from -= self.timer.period;
             self.mix();
-        } else {
-            // Prevent the BlipBuf's from filling up and triggering an assertion
-            self.channel1.blip.data.clear();
-            self.channel2.blip.data.clear();
-            self.channel3.blip.data.clear();
-            self.channel4.blip.data.clear();
-        }
-    }
-
-    fn run(&mut self) {
-        while self.next_time <= self.time {
-            self.prev_time = self.next_time;
-            self.next_time += cpu::CLOCK_FREQUENCY / 256;
-        }
-
-        if self.prev_time != self.time {
-            self.prev_time = self.time;
         }
     }
 
@@ -982,7 +937,6 @@ impl Memory for Apu {
         if a != 0xff26 && !self.reg.get_power() {
             return;
         }
-        self.run();
         match a {
             0xff10...0xff14 => self.channel1.set(a, v),
             0xff15...0xff19 => self.channel2.set(a, v),
