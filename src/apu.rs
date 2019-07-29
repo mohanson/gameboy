@@ -292,69 +292,44 @@ impl LengthCounter {
 // channel is triggered again.
 // When the waveform input is zero the envelope outputs zero, otherwise it outputs the current volume.
 // Writing to NRx2 causes obscure effects on the volume that differ on different Game Boy models (see obscure behavior).
-//
-// NRX2 ---- VVVV APPP Starting volume, Envelope add mode, period
 struct VolumeEnvelope {
     reg: Rc<RefCell<Register>>,
+    timer: Timer,
     volume: u8,
-    d: u8,
 }
 
 impl VolumeEnvelope {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
         Self {
             reg,
+            timer: Timer::power_up(8),
             volume: 0x00,
-            d: 0x00,
         }
     }
 
     fn reload(&mut self) {
-        self.d = self.reg.borrow().get_period();
+        let p = self.reg.borrow().get_period();
+        // The volume envelope and sweep timers treat a period of 0 as 8.
+        self.timer.period = if p == 0 { 8 } else { u32::from(p) };
         self.volume = self.reg.borrow().get_starting_volume();
     }
 
     fn next(&mut self) {
-        if self.d == 0 {
+        if self.reg.borrow().get_period() == 0 {
             return;
         }
-        if self.d == 1 {
-            self.d = self.reg.borrow().get_period();
-            // If this new volume within the 0 to 15 range, the volume is updated
-            let v = if self.reg.borrow().get_envelope_add_mode() {
-                self.volume.wrapping_add(1)
-            } else {
-                self.volume.wrapping_sub(1)
-            };
-            if v <= 15 {
-                self.volume = v;
-            }
+        if self.timer.next(1) == 0x00 {
             return;
+        };
+        // If this new volume within the 0 to 15 range, the volume is updated
+        let v = if self.reg.borrow().get_envelope_add_mode() {
+            self.volume.wrapping_add(1)
+        } else {
+            self.volume.wrapping_sub(1)
+        };
+        if v <= 15 {
+            self.volume = v;
         }
-        self.d -= 1;
-    }
-}
-
-struct Blip {
-    data: BlipBuf,
-    from: u32,
-    ampl: i32,
-}
-
-impl Blip {
-    fn power_up(data: BlipBuf) -> Self {
-        Self {
-            data,
-            from: 0x0000_0000,
-            ampl: 0x0000_0000,
-        }
-    }
-
-    fn set(&mut self, time: u32, ampl: i32) {
-        self.from = time;
-        let d = ampl - self.ampl;
-        self.ampl = ampl;
-        self.data.add_delta(time, d);
     }
 }
 
@@ -381,63 +356,89 @@ impl Blip {
 // affected so the next time the sweep updates the channel's frequency this modification will be lost.
 struct FrequencySweep {
     reg: Rc<RefCell<Register>>,
+    timer: Timer,
     enable: bool,
     shadow: u16,
-    d: u8,
+    newfeq: u16,
 }
 
 impl FrequencySweep {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
         Self {
             reg,
+            timer: Timer::power_up(8),
             enable: false,
             shadow: 0x0000,
-            d: 0x00,
+            newfeq: 0x0000,
         }
     }
 
     fn reload(&mut self) {
-        if self.reg.borrow().channel != Channel::Square1 {
-            return;
-        }
         self.shadow = self.reg.borrow().get_frequency();
-        self.d = self.reg.borrow().get_sweep_period();
-        self.enable = self.d != 0x00 || self.reg.borrow().get_shift() != 0x00;
+        let p = self.reg.borrow().get_sweep_period();
+        // The volume envelope and sweep timers treat a period of 0 as 8.
+        self.timer.period = if p == 0 { 8 } else { u32::from(p) };
+        self.enable = p != 0x00 || self.reg.borrow().get_shift() != 0x00;
         if self.reg.borrow().get_shift() != 0x00 {
-            self.next();
+            self.frequency_calculation();
+            self.overflow_check();
+        }
+    }
+
+    fn frequency_calculation(&mut self) {
+        let offset = self.shadow >> self.reg.borrow().get_shift();
+        if self.reg.borrow().get_negate() {
+            self.newfeq = self.shadow.wrapping_sub(offset);
+        } else {
+            self.newfeq = self.shadow.wrapping_add(offset);
+        }
+    }
+
+    fn overflow_check(&mut self) {
+        if self.newfeq >= 2048 {
+            self.reg.borrow_mut().set_trigger(false);
         }
     }
 
     fn next(&mut self) {
-        if self.reg.borrow().channel != Channel::Square1 {
+        if !self.enable || self.reg.borrow().get_sweep_period() == 0 {
             return;
         }
-        if !self.enable {
+        if self.timer.next(1) == 0x00 {
             return;
         }
-        if self.d > 1 {
-            self.d -= 1;
-            return;
+        self.frequency_calculation();
+        self.overflow_check();
+
+        if self.newfeq < 2048 && self.reg.borrow().get_shift() != 0 {
+            self.reg.borrow_mut().set_frequency(self.newfeq);
+            self.shadow = self.newfeq;
+            self.frequency_calculation();
+            self.overflow_check();
         }
-        self.d = self.reg.borrow().get_sweep_period();
-        self.reg.borrow_mut().set_frequency(self.shadow);
-        if self.reg.borrow().get_frequency() == 2048 {
-            self.reg.borrow_mut().set_trigger(false);
+    }
+}
+
+struct Blip {
+    data: BlipBuf,
+    from: u32,
+    ampl: i32,
+}
+
+impl Blip {
+    fn power_up(data: BlipBuf) -> Self {
+        Self {
+            data,
+            from: 0x0000_0000,
+            ampl: 0x0000_0000,
         }
-        let offset = self.shadow >> self.reg.borrow().get_shift();
-        if self.reg.borrow().get_negate() {
-            // F ~ (2048 - f)
-            // Increase in frequency means subtracting the offset
-            if self.shadow <= offset {
-                self.shadow = 0;
-            } else {
-                self.shadow -= offset;
-            }
-        } else if self.shadow >= 2048 - offset {
-            self.shadow = 2048;
-        } else {
-            self.shadow += offset;
-        }
+    }
+
+    fn set(&mut self, time: u32, ampl: i32) {
+        self.from = time;
+        let d = ampl - self.ampl;
+        self.ampl = ampl;
+        self.data.add_delta(time, d);
     }
 }
 
@@ -525,10 +526,27 @@ impl Memory for ChannelSquare {
             0xff14 | 0xff19 => {
                 self.reg.borrow_mut().nrx4 = v;
                 self.timer.period = period(self.reg.clone());
+                // Trigger Event
+                //
+                // Writing a value to NRx4 with bit 7 set causes the following things to occur:
+                //
+                //   - Channel is enabled (see length counter).
+                //   - If length counter is zero, it is set to 64 (256 for wave channel).
+                //   - Frequency timer is reloaded with period.
+                //   - Volume envelope timer is reloaded with period.
+                //   - Channel volume is reloaded from NRx2.
+                //   - Noise channel's LFSR bits are all set to 1.
+                //   - Wave channel's position is set to 0 but sample buffer is NOT refilled.
+                //   - Square 1's sweep does several things (see frequency sweep).
+                //
+                // Note that if the channel's DAC is off, after the above actions occur the channel will be immediately
+                // disabled again.
                 if self.reg.borrow().get_trigger() {
                     self.lc.reload();
                     self.ve.reload();
-                    self.fs.reload();
+                    if self.reg.borrow().channel == Channel::Square1 {
+                        self.fs.reload();
+                    }
                 }
             }
             _ => unreachable!(),
@@ -587,7 +605,7 @@ impl ChannelWave {
             } else {
                 self.waveram[self.waveidx / 2] >> 4
             };
-            let ampl = if !self.reg.borrow().get_trigger() {
+            let ampl = if !self.reg.borrow().get_trigger() || !self.reg.borrow().get_dac_power() {
                 0x00
             } else {
                 i32::from(sample >> s)
@@ -626,7 +644,7 @@ impl Memory for ChannelWave {
             0xff1e => {
                 self.reg.borrow_mut().nrx4 = v;
                 self.timer.period = period(self.reg.clone());
-                if self.reg.borrow().get_trigger() && self.reg.borrow().get_dac_power() {
+                if self.reg.borrow().get_trigger() {
                     self.lc.reload();
                     self.waveidx = 0x00;
                 }
@@ -742,8 +760,6 @@ impl Memory for ChannelNoise {
     }
 }
 
-const OUTPUT_SAMPLE_COUNT: usize = 2000;
-
 pub struct Apu {
     pub buffer: Arc<Mutex<Vec<(f32, f32)>>>,
     reg: Register,
@@ -844,9 +860,9 @@ impl Apu {
         let r_vol = (f32::from(self.reg.get_r_vol()) / 7.0) * (1.0 / 15.0) * 0.25;
 
         while sum < sample_count {
-            let buf_l = &mut [0f32; OUTPUT_SAMPLE_COUNT + 10];
-            let buf_r = &mut [0f32; OUTPUT_SAMPLE_COUNT + 10];
-            let buf = &mut [0i16; OUTPUT_SAMPLE_COUNT + 10];
+            let buf_l = &mut [0f32; 2048];
+            let buf_r = &mut [0f32; 2048];
+            let buf = &mut [0i16; 2048];
 
             let count1 = self.channel1.blip.data.read_samples(buf, false);
             for (i, v) in buf[..count1].iter().enumerate() {
