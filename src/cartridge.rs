@@ -132,12 +132,12 @@ impl Mbc1 {
 impl Memory for Mbc1 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => self.rom[a as usize],
-            0x4000...0x7fff => {
+            0x0000..=0x3fff => self.rom[a as usize],
+            0x4000..=0x7fff => {
                 let i = self.rom_bank() * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
             }
-            0xa000...0xbfff => {
+            0xa000..=0xbfff => {
                 if self.ram_enable {
                     let i = self.ram_bank() * 0x2000 + a as usize - 0xa000;
                     self.ram[i]
@@ -151,16 +151,16 @@ impl Memory for Mbc1 {
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xa000...0xbfff => {
+            0xa000..=0xbfff => {
                 if self.ram_enable {
                     let i = self.ram_bank() * 0x2000 + a as usize - 0xa000;
                     self.ram[i] = v;
                 }
             }
-            0x0000...0x1fff => {
+            0x0000..=0x1fff => {
                 self.ram_enable = v & 0x0f == 0x0a;
             }
-            0x2000...0x3fff => {
+            0x2000..=0x3fff => {
                 let n = v & 0x1f;
                 let n = match n {
                     0x00 => 0x01,
@@ -168,11 +168,11 @@ impl Memory for Mbc1 {
                 };
                 self.bank = (self.bank & 0x60) | n;
             }
-            0x4000...0x5fff => {
+            0x4000..=0x5fff => {
                 let n = v & 0x03;
                 self.bank = self.bank & 0x9f | (n << 5)
             }
-            0x6000...0x7fff => match v {
+            0x6000..=0x7fff => match v {
                 0x00 => self.bank_mode = BankMode::Rom,
                 0x01 => self.bank_mode = BankMode::Ram,
                 n => panic!("Invalid cartridge type {}", n),
@@ -239,12 +239,12 @@ impl Mbc2 {
 impl Memory for Mbc2 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => self.rom[a as usize],
-            0x4000...0x7fff => {
+            0x0000..=0x3fff => self.rom[a as usize],
+            0x4000..=0x7fff => {
                 let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
             }
-            0xa000...0xa1ff => {
+            0xa000..=0xa1ff => {
                 if self.ram_enable {
                     self.ram[(a - 0xa000) as usize]
                 } else {
@@ -259,17 +259,17 @@ impl Memory for Mbc2 {
         // Only the lower 4 bits of the "bytes" in this memory area are used.
         let v = v & 0x0f;
         match a {
-            0xa000...0xa1ff => {
+            0xa000..=0xa1ff => {
                 if self.ram_enable {
                     self.ram[(a - 0xa000) as usize] = v
                 }
             }
-            0x0000...0x1fff => {
+            0x0000..=0x1fff => {
                 if a & 0x0100 == 0 {
                     self.ram_enable = v == 0x0a;
                 }
             }
-            0x2000...0x3fff => {
+            0x2000..=0x3fff => {
                 if a & 0x0100 != 0 {
                     self.rom_bank = v as usize;
                 }
@@ -338,8 +338,8 @@ impl RealTimeClock {
         let days = (d / 3600 / 24) as u16;
         self.dl = (days % 256) as u8;
         match days {
-            0x0000...0x00ff => {}
-            0x0100...0x01ff => {
+            0x0000..=0x00ff => {}
+            0x0100..=0x01ff => {
                 self.dh |= 0x01;
             }
             _ => {
@@ -468,12 +468,12 @@ impl Mbc3 {
 impl Memory for Mbc3 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => self.rom[a as usize],
-            0x4000...0x7fff => {
+            0x0000..=0x3fff => self.rom[a as usize],
+            0x4000..=0x7fff => {
                 let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
             }
-            0xa000...0xbfff => {
+            0xa000..=0xbfff => {
                 if self.ram_enable {
                     if self.ram_bank <= 0x03 {
                         let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
@@ -491,7 +491,7 @@ impl Memory for Mbc3 {
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xa000...0xbfff => {
+            0xa000..=0xbfff => {
                 if self.ram_enable {
                     if self.ram_bank <= 0x03 {
                         let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
@@ -501,10 +501,10 @@ impl Memory for Mbc3 {
                     }
                 }
             }
-            0x0000...0x1fff => {
+            0x0000..=0x1fff => {
                 self.ram_enable = v & 0x0f == 0x0a;
             }
-            0x2000...0x3fff => {
+            0x2000..=0x3fff => {
                 let n = (v & 0x7f) as usize;
                 let n = match n {
                     0x00 => 0x01,
@@ -512,11 +512,11 @@ impl Memory for Mbc3 {
                 };
                 self.rom_bank = n;
             }
-            0x4000...0x5fff => {
+            0x4000..=0x5fff => {
                 let n = (v & 0x0f) as usize;
                 self.ram_bank = n;
             }
-            0x6000...0x7fff => {
+            0x6000..=0x7fff => {
                 if v & 0x01 != 0 {
                     self.rtc.tic();
                 }
@@ -564,12 +564,12 @@ impl Mbc5 {
 impl Memory for Mbc5 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x3fff => self.rom[a as usize],
-            0x4000...0x7fff => {
+            0x0000..=0x3fff => self.rom[a as usize],
+            0x4000..=0x7fff => {
                 let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
                 self.rom[i]
             }
-            0xa000...0xbfff => {
+            0xa000..=0xbfff => {
                 if self.ram_enable {
                     let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
                     self.ram[i]
@@ -583,18 +583,18 @@ impl Memory for Mbc5 {
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xa000...0xbfff => {
+            0xa000..=0xbfff => {
                 if self.ram_enable {
                     let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
                     self.ram[i] = v;
                 }
             }
-            0x0000...0x1fff => {
+            0x0000..=0x1fff => {
                 self.ram_enable = v & 0x0f == 0x0a;
             }
-            0x2000...0x2fff => self.rom_bank = (self.rom_bank & 0x100) | (v as usize),
-            0x3000...0x3fff => self.rom_bank = (self.rom_bank & 0x0ff) | (((v & 0x01) as usize) << 8),
-            0x4000...0x5fff => self.ram_bank = (v & 0x0f) as usize,
+            0x2000..=0x2fff => self.rom_bank = (self.rom_bank & 0x100) | (v as usize),
+            0x3000..=0x3fff => self.rom_bank = (self.rom_bank & 0x0ff) | (((v & 0x01) as usize) << 8),
+            0x4000..=0x5fff => self.ram_bank = (v & 0x0f) as usize,
             _ => {}
         }
     }
@@ -661,7 +661,7 @@ impl Stable for HuC1 {
 //  11h  MBC3                     FDh  BANDAI TAMA5
 //  12h  MBC3+RAM                 FEh  HuC3
 //  13h  MBC3+RAM+BATTERY         FFh  HuC1+RAM+BATTERY
-pub fn power_up(path: impl AsRef<Path>) -> Box<Cartridge> {
+pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
     rog::debugln!("Loading cartridge from {:?}", path.as_ref());
     let mut f = File::open(path.as_ref()).unwrap();
     let mut rom = Vec::new();
@@ -673,7 +673,7 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<Cartridge> {
     if rom.len() > rom_max {
         panic!("Rom size more than {}", rom_max);
     }
-    let cart: Box<Cartridge> = match rom[0x0147] {
+    let cart: Box<dyn Cartridge> = match rom[0x0147] {
         0x00 => Box::new(RomOnly::power_up(rom)),
         0x01 => Box::new(Mbc1::power_up(rom, vec![], "")),
         0x02 => {
@@ -838,7 +838,7 @@ const NINTENDO_LOGO: [u8; 48] = [
 ];
 
 // Ensure Nintendo Logo.
-fn ensure_logo(cart: &Cartridge) {
+fn ensure_logo(cart: &dyn Cartridge) {
     for i in 0..48 {
         if cart.get(0x0104 + i as u16) != NINTENDO_LOGO[i as usize] {
             panic!("Nintendo logo is incorrect")
@@ -853,7 +853,7 @@ fn ensure_logo(cart: &Cartridge) {
 //
 // The lower 8 bits of the result must be the same than the value in this entry. The GAME WON'T WORK if this
 // checksum is incorrect.
-fn ensure_header_checksum(cart: &Cartridge) {
+fn ensure_header_checksum(cart: &dyn Cartridge) {
     let mut v: u8 = 0;
     for i in 0x0134..0x014d {
         v = v.wrapping_sub(cart.get(i)).wrapping_sub(1);

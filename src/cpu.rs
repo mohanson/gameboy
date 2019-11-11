@@ -61,7 +61,7 @@ const CB_CYCLES: [u32; 256] = [
 
 pub struct Cpu {
     pub reg: Register,
-    pub mem: Rc<RefCell<Memory>>,
+    pub mem: Rc<RefCell<dyn Memory>>,
     pub halted: bool,
     pub ei: bool,
 }
@@ -547,7 +547,7 @@ impl Cpu {
 }
 
 impl Cpu {
-    pub fn power_up(term: Term, mem: Rc<RefCell<Memory>>) -> Self {
+    pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
         Self {
             reg: Register::power_up(term),
             mem,
@@ -1698,7 +1698,7 @@ pub struct Rtc {
 }
 
 impl Rtc {
-    pub fn power_up(term: Term, mem: Rc<RefCell<Memory>>) -> Self {
+    pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
         let cpu = Cpu::power_up(term, mem);
         Self {
             cpu,

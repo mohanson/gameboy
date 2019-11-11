@@ -21,7 +21,7 @@ pub enum Speed {
 }
 
 pub struct Mmunit {
-    pub cartridge: Box<Cartridge>,
+    pub cartridge: Box<dyn Cartridge>,
     pub apu: Option<Apu>,
     pub gpu: Gpu,
     pub joypad: Joypad,
@@ -166,20 +166,20 @@ impl Mmunit {
 impl Memory for Mmunit {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000...0x7fff => self.cartridge.get(a),
-            0x8000...0x9fff => self.gpu.get(a),
-            0xa000...0xbfff => self.cartridge.get(a),
-            0xc000...0xcfff => self.wram[a as usize - 0xc000],
-            0xd000...0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
-            0xe000...0xefff => self.wram[a as usize - 0xe000],
-            0xf000...0xfdff => self.wram[a as usize - 0xf000 + 0x1000 * self.wram_bank],
-            0xfe00...0xfe9f => self.gpu.get(a),
-            0xfea0...0xfeff => 0x00,
+            0x0000..=0x7fff => self.cartridge.get(a),
+            0x8000..=0x9fff => self.gpu.get(a),
+            0xa000..=0xbfff => self.cartridge.get(a),
+            0xc000..=0xcfff => self.wram[a as usize - 0xc000],
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
+            0xe000..=0xefff => self.wram[a as usize - 0xe000],
+            0xf000..=0xfdff => self.wram[a as usize - 0xf000 + 0x1000 * self.wram_bank],
+            0xfe00..=0xfe9f => self.gpu.get(a),
+            0xfea0..=0xfeff => 0x00,
             0xff00 => self.joypad.get(a),
-            0xff01...0xff02 => self.serial.get(a),
-            0xff04...0xff07 => self.timer.get(a),
+            0xff01..=0xff02 => self.serial.get(a),
+            0xff04..=0xff07 => self.timer.get(a),
             0xff0f => self.intf.borrow().data,
-            0xff10...0xff3f => match &self.apu {
+            0xff10..=0xff3f => match &self.apu {
                 Some(some) => some.get(a),
                 None => 0x00,
             },
@@ -188,11 +188,11 @@ impl Memory for Mmunit {
                 let b = if self.shift { 0x01 } else { 0x00 };
                 a | b
             }
-            0xff40...0xff45 | 0xff47...0xff4b | 0xff4f => self.gpu.get(a),
-            0xff51...0xff55 => self.hdma.get(a),
-            0xff68...0xff6b => self.gpu.get(a),
+            0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.get(a),
+            0xff51..=0xff55 => self.hdma.get(a),
+            0xff68..=0xff6b => self.gpu.get(a),
             0xff70 => self.wram_bank as u8,
-            0xff80...0xfffe => self.hram[a as usize - 0xff80],
+            0xff80..=0xfffe => self.hram[a as usize - 0xff80],
             0xffff => self.inte,
             _ => 0x00,
         }
@@ -200,19 +200,19 @@ impl Memory for Mmunit {
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0x0000...0x7fff => self.cartridge.set(a, v),
-            0x8000...0x9fff => self.gpu.set(a, v),
-            0xa000...0xbfff => self.cartridge.set(a, v),
-            0xc000...0xcfff => self.wram[a as usize - 0xc000] = v,
-            0xd000...0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
-            0xe000...0xefff => self.wram[a as usize - 0xe000] = v,
-            0xf000...0xfdff => self.wram[a as usize - 0xf000 + 0x1000 * self.wram_bank] = v,
-            0xfe00...0xfe9f => self.gpu.set(a, v),
-            0xfea0...0xfeff => {}
+            0x0000..=0x7fff => self.cartridge.set(a, v),
+            0x8000..=0x9fff => self.gpu.set(a, v),
+            0xa000..=0xbfff => self.cartridge.set(a, v),
+            0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
+            0xe000..=0xefff => self.wram[a as usize - 0xe000] = v,
+            0xf000..=0xfdff => self.wram[a as usize - 0xf000 + 0x1000 * self.wram_bank] = v,
+            0xfe00..=0xfe9f => self.gpu.set(a, v),
+            0xfea0..=0xfeff => {}
             0xff00 => self.joypad.set(a, v),
-            0xff01...0xff02 => self.serial.set(a, v),
-            0xff04...0xff07 => self.timer.set(a, v),
-            0xff10...0xff3f => self.apu.as_mut().map_or((), |s| s.set(a, v)),
+            0xff01..=0xff02 => self.serial.set(a, v),
+            0xff04..=0xff07 => self.timer.set(a, v),
+            0xff10..=0xff3f => self.apu.as_mut().map_or((), |s| s.set(a, v)),
             0xff46 => {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
                 // table).
@@ -225,9 +225,9 @@ impl Memory for Mmunit {
                 }
             }
             0xff4d => self.shift = (v & 0x01) == 0x01,
-            0xff40...0xff45 | 0xff47...0xff4b | 0xff4f => self.gpu.set(a, v),
-            0xff51...0xff55 => self.hdma.set(a, v),
-            0xff68...0xff6b => self.gpu.set(a, v),
+            0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.set(a, v),
+            0xff51..=0xff55 => self.hdma.set(a, v),
+            0xff68..=0xff6b => self.gpu.set(a, v),
             0xff0f => self.intf.borrow_mut().data = v,
             0xff70 => {
                 self.wram_bank = match v & 0x7 {
@@ -235,7 +235,7 @@ impl Memory for Mmunit {
                     n => n as usize,
                 };
             }
-            0xff80...0xfffe => self.hram[a as usize - 0xff80] = v,
+            0xff80..=0xfffe => self.hram[a as usize - 0xff80] = v,
             0xffff => self.inte = v,
             _ => {}
         }

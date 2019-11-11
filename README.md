@@ -38,8 +38,11 @@ Left/Right <--- ||_ O _|   ,-. "._,"|
 
 # Tests
 
-Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. You can find the way how to run tests in `./Cargo.py`.
+Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. Run tests by:
 
+```
+$ cargo run --example blargg
+```
 
 | Test Name    | Result                              |
 |--------------|-------------------------------------|

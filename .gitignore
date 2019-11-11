@@ -1,6 +1,8 @@
 /target
 **/*.rs.bk
 
+/.vscode
+
 /res/gb-test-roms/
 /res/*.sav
 /res/*.rtc
