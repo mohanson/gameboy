@@ -1,3 +1,4 @@
+use super::clock::Clock;
 use super::cpu;
 use super::memory::Memory;
 use blip_buf::BlipBuf;
@@ -198,24 +199,6 @@ impl Register {
     }
 }
 
-struct Timer {
-    period: u32,
-    n: u32,
-}
-
-impl Timer {
-    fn power_up(period: u32) -> Self {
-        Self { period, n: 0x0 }
-    }
-
-    fn next(&mut self, cycles: u32) -> u32 {
-        self.n += cycles;
-        let rs = self.n / self.period;
-        self.n = self.n % self.period;
-        rs
-    }
-}
-
 // Frame Sequencer
 // The frame sequencer generates low frequency clocks for the modulation units. It is clocked by a 512 Hz timer.
 //
@@ -294,7 +277,7 @@ impl LengthCounter {
 // Writing to NRx2 causes obscure effects on the volume that differ on different Game Boy models (see obscure behavior).
 struct VolumeEnvelope {
     reg: Rc<RefCell<Register>>,
-    timer: Timer,
+    timer: Clock,
     volume: u8,
 }
 
@@ -302,7 +285,7 @@ impl VolumeEnvelope {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
         Self {
             reg,
-            timer: Timer::power_up(8),
+            timer: Clock::power_up(8),
             volume: 0x00,
         }
     }
@@ -356,7 +339,7 @@ impl VolumeEnvelope {
 // affected so the next time the sweep updates the channel's frequency this modification will be lost.
 struct FrequencySweep {
     reg: Rc<RefCell<Register>>,
-    timer: Timer,
+    timer: Clock,
     enable: bool,
     shadow: u16,
     newfeq: u16,
@@ -366,7 +349,7 @@ impl FrequencySweep {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
         Self {
             reg,
-            timer: Timer::power_up(8),
+            timer: Clock::power_up(8),
             enable: false,
             shadow: 0x0000,
             newfeq: 0x0000,
@@ -453,7 +436,7 @@ impl Blip {
 // 3      01111110    75%
 struct ChannelSquare {
     reg: Rc<RefCell<Register>>,
-    timer: Timer,
+    timer: Clock,
     lc: LengthCounter,
     ve: VolumeEnvelope,
     fs: FrequencySweep,
@@ -466,7 +449,7 @@ impl ChannelSquare {
         let reg = Rc::new(RefCell::new(Register::power_up(mode.clone())));
         ChannelSquare {
             reg: reg.clone(),
-            timer: Timer::power_up(8192),
+            timer: Clock::power_up(8192),
             lc: LengthCounter::power_up(reg.clone()),
             ve: VolumeEnvelope::power_up(reg.clone()),
             fs: FrequencySweep::power_up(reg.clone()),
@@ -571,7 +554,7 @@ impl Memory for ChannelSquare {
 // Wave RAM can only be properly accessed when the channel is disabled (see obscure behavior).
 struct ChannelWave {
     reg: Rc<RefCell<Register>>,
-    timer: Timer,
+    timer: Clock,
     lc: LengthCounter,
     blip: Blip,
     waveram: [u8; 16],
@@ -583,7 +566,7 @@ impl ChannelWave {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         ChannelWave {
             reg: reg.clone(),
-            timer: Timer::power_up(8192),
+            timer: Clock::power_up(8192),
             lc: LengthCounter::power_up(reg.clone()),
             blip: Blip::power_up(blip),
             waveram: [0x00; 16],
@@ -624,7 +607,7 @@ impl Memory for ChannelWave {
             0xff1c => self.reg.borrow().nrx2,
             0xff1d => self.reg.borrow().nrx3,
             0xff1e => self.reg.borrow().nrx4,
-            0xff30...0xff3f => self.waveram[a as usize - 0xff30],
+            0xff30..=0xff3f => self.waveram[a as usize - 0xff30],
             _ => unreachable!(),
         }
     }
@@ -649,7 +632,7 @@ impl Memory for ChannelWave {
                     self.waveidx = 0x00;
                 }
             }
-            0xff30...0xff3f => self.waveram[a as usize - 0xff30] = v,
+            0xff30..=0xff3f => self.waveram[a as usize - 0xff30] = v,
             _ => unreachable!(),
         }
     }
@@ -689,7 +672,7 @@ impl Lfsr {
 
 struct ChannelNoise {
     reg: Rc<RefCell<Register>>,
-    timer: Timer,
+    timer: Clock,
     lc: LengthCounter,
     ve: VolumeEnvelope,
     lfsr: Lfsr,
@@ -701,7 +684,7 @@ impl ChannelNoise {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Noise)));
         ChannelNoise {
             reg: reg.clone(),
-            timer: Timer::power_up(4096),
+            timer: Clock::power_up(4096),
             lc: LengthCounter::power_up(reg.clone()),
             ve: VolumeEnvelope::power_up(reg.clone()),
             lfsr: Lfsr::power_up(reg.clone()),
@@ -763,7 +746,7 @@ impl Memory for ChannelNoise {
 pub struct Apu {
     pub buffer: Arc<Mutex<Vec<(f32, f32)>>>,
     reg: Register,
-    timer: Timer,
+    timer: Clock,
     fs: FrameSequencer,
     channel1: ChannelSquare,
     channel2: ChannelSquare,
@@ -781,7 +764,7 @@ impl Apu {
         Self {
             buffer: Arc::new(Mutex::new(Vec::new())),
             reg: Register::power_up(Channel::Mixer),
-            timer: Timer::power_up(cpu::CLOCK_FREQUENCY / 512),
+            timer: Clock::power_up(cpu::CLOCK_FREQUENCY / 512),
             fs: FrameSequencer::power_up(),
             channel1: ChannelSquare::power_up(blipbuf1, Channel::Square1),
             channel2: ChannelSquare::power_up(blipbuf2, Channel::Square2),
@@ -924,10 +907,10 @@ const RD_MASK: [u8; 48] = [
 impl Memory for Apu {
     fn get(&self, a: u16) -> u8 {
         let r = match a {
-            0xff10...0xff14 => self.channel1.get(a),
-            0xff15...0xff19 => self.channel2.get(a),
-            0xff1a...0xff1e => self.channel3.get(a),
-            0xff1f...0xff23 => self.channel4.get(a),
+            0xff10..=0xff14 => self.channel1.get(a),
+            0xff15..=0xff19 => self.channel2.get(a),
+            0xff1a..=0xff1e => self.channel3.get(a),
+            0xff1f..=0xff23 => self.channel4.get(a),
             0xff24 => self.reg.nrx0,
             0xff25 => self.reg.nrx1,
             0xff26 => {
@@ -942,8 +925,8 @@ impl Memory for Apu {
                 let e = if self.channel4.reg.borrow().get_trigger() { 8 } else { 0 };
                 a | b | c | d | e
             }
-            0xff27...0xff2f => 0x00,
-            0xff30...0xff3f => self.channel3.get(a),
+            0xff27..=0xff2f => 0x00,
+            0xff30..=0xff3f => self.channel3.get(a),
             _ => unreachable!(),
         };
         r | RD_MASK[a as usize - 0xff10]
@@ -954,10 +937,10 @@ impl Memory for Apu {
             return;
         }
         match a {
-            0xff10...0xff14 => self.channel1.set(a, v),
-            0xff15...0xff19 => self.channel2.set(a, v),
-            0xff1a...0xff1e => self.channel3.set(a, v),
-            0xff1f...0xff23 => self.channel4.set(a, v),
+            0xff10..=0xff14 => self.channel1.set(a, v),
+            0xff15..=0xff19 => self.channel2.set(a, v),
+            0xff1a..=0xff1e => self.channel3.set(a, v),
+            0xff1f..=0xff23 => self.channel4.set(a, v),
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
             0xff26 => {
@@ -992,8 +975,8 @@ impl Memory for Apu {
                     self.reg.nrx4 = 0x00;
                 }
             }
-            0xff27...0xff2f => {}
-            0xff30...0xff3f => self.channel3.set(a, v),
+            0xff27..=0xff2f => {}
+            0xff30..=0xff3f => self.channel3.set(a, v),
             _ => unreachable!(),
         }
     }

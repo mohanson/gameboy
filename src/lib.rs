@@ -1,5 +1,6 @@
 pub mod apu;
 pub mod cartridge;
+pub mod clock;
 pub mod convention;
 pub mod cpu;
 pub mod gpu;
