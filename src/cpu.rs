@@ -428,7 +428,7 @@ impl Cpu {
     // C - Contains old bit 0 data
     fn alu_rrc(&mut self, a: u8) -> u8 {
         let c = a & 0x01 == 0x01;
-        let r = if c { 0x80 | (a >> 1) } else { (a >> 1) };
+        let r = if c { 0x80 | (a >> 1) } else { a >> 1 };
         self.reg.set_flag(C, c);
         self.reg.set_flag(H, false);
         self.reg.set_flag(N, false);
