@@ -17,9 +17,13 @@ fn main() {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
         ap.refer(&mut c_audio)
-            .add_option(&["-a"], argparse::StoreTrue, "Enable audio");
+            .add_option(&["-a", "--enable-audio"],
+                        argparse::StoreTrue,
+                        "Enable audio");
         ap.refer(&mut c_scale)
-            .add_option(&["-x"], argparse::Store, "Scale the video");
+            .add_option(&["-x", "--scale-factor"],
+                        argparse::Store,
+                        "Scale the video by a factor of 1, 2, 4, or 8");
         ap.refer(&mut rom).add_argument("rom", argparse::Store, "Rom name");
         ap.parse_args_or_exit();
     }
