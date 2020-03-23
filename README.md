@@ -10,6 +10,18 @@ You can start a game with the following command, here with a built-in game "Boxe
 $ cargo run -- "./res/boxes.gb"
 ```
 
+You can run a game with audio with the command
+
+```s
+$ cargo run -- -a "./res/boxes.gb"
+```
+
+You can run the game scaled up to a larger size with
+
+```s
+$ cargo run -- -x 4 "./res/boxes.gb"
+```
+
 Gameboy is developed by Rust, and fully tested on Windows, Ubuntu and Mac.
 
 # Control
