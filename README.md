@@ -7,19 +7,14 @@ Full featured Cross-platform GameBoy emulator. **Forever boys!**.
 You can start a game with the following command, here with a built-in game "Boxes" as an example:
 
 ```s
-$ cargo run -- "./res/boxes.gb"
+$ cargo run --release -- "./res/boxes.gb"
 ```
 
-You can run a game with audio with the command
+The following options are supported:
 
-```s
-$ cargo run -- -a "./res/boxes.gb"
-```
-
-You can run the game scaled up to a larger size with
-
-```s
-$ cargo run -- -x 4 "./res/boxes.gb"
+```text
+-a, --enable-audio    Enable audio, default is false
+-x, --scale-factor    Scale the video by a factor of 1, 2, 4, or 8
 ```
 
 Gameboy is developed by Rust, and fully tested on Windows, Ubuntu and Mac.
