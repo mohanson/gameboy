@@ -1,10 +1,16 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
+extern crate crossterm;
+extern crate crossterm_input;
 use gameboy::apu::Apu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;
 use std::cmp;
 use std::thread;
+use blockish::render_write_eol;
+use crossterm_input::{input, InputEvent, KeyEvent, RawScreen};
+use crossterm::{terminal, cursor, execute};
+use std::io::{stdout, Write};
 
 fn main() {
     rog::reg("gameboy");
@@ -12,6 +18,7 @@ fn main() {
 
     let mut rom = String::from("");
     let mut c_audio = false;
+    let mut c_terminal = false;
     let mut c_scale = 2;
     {
         let mut ap = argparse::ArgumentParser::new();
@@ -20,6 +27,10 @@ fn main() {
             .add_option(&["-a", "--enable-audio"],
                         argparse::StoreTrue,
                         "Enable audio");
+        ap.refer(&mut c_terminal)
+            .add_option(&["-t", "--terminal"],
+                        argparse::StoreTrue,
+                        "Render inside terminal");
         ap.refer(&mut c_scale)
             .add_option(&["-x", "--scale-factor"],
                         argparse::Store,
@@ -40,10 +51,14 @@ fn main() {
         8 => minifb::Scale::X8,
         _ => panic!("Supported scale: 1, 2, 4 or 8"),
     };
-    let mut window =
-        minifb::Window::new(format!("Gameboy - {}", rom_name).as_str(), SCREEN_W, SCREEN_H, option).unwrap();
+    let mut window_opt = None;
+    if !c_terminal {
+        window_opt = Some(minifb::Window::new(format!("Gameboy - {}", rom_name).as_str(), SCREEN_W, SCREEN_H, option).unwrap());
+    }
     let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
-    window.update_with_buffer(window_buffer.as_slice()).unwrap();
+    if let Some(window) = &mut window_opt {
+        window.update_with_buffer(window_buffer.as_slice()).unwrap();
+    }
 
     // Initialize audio related
     if c_audio {
@@ -95,13 +110,31 @@ fn main() {
             });
         });
     }
+    let mut term_width = 20 * 8;
+    let mut term_height = 20 * 8;
+    let _screen = RawScreen::into_raw_mode();
+    let input = input();
+    let mut reader = input.read_async();
+    match crossterm::terminal::size() {
+        Ok(res) => {
+            term_width = res.0 as u32 * 8;
+            term_height = res.1 as u32 * 8 * 2;
+        }
+        Err(_) => {
+        } }
 
+
+    match window_opt {
+        None => {let _ = execute!(stdout(),terminal::EnterAlternateScreen);},
+        Some(_) => {},
+    }
     loop {
         // Stop the program, if the GUI is closed by the user
-        if !window.is_open() {
-            break;
+        if let Some(window) = &mut window_opt {
+            if !window.is_open() {
+                break;
+            }
         }
-
         // Execute an instruction
         mbrd.next();
 
@@ -119,7 +152,20 @@ fn main() {
                     i += 1;
                 }
             }
-            window.update_with_buffer(window_buffer.as_slice()).unwrap();
+            let original_width = SCREEN_W as u32;
+            let original_height = SCREEN_H as u32;
+            if let Some(window) = &mut window_opt {
+                window.update_with_buffer(window_buffer.as_slice()).unwrap();
+            }
+            else {
+                let _ = execute!(stdout(),cursor::MoveTo(0,0));
+                render_write_eol(term_width, term_height, &|x, y| {
+                    let start = (y * original_height / term_height * original_width
+                                + (x * original_width / term_width)) as usize;
+                    let pixel = window_buffer[start];
+                    ((pixel >> 16 & 0xff) as u8, (pixel >> 8 & 0xff) as u8, (pixel & 0xff) as u8)
+                }, false);
+            }
         }
 
         if !mbrd.cpu.flip() {
@@ -127,11 +173,14 @@ fn main() {
         }
 
         // Handling keyboard events
-        if window.is_key_down(minifb::Key::Escape) {
-            break;
+        if let Some(window) = &mut window_opt {
+            if window.is_key_down(minifb::Key::Escape) {
+                break;
+            }
         }
-        let keys = vec![
-            (minifb::Key::Right, gameboy::joypad::JoypadKey::Right),
+
+        if let Some(window) = &mut window_opt {
+            let keys = vec![(minifb::Key::Right, gameboy::joypad::JoypadKey::Right),
             (minifb::Key::Up, gameboy::joypad::JoypadKey::Up),
             (minifb::Key::Left, gameboy::joypad::JoypadKey::Left),
             (minifb::Key::Down, gameboy::joypad::JoypadKey::Down),
@@ -139,15 +188,43 @@ fn main() {
             (minifb::Key::X, gameboy::joypad::JoypadKey::B),
             (minifb::Key::Space, gameboy::joypad::JoypadKey::Select),
             (minifb::Key::Enter, gameboy::joypad::JoypadKey::Start),
-        ];
-        for (rk, vk) in &keys {
-            if window.is_key_down(*rk) {
-                mbrd.mmu.borrow_mut().joypad.keydown(vk.clone());
-            } else {
-                mbrd.mmu.borrow_mut().joypad.keyup(vk.clone());
+            ];
+            for (rk, vk) in &keys {
+                if window.is_key_down(*rk) {
+                    mbrd.mmu.borrow_mut().joypad.keydown(vk.clone());
+                } else {
+                    mbrd.mmu.borrow_mut().joypad.keyup(vk.clone());
+                }
             }
+        }
+        else {
+            let keys = vec![
+                (KeyEvent::Right, gameboy::joypad::JoypadKey::Right),
+                (KeyEvent::Up, gameboy::joypad::JoypadKey::Up),
+                (KeyEvent::Left, gameboy::joypad::JoypadKey::Left),
+                (KeyEvent::Down, gameboy::joypad::JoypadKey::Down),
+                (KeyEvent::Char('z'), gameboy::joypad::JoypadKey::A),
+                (KeyEvent::Char('x'), gameboy::joypad::JoypadKey::B),
+                (KeyEvent::Char(' '), gameboy::joypad::JoypadKey::Select),
+                (KeyEvent::Enter, gameboy::joypad::JoypadKey::Start),
+            ];
+                let option_event =  reader.next();
+                if Some(InputEvent::Keyboard(KeyEvent::Esc)) == option_event {
+                    break;
+                }
+                for (rk, vk) in &keys {
+                    if Some(InputEvent::Keyboard(rk.clone())) == option_event {
+                        mbrd.mmu.borrow_mut().joypad.keydown(vk.clone());
+                    } else {
+                        mbrd.mmu.borrow_mut().joypad.keyup(vk.clone());
+                    }
+                }
         }
     }
 
     mbrd.mmu.borrow_mut().cartridge.sav();
+    match window_opt {
+        None => {let _ = execute!(stdout(),terminal::LeaveAlternateScreen);},
+        Some(_) => {},
+    }
 }
