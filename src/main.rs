@@ -7,7 +7,8 @@ use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;
 use std::cmp;
 use std::thread;
-use blockish::render_write_eol;
+use std::process::exit;
+use blockish::{render_write_eol, current_terminal_is_supported};
 use crossterm_input::{input, InputEvent, KeyEvent, RawScreen};
 use crossterm::{terminal, cursor, execute};
 use std::io::{stdout, Write};
@@ -53,6 +54,10 @@ fn main() {
     };
     let mut window_opt = None;
     if !c_terminal {
+        if !current_terminal_is_supported() {
+            println!("your terminal is not supported");
+            exit(1);
+        }
         window_opt = Some(minifb::Window::new(format!("Gameboy - {}", rom_name).as_str(), SCREEN_W, SCREEN_H, option).unwrap());
     }
     let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
