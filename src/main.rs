@@ -54,11 +54,11 @@ fn main() {
     };
     let mut window_opt = None;
     if !c_terminal {
-        if !current_terminal_is_supported() {
-            println!("your terminal is not supported");
-            exit(1);
-        }
         window_opt = Some(minifb::Window::new(format!("Gameboy - {}", rom_name).as_str(), SCREEN_W, SCREEN_H, option).unwrap());
+    }
+    else if !current_terminal_is_supported() {
+        println!("your terminal is not supported");
+        exit(1);
     }
     let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
     if let Some(window) = &mut window_opt {
