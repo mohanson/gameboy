@@ -2,16 +2,20 @@
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
 extern crate crossterm;
 extern crate crossterm_input;
+extern crate num_cpus;
 use gameboy::apu::Apu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;
 use std::cmp;
 use std::thread;
 use std::process::exit;
-use blockish::{render_write_eol, current_terminal_is_supported};
+use blockish::{render_rgba32_thread_pool, current_terminal_is_supported};
 use crossterm_input::{input, InputEvent, KeyEvent, RawScreen};
 use crossterm::{terminal, cursor, execute};
 use std::io::{stdout, Write};
+use std::time::Instant;
+
+use threadpool::ThreadPool;
 
 fn main() {
     rog::reg("gameboy");
@@ -20,6 +24,7 @@ fn main() {
     let mut rom = String::from("");
     let mut c_audio = false;
     let mut c_terminal = false;
+    let mut c_fps = false;
     let mut c_scale = 2;
     {
         let mut ap = argparse::ArgumentParser::new();
@@ -32,6 +37,10 @@ fn main() {
             .add_option(&["-t", "--terminal"],
                         argparse::StoreTrue,
                         "Render inside terminal");
+        ap.refer(&mut c_fps)
+            .add_option(&["-f", "--fps"],
+                        argparse::StoreTrue,
+                        "Display FPS");
         ap.refer(&mut c_scale)
             .add_option(&["-x", "--scale-factor"],
                         argparse::Store,
@@ -44,6 +53,10 @@ fn main() {
     let rom_name = mbrd.mmu.borrow().cartridge.title();
 
     let mut option = minifb::WindowOptions::default();
+    let mut fps = 0;
+    let mut frame_count  = 0;
+    let mut time = Instant::now();
+
     option.resize = true;
     option.scale = match c_scale {
         1 => minifb::Scale::X1,
@@ -55,6 +68,10 @@ fn main() {
     let mut window_opt = None;
     if !c_terminal {
         window_opt = Some(minifb::Window::new(format!("Gameboy - {}", rom_name).as_str(), SCREEN_W, SCREEN_H, option).unwrap());
+        if c_fps {
+            println!("fps option only available with terminal rendering");
+            exit(1);
+        }
     }
     else if !current_terminal_is_supported() {
         println!("your terminal is not supported");
@@ -128,6 +145,8 @@ fn main() {
         Err(_) => {
         } }
 
+    let option_pool = if c_terminal { Some(ThreadPool::new(num_cpus::get() * 2)) } else { None };
+
 
     match window_opt {
         None => {let _ = execute!(stdout(),terminal::EnterAlternateScreen);},
@@ -162,14 +181,19 @@ fn main() {
             if let Some(window) = &mut window_opt {
                 window.update_with_buffer(window_buffer.as_slice()).unwrap();
             }
-            else {
+            else if let Some(pool) = &option_pool {
                 let _ = execute!(stdout(),cursor::MoveTo(0,0));
-                render_write_eol(term_width, term_height, &|x, y| {
-                    let start = (y * original_height / term_height * original_width
-                                + (x * original_width / term_width)) as usize;
-                    let pixel = window_buffer[start];
-                    ((pixel >> 16 & 0xff) as u8, (pixel >> 8 & 0xff) as u8, (pixel & 0xff) as u8)
-                }, false);
+                render_rgba32_thread_pool(term_width, term_height,original_width, original_height, &pool, &window_buffer);
+                if c_fps {
+                    let _ = execute!(stdout(),cursor::MoveTo(0,0));
+                    frame_count += 1;
+                    if time.elapsed().as_secs() >= 3 {
+                        fps = frame_count / 3;
+                        frame_count = 0;
+                        time = Instant::now();
+                    }
+                    println!("\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}mFPS: {}", 0, 0, 0, 255, 255, 255, fps);
+                }
             }
         }
 
