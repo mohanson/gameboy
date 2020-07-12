@@ -146,6 +146,7 @@ fn main() {
             }
         }
     }
+    mbrd.mmu.borrow_mut().cartridge.sav();
 }
 
 #[cfg(feature = "tty")]
@@ -158,33 +159,23 @@ fn main() {
     rog::reg("gameboy::cartridge");
 
     let mut rom = String::from("");
-    let mut c_audio = false;
-    let mut c_scale = 2;
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
-        ap.refer(&mut c_audio)
-            .add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
-        ap.refer(&mut c_scale).add_option(
-            &["-x", "--scale-factor"],
-            argparse::Store,
-            "Scale the video by a factor of 1, 2, 4, or 8",
-        );
         ap.refer(&mut rom).add_argument("rom", argparse::Store, "Rom name");
         ap.parse_args_or_exit();
     }
 
     let mut mbrd = MotherBoard::power_up(rom);
-
     let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
 
     if !blockish::current_terminal_is_supported() {
-        rog::println!("your terminal is not supported");
+        rog::println!("Terminal is not supported");
         std::process::exit(1);
     }
-    let mut term_width = 20 * 8;
-    let mut term_height = 20 * 8;
-    let _screen = crossterm_input::RawScreen::into_raw_mode();
+    let mut term_width = SCREEN_W as u32;
+    let mut term_height = SCREEN_H as u32;
+    crossterm_input::RawScreen::into_raw_mode().unwrap();
     let input = crossterm_input::input();
     let mut reader = input.read_async();
     match crossterm::terminal::size() {
@@ -194,7 +185,7 @@ fn main() {
         }
         Err(_) => {}
     }
-    let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen);
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen).unwrap();
     loop {
         // Execute an instruction
         mbrd.next();
@@ -261,5 +252,6 @@ fn main() {
             }
         }
     }
-    let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen).unwrap();
+    mbrd.mmu.borrow_mut().cartridge.sav();
 }
