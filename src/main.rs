@@ -1,5 +1,7 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
+#[cfg(feature = "gui")]
+use gameboy::apu::Apu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;
 
@@ -9,15 +11,12 @@ fn main() {
 
     let mut rom = String::from("");
     let mut c_audio = false;
-    let mut c_terminal = false;
     let mut c_scale = 2;
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
         ap.refer(&mut c_audio)
             .add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
-        ap.refer(&mut c_terminal)
-            .add_option(&["-t", "--terminal"], argparse::StoreTrue, "Render inside terminal");
         ap.refer(&mut c_scale).add_option(
             &["-x", "--scale-factor"],
             argparse::Store,
@@ -29,11 +28,9 @@ fn main() {
 
     let mut mbrd = MotherBoard::power_up(rom);
 
-    // Initialize audio related
-    #[cfg(feature = "audio")]
+    #[cfg(feature = "gui")]
     {
-        use gameboy::apu::Apu;
-        use std::thread;
+        // Initialize audio related
         if c_audio {
             let device = cpal::default_output_device().unwrap();
             rog::debugln!("Open the audio player: {}", device.name());
@@ -52,7 +49,7 @@ fn main() {
             let apu_data = apu.buffer.clone();
             mbrd.mmu.borrow_mut().apu = Some(apu);
 
-            thread::spawn(move || {
+            std::thread::spawn(move || {
                 event_loop.run(move |_, stream_data| {
                     let mut apu_data = apu_data.lock().unwrap();
                     if let cpal::StreamData::Output { buffer } = stream_data {
@@ -83,10 +80,7 @@ fn main() {
                 });
             });
         }
-    }
 
-    #[cfg(feature = "video")]
-    {
         let mut option = minifb::WindowOptions::default();
         option.resize = true;
         option.scale = match c_scale {
@@ -154,23 +148,21 @@ fn main() {
             }
         }
     }
-    #[cfg(feature = "uitty")]
+
+    #[cfg(feature = "tty")]
     {
-        use blockish::{current_terminal_is_supported, render_write_eol};
-        use crossterm::{cursor, execute, terminal};
-        use crossterm_input::{input, InputEvent, KeyEvent, RawScreen};
-        use std::io::{stdout, Write};
+        use std::io::Write;
 
         let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
 
-        if !current_terminal_is_supported() {
+        if !blockish::current_terminal_is_supported() {
             rog::println!("your terminal is not supported");
             std::process::exit(1);
         }
         let mut term_width = 20 * 8;
         let mut term_height = 20 * 8;
-        let _screen = RawScreen::into_raw_mode();
-        let input = input();
+        let _screen = crossterm_input::RawScreen::into_raw_mode();
+        let input = crossterm_input::input();
         let mut reader = input.read_async();
         match crossterm::terminal::size() {
             Ok(res) => {
@@ -179,7 +171,7 @@ fn main() {
             }
             Err(_) => {}
         }
-        let _ = execute!(stdout(), terminal::EnterAlternateScreen);
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen);
         loop {
             // Execute an instruction
             mbrd.next();
@@ -201,8 +193,8 @@ fn main() {
                 let original_width = SCREEN_W as u32;
                 let original_height = SCREEN_H as u32;
 
-                let _ = execute!(stdout(), cursor::MoveTo(0, 0));
-                render_write_eol(
+                let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveTo(0, 0));
+                blockish::render_write_eol(
                     term_width,
                     term_height,
                     &|x, y| {
@@ -225,27 +217,27 @@ fn main() {
 
             // Handling keyboard events
             let keys = vec![
-                (KeyEvent::Right, gameboy::joypad::JoypadKey::Right),
-                (KeyEvent::Up, gameboy::joypad::JoypadKey::Up),
-                (KeyEvent::Left, gameboy::joypad::JoypadKey::Left),
-                (KeyEvent::Down, gameboy::joypad::JoypadKey::Down),
-                (KeyEvent::Char('z'), gameboy::joypad::JoypadKey::A),
-                (KeyEvent::Char('x'), gameboy::joypad::JoypadKey::B),
-                (KeyEvent::Char(' '), gameboy::joypad::JoypadKey::Select),
-                (KeyEvent::Enter, gameboy::joypad::JoypadKey::Start),
+                (crossterm_input::KeyEvent::Right, gameboy::joypad::JoypadKey::Right),
+                (crossterm_input::KeyEvent::Up, gameboy::joypad::JoypadKey::Up),
+                (crossterm_input::KeyEvent::Left, gameboy::joypad::JoypadKey::Left),
+                (crossterm_input::KeyEvent::Down, gameboy::joypad::JoypadKey::Down),
+                (crossterm_input::KeyEvent::Char('z'), gameboy::joypad::JoypadKey::A),
+                (crossterm_input::KeyEvent::Char('x'), gameboy::joypad::JoypadKey::B),
+                (crossterm_input::KeyEvent::Char(' '), gameboy::joypad::JoypadKey::Select),
+                (crossterm_input::KeyEvent::Enter, gameboy::joypad::JoypadKey::Start),
             ];
             let option_event = reader.next();
-            if Some(InputEvent::Keyboard(KeyEvent::Esc)) == option_event {
+            if Some(crossterm_input::InputEvent::Keyboard(crossterm_input::KeyEvent::Esc)) == option_event {
                 break;
             }
             for (rk, vk) in &keys {
-                if Some(InputEvent::Keyboard(rk.clone())) == option_event {
+                if Some(crossterm_input::InputEvent::Keyboard(rk.clone())) == option_event {
                     mbrd.mmu.borrow_mut().joypad.keydown(vk.clone());
                 } else {
                     mbrd.mmu.borrow_mut().joypad.keyup(vk.clone());
                 }
             }
         }
-        let _ = execute!(stdout(), terminal::LeaveAlternateScreen);
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
     }
 }
