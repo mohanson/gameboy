@@ -186,6 +186,7 @@ fn main() {
         Err(_) => {}
     }
     crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen).unwrap();
+    let pool = threadpool::ThreadPool::new(num_cpus::get() * 2);
     loop {
         // Execute an instruction
         mbrd.next();
@@ -208,20 +209,13 @@ fn main() {
             let original_height = SCREEN_H as u32;
 
             let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveTo(0, 0));
-            blockish::render_write_eol(
+            blockish::render_rgba32_thread_pool(
                 term_width,
                 term_height,
-                &|x, y| {
-                    let start = (y * original_height / term_height * original_width + (x * original_width / term_width))
-                        as usize;
-                    let pixel = window_buffer[start];
-                    (
-                        (pixel >> 16 & 0xff) as u8,
-                        (pixel >> 8 & 0xff) as u8,
-                        (pixel & 0xff) as u8,
-                    )
-                },
-                false,
+                original_width,
+                original_height,
+                &pool,
+                &window_buffer,
             );
         }
 
