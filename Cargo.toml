@@ -7,14 +7,12 @@ edition = "2018"
 [features]
 default = ["gui"]
 gui = ["minifb", "cpal"]
-tty = ["blockish", "crossterm", "crossterm_input", "threadpool", "num_cpus"]
+tty = ["blockish", "crossterm", "crossterm_input"]
 
 [dependencies]
 argparse = "0.2"
 blip_buf = "0.1"
-blockish = { version = "0.0.6", optional = true }
-num_cpus = { version = "1", optional = true }
-threadpool = { version = "1", optional = true }
+blockish = { version = "0.0.8", optional = true }
 cpal = { version = "0.8", optional = true }
 crossterm = { version = "0.15", optional = true }
 crossterm_input = { version = "0.5", optional = true }
