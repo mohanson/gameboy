@@ -5,9 +5,10 @@ authors = ["mohanson <mohanson@outlook.com>"]
 edition = "2018"
 
 [features]
-default = ["gui"]
+default = ["gui", "audio"]
 gui = ["minifb", "cpal"]
 tty = ["blockish", "crossterm", "crossterm_input"]
+audio = ["cpal"]
 
 [dependencies]
 argparse = "0.2"

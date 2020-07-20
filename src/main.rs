@@ -1,9 +1,64 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
 
+#[cfg(not(feature = "audio"))]
+fn initialize_audio(_: &gameboy::motherboard::MotherBoard) {
+    panic!("audio is not supported");
+}
+
+#[cfg(feature = "audio")]
+fn initialize_audio(mbrd: &gameboy::motherboard::MotherBoard) {
+    use gameboy::apu::Apu;
+    let device = cpal::default_output_device().unwrap();
+    rog::debugln!("Open the audio player: {}", device.name());
+    let format = device.default_output_format().unwrap();
+    let format = cpal::Format {
+        channels: 2,
+        sample_rate: format.sample_rate,
+        data_type: cpal::SampleFormat::F32,
+    };
+
+    let event_loop = cpal::EventLoop::new();
+    let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
+    event_loop.play_stream(stream_id);
+
+    let apu = Apu::power_up(format.sample_rate.0);
+    let apu_data = apu.buffer.clone();
+    mbrd.mmu.borrow_mut().apu = Some(apu);
+
+    std::thread::spawn(move || {
+        event_loop.run(move |_, stream_data| {
+            let mut apu_data = apu_data.lock().unwrap();
+            if let cpal::StreamData::Output { buffer } = stream_data {
+                let len = std::cmp::min(buffer.len() / 2, apu_data.len());
+                match buffer {
+                    cpal::UnknownTypeOutputBuffer::F32(mut buffer) => {
+                        for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
+                            buffer[i * 2] = data_l;
+                            buffer[i * 2 + 1] = data_r;
+                        }
+                    }
+                    cpal::UnknownTypeOutputBuffer::U16(mut buffer) => {
+                        for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
+                            buffer[i * 2] =
+                                (data_l * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
+                            buffer[i * 2 + 1] =
+                                (data_r * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
+                        }
+                    }
+                    cpal::UnknownTypeOutputBuffer::I16(mut buffer) => {
+                        for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
+                            buffer[i * 2] = (data_l * f32::from(std::i16::MAX)) as i16;
+                            buffer[i * 2 + 1] = (data_r * f32::from(std::i16::MAX)) as i16;
+                        }
+                    }
+                }
+            }
+        });
+    });
+}
 #[cfg(feature = "gui")]
 fn main() {
-    use gameboy::apu::Apu;
     use gameboy::gpu::{SCREEN_H, SCREEN_W};
     use gameboy::motherboard::MotherBoard;
 
@@ -31,53 +86,7 @@ fn main() {
 
     // Initialize audio related
     if c_audio {
-        let device = cpal::default_output_device().unwrap();
-        rog::debugln!("Open the audio player: {}", device.name());
-        let format = device.default_output_format().unwrap();
-        let format = cpal::Format {
-            channels: 2,
-            sample_rate: format.sample_rate,
-            data_type: cpal::SampleFormat::F32,
-        };
-
-        let event_loop = cpal::EventLoop::new();
-        let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
-        event_loop.play_stream(stream_id);
-
-        let apu = Apu::power_up(format.sample_rate.0);
-        let apu_data = apu.buffer.clone();
-        mbrd.mmu.borrow_mut().apu = Some(apu);
-
-        std::thread::spawn(move || {
-            event_loop.run(move |_, stream_data| {
-                let mut apu_data = apu_data.lock().unwrap();
-                if let cpal::StreamData::Output { buffer } = stream_data {
-                    let len = std::cmp::min(buffer.len() / 2, apu_data.len());
-                    match buffer {
-                        cpal::UnknownTypeOutputBuffer::F32(mut buffer) => {
-                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
-                                buffer[i * 2] = data_l;
-                                buffer[i * 2 + 1] = data_r;
-                            }
-                        }
-                        cpal::UnknownTypeOutputBuffer::U16(mut buffer) => {
-                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
-                                buffer[i * 2] =
-                                    (data_l * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
-                                buffer[i * 2 + 1] =
-                                    (data_r * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
-                            }
-                        }
-                        cpal::UnknownTypeOutputBuffer::I16(mut buffer) => {
-                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
-                                buffer[i * 2] = (data_l * f32::from(std::i16::MAX)) as i16;
-                                buffer[i * 2 + 1] = (data_r * f32::from(std::i16::MAX)) as i16;
-                            }
-                        }
-                    }
-                }
-            });
-        });
+        initialize_audio(&mbrd);
     }
 
     let mut option = minifb::WindowOptions::default();
@@ -158,15 +167,24 @@ fn main() {
     rog::reg("gameboy");
     rog::reg("gameboy::cartridge");
 
+    let mut c_audio = false;
+
     let mut rom = String::from("");
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
         ap.refer(&mut rom).add_argument("rom", argparse::Store, "Rom name");
+        ap.refer(&mut c_audio)
+            .add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
         ap.parse_args_or_exit();
     }
 
     let mut mbrd = MotherBoard::power_up(rom);
+
+    if c_audio {
+        initialize_audio(&mbrd);
+    }
+
     let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
 
     if !blockish::current_terminal_is_supported() {
@@ -175,7 +193,7 @@ fn main() {
     }
     let mut term_width = SCREEN_W as u32;
     let mut term_height = SCREEN_H as u32;
-    crossterm_input::RawScreen::into_raw_mode().unwrap();
+    let _screen = crossterm_input::RawScreen::into_raw_mode();
     let input = crossterm_input::input();
     let mut reader = input.read_async();
     match crossterm::terminal::size() {
