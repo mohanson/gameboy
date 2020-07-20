@@ -1,6 +1,12 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
 
+#[cfg(not(feature = "audio"))]
+fn initialize_audio(_: &gameboy::motherboard::MotherBoard) {
+    panic!("audio is not supported");
+}
+
+#[cfg(feature = "audio")]
 fn initialize_audio(mbrd: &gameboy::motherboard::MotherBoard) {
     use gameboy::apu::Apu;
     let device = cpal::default_output_device().unwrap();
@@ -53,7 +59,6 @@ fn initialize_audio(mbrd: &gameboy::motherboard::MotherBoard) {
 }
 #[cfg(feature = "gui")]
 fn main() {
-    use gameboy::apu::Apu;
     use gameboy::gpu::{SCREEN_H, SCREEN_W};
     use gameboy::motherboard::MotherBoard;
 
