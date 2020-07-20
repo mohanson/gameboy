@@ -204,6 +204,7 @@ fn main() {
         Err(_) => {}
     }
     crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen).unwrap();
+    let mut engine = blockish::ThreadedEngine::new(term_width, term_height, false);
     loop {
         // Execute an instruction
         mbrd.next();
@@ -226,9 +227,7 @@ fn main() {
             let original_height = SCREEN_H as u32;
 
             let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveTo(0, 0));
-            blockish::render_write_eol(
-                term_width,
-                term_height,
+            engine.render(
                 &|x, y| {
                     let start = (y * original_height / term_height * original_width + (x * original_width / term_width))
                         as usize;
@@ -239,7 +238,6 @@ fn main() {
                         (pixel & 0xff) as u8,
                     )
                 },
-                false,
             );
         }
 
