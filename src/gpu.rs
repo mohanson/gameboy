@@ -56,7 +56,7 @@ impl Memory for Hdma {
         match a {
             0xff51 => (self.src >> 8) as u8,
             0xff52 => self.src as u8,
-            0xff43 => (self.dst >> 8) as u8,
+            0xff53 => (self.dst >> 8) as u8,
             0xff54 => self.dst as u8,
             0xff55 => self.remain | if self.active { 0x00 } else { 0x80 },
             _ => panic!(""),
