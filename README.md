@@ -1,10 +1,10 @@
 # Gameboy
 
-Full featured Cross-platform GameBoy emulator. **Forever boys!**.
+Full-featured Cross-platform GameBoy emulator. **Forever boys!**
 
 ![sample.gif](./res/imgs/sample.gif)
 
-You can start a game with the following command, here with a built-in game "Boxes" as an example:
+You can start a game with the following command. The following example uses the built-in game "Boxes":
 
 ```s
 $ cargo run --release -- "./res/boxes.gb"
@@ -17,9 +17,9 @@ The following options are supported:
 -x, --scale-factor    Scale the video by a factor of 1, 2, 4, or 8
 ```
 
-Gameboy is developed by Rust, and fully tested on Windows, Ubuntu and Mac.
+Gameboy is developed in Rust and has been thoroughly tested on Windows, Ubuntu, and Mac.
 
-# Control
+# Controls
 
 ```
                 _n_________________
@@ -45,7 +45,7 @@ Left/Right <--- ||_ O _|   ,-. "._,"|
 
 # Tests
 
-Thanks for [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can simply verify my code. Run tests by:
+Thanks to [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can easily verify my code. Run tests with the command:
 
 ```
 $ cargo run --example blargg
@@ -56,7 +56,7 @@ $ cargo run --example blargg
 | cpu_instrs   | ![img](./res/imgs/cpu_instrs.png)   |
 | instr_timing | ![img](./res/imgs/instr_timing.png) |
 
-# Reference
+# References
 
 - [Gbdev](http://gbdev.gg8.se/wiki/articles/Main_Page)
 - [Open Game Boy Documentation Project](https://mgba-emu.github.io/gbdoc/)
