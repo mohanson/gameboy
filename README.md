@@ -19,6 +19,22 @@ The following options are supported:
 
 Gameboy is developed in Rust and has been thoroughly tested on Windows, Ubuntu, and Mac.
 
+# Dependencies
+
+This project depends on the following Rust libraries, which have native dependencies:
+
+- [cpal](https://github.com/RustAudio/cpal)
+- [minifb](https://github.com/emoon/rust_minifb)
+
+You may need to install the native dependencies these libraries require before running this emulator.
+
+For Ubuntu Linux, you can run:
+
+```sh
+sudo apt install libasound2-dev # Install CPAL dependencies
+sudo apt install libxkbcommon-dev libwayland-cursor0 libwayland-dev # Install MiniFB dependencies
+```
+
 # Controls
 
 ```
