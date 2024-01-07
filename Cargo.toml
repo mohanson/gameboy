@@ -1,8 +1,8 @@
 [package]
 name = "gameboy"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["mohanson <mohanson@outlook.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 argparse = "0.2"
