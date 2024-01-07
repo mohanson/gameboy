@@ -86,4 +86,4 @@ $ cargo run --example blargg
 
 # Licenses
 
-WTFPL.
+MIT.
