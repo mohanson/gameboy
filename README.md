@@ -4,10 +4,10 @@ Full-featured Cross-platform GameBoy emulator. **Forever boys!**
 
 ![sample.gif](./res/imgs/sample.gif)
 
-You can start a game with the following command. The following example uses the built-in game "Boxes":
+You can start a game with the following command. The following example uses the built-in game "SUPER MARIOLAND":
 
 ```s
-$ cargo run --release -- "./res/boxes.gb"
+$ cargo run --release -- "./res/sml.gb"
 ```
 
 The following options are supported:
@@ -34,6 +34,8 @@ For Ubuntu Linux, you can run:
 sudo apt install libasound2-dev # Install CPAL dependencies
 sudo apt install libxkbcommon-dev libwayland-cursor0 libwayland-dev # Install MiniFB dependencies
 ```
+
+For Windows, you should install [Microsoft C++ Build Tools](https://aka.ms/vs/17/release/vs_BuildTools.exe).
 
 # Controls
 
@@ -63,7 +65,7 @@ Left/Right <--- ||_ O _|   ,-. "._,"|
 
 Thanks to [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-test-roms), I can easily verify my code. Run tests with the command:
 
-```
+```sh
 $ cargo run --example blargg
 ```
 

@@ -7,6 +7,6 @@ edition = "2018"
 [dependencies]
 argparse = "0.2"
 blip_buf = "0.1"
-cpal = "0.8"
+cpal = "0.15"
 minifb = "0.25"
 rog = "0.1"
