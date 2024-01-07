@@ -22,7 +22,7 @@ pub enum Speed {
 
 pub struct Mmunit {
     pub cartridge: Box<dyn Cartridge>,
-    pub apu: Option<Apu>,
+    pub apu: Apu,
     pub gpu: Gpu,
     pub joypad: Joypad,
     pub serial: Serial,
@@ -48,7 +48,7 @@ impl Mmunit {
         let intf = Rc::new(RefCell::new(Intf::power_up()));
         let mut r = Self {
             cartridge: cart,
-            apu: None,
+            apu: Apu::power_up(48000),
             gpu: Gpu::power_up(term, intf.clone()),
             joypad: Joypad::power_up(intf.clone()),
             serial: Serial::power_up(intf.clone()),
@@ -106,7 +106,7 @@ impl Mmunit {
         let cpu_cycles = cycles + vram_cycles * cpu_divider;
         self.timer.next(cpu_cycles);
         self.gpu.next(gpu_cycles);
-        let _ = self.apu.as_mut().map_or((), |s| s.next(gpu_cycles));
+        self.apu.next(gpu_cycles);
         gpu_cycles
     }
 
@@ -179,10 +179,7 @@ impl Memory for Mmunit {
             0xff01..=0xff02 => self.serial.get(a),
             0xff04..=0xff07 => self.timer.get(a),
             0xff0f => self.intf.borrow().data,
-            0xff10..=0xff3f => match &self.apu {
-                Some(some) => some.get(a),
-                None => 0x00,
-            },
+            0xff10..=0xff3f => self.apu.get(a),
             0xff4d => {
                 let a = if self.speed == Speed::Double { 0x80 } else { 0x00 };
                 let b = if self.shift { 0x01 } else { 0x00 };
@@ -212,7 +209,7 @@ impl Memory for Mmunit {
             0xff00 => self.joypad.set(a, v),
             0xff01..=0xff02 => self.serial.set(a, v),
             0xff04..=0xff07 => self.timer.set(a, v),
-            0xff10..=0xff3f => self.apu.as_mut().map_or((), |s| s.set(a, v)),
+            0xff10..=0xff3f => self.apu.set(a, v),
             0xff46 => {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
                 // table).

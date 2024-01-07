@@ -1,10 +1,10 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::Sample;
 use gameboy::apu::Apu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;
-use std::cmp;
-use std::thread;
 
 fn main() {
     rog::reg("gameboy");
@@ -43,52 +43,56 @@ fn main() {
     let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
     window.update_with_buffer(window_buffer.as_slice(), SCREEN_W, SCREEN_H).unwrap();
 
-    // Initialize audio related
+    // Initialize audio related. It is necessary to ensure that the stream object remains alive.
+    let stream: cpal::Stream;
     if c_audio {
-        let device = cpal::default_output_device().unwrap();
-        rog::debugln!("Open the audio player: {}", device.name());
-        let format = device.default_output_format().unwrap();
-        let format = cpal::Format { channels: 2, sample_rate: format.sample_rate, data_type: cpal::SampleFormat::F32 };
+        let host = cpal::default_host();
+        let device = host.default_output_device().unwrap();
+        rog::debugln!("Open the audio player: {}", device.name().unwrap());
+        let config = device.default_output_config().unwrap();
+        let sample_format = config.sample_format();
+        rog::debugln!("Sample format: {}", sample_format);
+        let config: cpal::StreamConfig = config.into();
+        rog::debugln!("Stream config: {:?}", config);
 
-        let event_loop = cpal::EventLoop::new();
-        let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
-        event_loop.play_stream(stream_id);
-
-        let apu = Apu::power_up(format.sample_rate.0);
+        let apu = Apu::power_up(config.sample_rate.0);
         let apu_data = apu.buffer.clone();
-        mbrd.mmu.borrow_mut().apu = Some(apu);
+        mbrd.mmu.borrow_mut().apu = apu;
 
-        thread::spawn(move || {
-            event_loop.run(move |_, stream_data| {
-                let mut apu_data = apu_data.lock().unwrap();
-                if let cpal::StreamData::Output { buffer } = stream_data {
-                    let len = cmp::min(buffer.len() / 2, apu_data.len());
-                    match buffer {
-                        cpal::UnknownTypeOutputBuffer::F32(mut buffer) => {
-                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
-                                buffer[i * 2] = data_l;
-                                buffer[i * 2 + 1] = data_r;
-                            }
+        stream = match sample_format {
+            cpal::SampleFormat::F32 => device
+                .build_output_stream(
+                    &config,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        let len = std::cmp::min(data.len() / 2, apu_data.lock().unwrap().len());
+                        for (i, (data_l, data_r)) in apu_data.lock().unwrap().drain(..len).enumerate() {
+                            data[i * 2 + 0] = data_l;
+                            data[i * 2 + 1] = data_r;
                         }
-                        cpal::UnknownTypeOutputBuffer::U16(mut buffer) => {
-                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
-                                buffer[i * 2] =
-                                    (data_l * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
-                                buffer[i * 2 + 1] =
-                                    (data_r * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
-                            }
+                    },
+                    move |err| rog::debugln!("{}", err),
+                    None,
+                )
+                .unwrap(),
+            cpal::SampleFormat::F64 => device
+                .build_output_stream(
+                    &config,
+                    move |data: &mut [f64], _: &cpal::OutputCallbackInfo| {
+                        let len = std::cmp::min(data.len() / 2, apu_data.lock().unwrap().len());
+                        for (i, (data_l, data_r)) in apu_data.lock().unwrap().drain(..len).enumerate() {
+                            data[i * 2 + 0] = data_l.to_sample::<f64>();
+                            data[i * 2 + 1] = data_r.to_sample::<f64>();
                         }
-                        cpal::UnknownTypeOutputBuffer::I16(mut buffer) => {
-                            for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
-                                buffer[i * 2] = (data_l * f32::from(std::i16::MAX)) as i16;
-                                buffer[i * 2 + 1] = (data_r * f32::from(std::i16::MAX)) as i16;
-                            }
-                        }
-                    }
-                }
-            });
-        });
+                    },
+                    move |err| rog::debugln!("{}", err),
+                    None,
+                )
+                .unwrap(),
+            _ => panic!("unreachable"),
+        };
+        stream.play().unwrap();
     }
+    let _ = stream;
 
     loop {
         // Stop the program, if the GUI is closed by the user
