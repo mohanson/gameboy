@@ -41,7 +41,7 @@ fn main() {
     let mut window =
         minifb::Window::new(format!("Gameboy - {}", rom_name).as_str(), SCREEN_W, SCREEN_H, option).unwrap();
     let mut window_buffer = vec![0x00; SCREEN_W * SCREEN_H];
-    window.update_with_buffer(window_buffer.as_slice()).unwrap();
+    window.update_with_buffer(window_buffer.as_slice(), SCREEN_W, SCREEN_H).unwrap();
 
     // Initialize audio related
     if c_audio {
@@ -113,7 +113,7 @@ fn main() {
                     i += 1;
                 }
             }
-            window.update_with_buffer(window_buffer.as_slice()).unwrap();
+            window.update_with_buffer(window_buffer.as_slice(), SCREEN_W, SCREEN_H).unwrap();
         }
 
         if !mbrd.cpu.flip() {
