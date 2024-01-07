@@ -41,13 +41,7 @@ pub struct Hdma {
 
 impl Hdma {
     pub fn power_up() -> Self {
-        Self {
-            src: 0x0000,
-            dst: 0x8000,
-            active: false,
-            mode: HdmaMode::Gdma,
-            remain: 0x00,
-        }
+        Self { src: 0x0000, dst: 0x8000, active: false, mode: HdmaMode::Gdma, remain: 0x00 }
     }
 }
 
@@ -78,11 +72,7 @@ impl Memory for Hdma {
                 }
                 self.active = true;
                 self.remain = v & 0x7f;
-                self.mode = if v & 0x80 != 0x00 {
-                    HdmaMode::Hdma
-                } else {
-                    HdmaMode::Gdma
-                };
+                self.mode = if v & 0x80 != 0x00 { HdmaMode::Hdma } else { HdmaMode::Gdma };
             }
             _ => panic!(""),
         };
@@ -195,10 +185,7 @@ struct Bgpi {
 
 impl Bgpi {
     fn power_up() -> Self {
-        Self {
-            i: 0x00,
-            auto_increment: false,
-        }
+        Self { i: 0x00, auto_increment: false }
     }
 
     fn get(&self) -> u8 {
@@ -514,19 +501,11 @@ impl Gpu {
         let tile_base = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };
 
         let wx = self.wx.wrapping_sub(7);
-        let py = if show_window {
-            self.ly.wrapping_sub(self.wy)
-        } else {
-            self.sy.wrapping_add(self.ly)
-        };
+        let py = if show_window { self.ly.wrapping_sub(self.wy) } else { self.sy.wrapping_add(self.ly) };
         let ty = (u16::from(py) >> 3) & 31;
 
         for x in 0..SCREEN_W {
-            let px = if show_window && x as u8 >= wx {
-                x as u8 - wx
-            } else {
-                self.sx.wrapping_add(x as u8)
-            };
+            let px = if show_window && x as u8 >= wx { x as u8 - wx } else { self.sx.wrapping_add(x as u8) };
             let tx = (u16::from(px) >> 3) & 31;
 
             // Background memory base addr.
@@ -550,12 +529,8 @@ impl Gpu {
             // etc.
             let tile_addr = bg_base + ty * 32 + tx;
             let tile_number = self.get_ram0(tile_addr);
-            let tile_offset = if self.lcdc.bit4() {
-                i16::from(tile_number)
-            } else {
-                i16::from(tile_number as i8) + 128
-            } as u16
-                * 16;
+            let tile_offset =
+                if self.lcdc.bit4() { i16::from(tile_number) } else { i16::from(tile_number as i8) + 128 } as u16 * 16;
             let tile_location = tile_base + tile_offset;
             let tile_attr = Attr::from(self.get_ram1(tile_addr));
 
@@ -644,11 +619,8 @@ impl Gpu {
                 continue;
             }
 
-            let tile_y = if tile_attr.yflip {
-                sprite_size - 1 - self.ly.wrapping_sub(py)
-            } else {
-                self.ly.wrapping_sub(py)
-            };
+            let tile_y =
+                if tile_attr.yflip { sprite_size - 1 - self.ly.wrapping_sub(py) } else { self.ly.wrapping_sub(py) };
             let tile_y_addr = 0x8000u16 + u16::from(tile_number) * 16 + u16::from(tile_y) * 2;
             let tile_y_data: [u8; 2] = if self.term == Term::GBC && tile_attr.bank {
                 let b1 = self.get_ram1(tile_y_addr);

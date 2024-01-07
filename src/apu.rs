@@ -188,14 +188,7 @@ impl Register {
             Channel::Square1 | Channel::Square2 => 0x40,
             _ => 0x00,
         };
-        Self {
-            channel,
-            nrx0: 0x00,
-            nrx1,
-            nrx2: 0x00,
-            nrx3: 0x00,
-            nrx4: 0x00,
-        }
+        Self { channel, nrx0: 0x00, nrx1, nrx2: 0x00, nrx3: 0x00, nrx4: 0x00 }
     }
 }
 
@@ -259,11 +252,7 @@ impl LengthCounter {
 
     fn reload(&mut self) {
         if self.n == 0x0000 {
-            self.n = if self.reg.borrow().channel == Channel::Wave {
-                1 << 8
-            } else {
-                1 << 6
-            };
+            self.n = if self.reg.borrow().channel == Channel::Wave { 1 << 8 } else { 1 << 6 };
         }
     }
 }
@@ -283,11 +272,7 @@ struct VolumeEnvelope {
 
 impl VolumeEnvelope {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
-        Self {
-            reg,
-            timer: Clock::power_up(8),
-            volume: 0x00,
-        }
+        Self { reg, timer: Clock::power_up(8), volume: 0x00 }
     }
 
     fn reload(&mut self) {
@@ -347,13 +332,7 @@ struct FrequencySweep {
 
 impl FrequencySweep {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
-        Self {
-            reg,
-            timer: Clock::power_up(8),
-            enable: false,
-            shadow: 0x0000,
-            newfeq: 0x0000,
-        }
+        Self { reg, timer: Clock::power_up(8), enable: false, shadow: 0x0000, newfeq: 0x0000 }
     }
 
     fn reload(&mut self) {
@@ -410,11 +389,7 @@ struct Blip {
 
 impl Blip {
     fn power_up(data: BlipBuf) -> Self {
-        Self {
-            data,
-            from: 0x0000_0000,
-            ampl: 0x0000_0000,
-        }
+        Self { data, from: 0x0000_0000, ampl: 0x0000_0000 }
     }
 
     fn set(&mut self, time: u32, ampl: i32) {
@@ -653,11 +628,7 @@ impl Lfsr {
     }
 
     fn next(&mut self) -> bool {
-        let s = if self.reg.borrow().get_width_mode_of_lfsr() {
-            0x06
-        } else {
-            0x0e
-        };
+        let s = if self.reg.borrow().get_width_mode_of_lfsr() { 0x06 } else { 0x0e };
         let src = self.n;
         self.n <<= 1;
         let bit = ((src >> s) ^ (self.n >> s)) & 0x0001;

@@ -12,11 +12,7 @@ fn initialize_audio(mbrd: &gameboy::motherboard::MotherBoard) {
     let device = cpal::default_output_device().unwrap();
     rog::debugln!("Open the audio player: {}", device.name());
     let format = device.default_output_format().unwrap();
-    let format = cpal::Format {
-        channels: 2,
-        sample_rate: format.sample_rate,
-        data_type: cpal::SampleFormat::F32,
-    };
+    let format = cpal::Format { channels: 2, sample_rate: format.sample_rate, data_type: cpal::SampleFormat::F32 };
 
     let event_loop = cpal::EventLoop::new();
     let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
@@ -40,8 +36,7 @@ fn initialize_audio(mbrd: &gameboy::motherboard::MotherBoard) {
                     }
                     cpal::UnknownTypeOutputBuffer::U16(mut buffer) => {
                         for (i, (data_l, data_r)) in apu_data.drain(..len).enumerate() {
-                            buffer[i * 2] =
-                                (data_l * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
+                            buffer[i * 2] = (data_l * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
                             buffer[i * 2 + 1] =
                                 (data_r * f32::from(std::i16::MAX) + f32::from(std::u16::MAX) / 2.0) as u16;
                         }
@@ -71,8 +66,7 @@ fn main() {
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
-        ap.refer(&mut c_audio)
-            .add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
+        ap.refer(&mut c_audio).add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
         ap.refer(&mut c_scale).add_option(
             &["-x", "--scale-factor"],
             argparse::Store,
@@ -174,8 +168,7 @@ fn main() {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
         ap.refer(&mut rom).add_argument("rom", argparse::Store, "Rom name");
-        ap.refer(&mut c_audio)
-            .add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
+        ap.refer(&mut c_audio).add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
         ap.parse_args_or_exit();
     }
 
@@ -227,18 +220,12 @@ fn main() {
             let original_height = SCREEN_H as u32;
 
             let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveTo(0, 0));
-            engine.render(
-                &|x, y| {
-                    let start = (y * original_height / term_height * original_width + (x * original_width / term_width))
-                        as usize;
-                    let pixel = window_buffer[start];
-                    (
-                        (pixel >> 16 & 0xff) as u8,
-                        (pixel >> 8 & 0xff) as u8,
-                        (pixel & 0xff) as u8,
-                    )
-                },
-            );
+            engine.render(&|x, y| {
+                let start =
+                    (y * original_height / term_height * original_width + (x * original_width / term_width)) as usize;
+                let pixel = window_buffer[start];
+                ((pixel >> 16 & 0xff) as u8, (pixel >> 8 & 0xff) as u8, (pixel & 0xff) as u8)
+            });
         }
 
         if !mbrd.cpu.flip() {

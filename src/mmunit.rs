@@ -106,7 +106,7 @@ impl Mmunit {
         let cpu_cycles = cycles + vram_cycles * cpu_divider;
         self.timer.next(cpu_cycles);
         self.gpu.next(gpu_cycles);
-        self.apu.as_mut().map_or((), |s| s.next(gpu_cycles));
+        let _ = self.apu.as_mut().map_or((), |s| s.next(gpu_cycles));
         gpu_cycles
     }
 

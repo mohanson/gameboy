@@ -24,11 +24,7 @@ pub struct Serial {
 
 impl Serial {
     pub fn power_up(intf: Rc<RefCell<Intf>>) -> Self {
-        Self {
-            _intf: intf,
-            data: 0x00,
-            control: 0x00,
-        }
+        Self { _intf: intf, data: 0x00, control: 0x00 }
     }
 
     pub fn get(&self, a: u16) -> u8 {

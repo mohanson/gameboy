@@ -188,9 +188,7 @@ impl Stable for Mbc1 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone())
-            .and_then(|mut f| f.write_all(&self.ram))
-            .unwrap()
+        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap()
     }
 }
 
@@ -226,13 +224,7 @@ pub struct Mbc2 {
 
 impl Mbc2 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self {
-            rom,
-            ram,
-            rom_bank: 1,
-            ram_enable: false,
-            sav_path: PathBuf::from(sav.as_ref()),
-        }
+        Self { rom, ram, rom_bank: 1, ram_enable: false, sav_path: PathBuf::from(sav.as_ref()) }
     }
 }
 
@@ -285,9 +277,7 @@ impl Stable for Mbc2 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone())
-            .and_then(|mut f| f.write_all(&self.ram))
-            .unwrap()
+        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap()
     }
 }
 
@@ -309,28 +299,13 @@ impl RealTimeClock {
                 b.copy_from_slice(&ok);
                 u64::from_be_bytes(b)
             }
-            Err(_) => SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
         };
-        Self {
-            zero,
-            s: 0,
-            m: 0,
-            h: 0,
-            dl: 0,
-            dh: 0,
-            sav_path: sav_path.as_ref().to_path_buf(),
-        }
+        Self { zero, s: 0, m: 0, h: 0, dl: 0, dh: 0, sav_path: sav_path.as_ref().to_path_buf() }
     }
 
     fn tic(&mut self) {
-        let d = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            - self.zero;
+        let d = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() - self.zero;
 
         self.s = (d % 60) as u8;
         self.m = (d / 60 % 60) as u8;
@@ -379,9 +354,7 @@ impl Stable for RealTimeClock {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone())
-            .and_then(|mut f| f.write_all(&self.zero.to_be_bytes()))
-            .unwrap()
+        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.zero.to_be_bytes())).unwrap()
     }
 }
 
@@ -533,9 +506,7 @@ impl Stable for Mbc3 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone())
-            .and_then(|mut f| f.write_all(&self.ram))
-            .unwrap();
+        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap();
     }
 }
 
@@ -550,14 +521,7 @@ pub struct Mbc5 {
 
 impl Mbc5 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self {
-            rom,
-            ram,
-            rom_bank: 1,
-            ram_bank: 0,
-            ram_enable: false,
-            sav_path: PathBuf::from(sav.as_ref()),
-        }
+        Self { rom, ram, rom_bank: 1, ram_bank: 0, ram_enable: false, sav_path: PathBuf::from(sav.as_ref()) }
     }
 }
 
@@ -606,9 +570,7 @@ impl Stable for Mbc5 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone())
-            .and_then(|mut f| f.write_all(&self.ram))
-            .unwrap()
+        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap()
     }
 }
 
@@ -621,9 +583,7 @@ pub struct HuC1 {
 
 impl HuC1 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self {
-            cart: Mbc1::power_up(rom, ram, sav),
-        }
+        Self { cart: Mbc1::power_up(rom, ram, sav) }
     }
 }
 

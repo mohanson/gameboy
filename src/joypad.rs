@@ -40,11 +40,7 @@ pub struct Joypad {
 
 impl Joypad {
     pub fn power_up(intf: Rc<RefCell<Intf>>) -> Self {
-        Self {
-            intf,
-            matrix: 0xff,
-            select: 0x00,
-        }
+        Self { intf, matrix: 0xff, select: 0x00 }
     }
 }
 

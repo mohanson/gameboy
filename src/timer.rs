@@ -42,12 +42,7 @@ pub struct Timer {
 
 impl Timer {
     pub fn power_up(intf: Rc<RefCell<Intf>>) -> Self {
-        Timer {
-            intf,
-            reg: Register::default(),
-            div_clock: Clock::power_up(256),
-            tma_clock: Clock::power_up(1024),
-        }
+        Timer { intf, reg: Register::default(), div_clock: Clock::power_up(256), tma_clock: Clock::power_up(1024) }
     }
 
     pub fn get(&self, a: u16) -> u8 {

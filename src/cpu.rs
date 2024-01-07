@@ -548,12 +548,7 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self {
-            reg: Register::power_up(term),
-            mem,
-            halted: false,
-            ei: true,
-        }
+        Self { reg: Register::power_up(term), mem, halted: false, ei: true }
     }
 
     // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
@@ -1700,12 +1695,7 @@ pub struct Rtc {
 impl Rtc {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
         let cpu = Cpu::power_up(term, mem);
-        Self {
-            cpu,
-            step_cycles: 0,
-            step_zero: time::Instant::now(),
-            step_flip: false,
-        }
+        Self { cpu, step_cycles: 0, step_zero: time::Instant::now(), step_flip: false }
     }
 
     // Function next simulates real hardware execution speed, by limiting the frequency of the function cpu.next().
@@ -1718,10 +1708,7 @@ impl Rtc {
             let s = u64::from(STEP_TIME.saturating_sub(d.as_millis() as u32));
             rog::debugln!("CPU: sleep {} millis", s);
             thread::sleep(time::Duration::from_millis(s));
-            self.step_zero = self
-                .step_zero
-                .checked_add(time::Duration::from_millis(u64::from(STEP_TIME)))
-                .unwrap();
+            self.step_zero = self.step_zero.checked_add(time::Duration::from_millis(u64::from(STEP_TIME))).unwrap();
 
             // If now is after the just updated target frame time, reset to
             // avoid drift.
