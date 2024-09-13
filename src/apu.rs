@@ -451,7 +451,7 @@ impl ChannelSquare {
             } else {
                 vol * -1
             };
-            self.blip.set(self.blip.from + self.timer.period, ampl);
+            self.blip.set(self.blip.from.wrapping_add(self.timer.period), ampl);
             self.idx = (self.idx + 1) % 8;
         }
     }
@@ -568,7 +568,7 @@ impl ChannelWave {
             } else {
                 i32::from(sample >> s)
             };
-            self.blip.set(self.blip.from + self.timer.period, ampl);
+            self.blip.set(self.blip.from.wrapping_add(self.timer.period), ampl);
             self.waveidx = (self.waveidx + 1) % 32;
         }
     }
@@ -672,7 +672,7 @@ impl ChannelNoise {
             } else {
                 i32::from(self.ve.volume) * -1
             };
-            self.blip.set(self.blip.from + self.timer.period, ampl);
+            self.blip.set(self.blip.from.wrapping_add(self.timer.period), ampl);
         }
     }
 }
@@ -790,10 +790,10 @@ impl Apu {
             self.channel2.blip.data.end_frame(self.timer.period);
             self.channel3.blip.data.end_frame(self.timer.period);
             self.channel4.blip.data.end_frame(self.timer.period);
-            self.channel1.blip.from -= self.timer.period;
-            self.channel2.blip.from -= self.timer.period;
-            self.channel3.blip.from -= self.timer.period;
-            self.channel4.blip.from -= self.timer.period;
+            self.channel1.blip.from = self.channel1.blip.from.wrapping_sub(self.timer.period);
+            self.channel2.blip.from = self.channel2.blip.from.wrapping_sub(self.timer.period);
+            self.channel3.blip.from = self.channel3.blip.from.wrapping_sub(self.timer.period);
+            self.channel4.blip.from = self.channel4.blip.from.wrapping_sub(self.timer.period);
             self.mix();
         }
     }
