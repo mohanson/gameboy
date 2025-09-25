@@ -1,7 +1,7 @@
 // Note: Game BoyTM, Game Boy PocketTM, Super Game BoyTM and Game Boy ColorTM are registered trademarks of
 // Nintendo CO., LTD. © 1989 to 1999 by Nintendo CO., LTD.
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;

@@ -2,7 +2,7 @@
 name = "gameboy"
 version = "1.0.0"
 authors = ["mohanson <mohanson@outlook.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 argparse = "0.2"

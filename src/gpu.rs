@@ -510,11 +510,7 @@ impl Gpu {
 
             // Background memory base addr.
             let bg_base = if show_window && x as u8 >= wx {
-                if self.lcdc.bit6() {
-                    0x9c00
-                } else {
-                    0x9800
-                }
+                if self.lcdc.bit6() { 0x9c00 } else { 0x9800 }
             } else if self.lcdc.bit3() {
                 0x9c00
             } else {

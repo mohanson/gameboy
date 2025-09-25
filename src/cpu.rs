@@ -1662,11 +1662,7 @@ impl Cpu {
             }
             _ => 0x00,
         };
-        if opcode == 0xcb {
-            CB_CYCLES[cbcode as usize]
-        } else {
-            OP_CYCLES[opcode as usize] + ecycle
-        }
+        if opcode == 0xcb { CB_CYCLES[cbcode as usize] } else { OP_CYCLES[opcode as usize] + ecycle }
     }
 
     pub fn next(&mut self) -> u32 {
