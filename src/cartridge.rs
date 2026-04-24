@@ -781,7 +781,7 @@ fn mbc_info(b: u8) -> String {
         0xfc => "POCKET CAMERA",
         0xfd => "BANDAI TAMA5",
         0xfe => "HuC3",
-        0x1f => "HuC1+RAM+BATTERY",
+        0xff => "HuC1+RAM+BATTERY",
         n => panic!("Unsupported cartridge type: 0x{:02x}", n),
     })
 }
@@ -831,7 +831,7 @@ pub trait Cartridge: Memory + Stable + Send {
     fn title(&self) -> String {
         let mut buf = String::new();
         let ic = 0x0134;
-        let oc = if self.get(0x0143) == 0x80 { 0x013e } else { 0x0143 };
+        let oc = if self.get(0x0143) & 0x80 != 0 { 0x013f } else { 0x0144 };
         for i in ic..oc {
             match self.get(i) {
                 0 => break,
