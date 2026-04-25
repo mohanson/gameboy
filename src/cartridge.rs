@@ -730,7 +730,8 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
         }
         0x05 => {
             let ram_size = 512;
-            Box::new(Mbc2::power_up(rom, vec![0; ram_size], ""))
+            let ram = vec![0; ram_size];
+            Box::new(Mbc2::power_up(rom, ram, ""))
         }
         0x06 => {
             let ram_size = 512;
