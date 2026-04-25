@@ -391,7 +391,7 @@ impl RealTimeClock {
         Self { zero, s: 0, m: 0, h: 0, dl: 0, dh: 0 }
     }
 
-    fn tic(&mut self) {
+    fn latch(&mut self) {
         let d = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() - self.zero;
 
         self.s = (d % 60) as u8;
@@ -495,8 +495,10 @@ impl Memory for RealTimeClock {
 pub struct Mbc3 {
     rom: Vec<u8>,
     rom_bank: usize,
+    rom_maxm: usize,
     ram: Vec<u8>,
     ram_bank: usize,
+    ram_maxm: usize,
     ram_open: bool,
     rtc: RealTimeClock,
     sav_path: PathBuf,
@@ -505,15 +507,19 @@ pub struct Mbc3 {
 
 impl Mbc3 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>, rtc: impl AsRef<Path>) -> Self {
+        let rom_maxm = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
+        let ram_maxm = *RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap();
         let rtc_zero = match fs::read(&rtc) {
             Ok(ok) => u64::from_be_bytes(ok.try_into().unwrap()),
             Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
         };
         Self {
             rom,
-            rom_bank: 1,
+            rom_bank: 0,
+            rom_maxm,
             ram,
             ram_bank: 0,
+            ram_maxm,
             ram_open: false,
             rtc: RealTimeClock::power_up(rtc_zero),
             sav_path: PathBuf::from(sav.as_ref()),
@@ -527,58 +533,55 @@ impl Memory for Mbc3 {
         match a {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
-                let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
-                self.rom[i]
+                let rom_bank = self.rom_bank.max(1);
+                let rom_bank = rom_bank % self.rom_maxm;
+                let bank_off = a as usize & 0x3fff;
+                self.rom[rom_bank * 0x4000 + bank_off]
             }
             0xa000..=0xbfff => {
-                if self.ram_open {
-                    if self.ram_bank <= 0x03 {
-                        let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
-                        self.ram[i]
-                    } else {
-                        self.rtc.get(self.ram_bank as u16)
-                    }
-                } else {
-                    0x00
+                if !self.ram_open {
+                    return 0x00;
                 }
+                if self.ram_bank <= 0x07 {
+                    let ram_bank = self.ram_bank % self.ram_maxm;
+                    let bank_off = a as usize & 0x1fff;
+                    return self.ram[ram_bank * 0x2000 + bank_off];
+                }
+                self.rtc.get(self.ram_bank as u16)
             }
-            _ => 0x00,
+            _ => unreachable!(),
         }
     }
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xa000..=0xbfff => {
-                if self.ram_open {
-                    if self.ram_bank <= 0x03 {
-                        let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
-                        self.ram[i] = v;
-                    } else {
-                        self.rtc.set(self.ram_bank as u16, v)
-                    }
-                }
-            }
             0x0000..=0x1fff => {
                 self.ram_open = v & 0x0f == 0x0a;
             }
             0x2000..=0x3fff => {
-                let n = (v & 0x7f) as usize;
-                let n = match n {
-                    0x00 => 0x01,
-                    _ => n,
-                };
-                self.rom_bank = n;
+                self.rom_bank = v as usize & 0x7f;
             }
             0x4000..=0x5fff => {
-                let n = (v & 0x0f) as usize;
-                self.ram_bank = n;
+                self.ram_bank = v as usize & 0x0f;
             }
             0x6000..=0x7fff => {
                 if v & 0x01 != 0 {
-                    self.rtc.tic();
+                    self.rtc.latch();
                 }
             }
-            _ => {}
+            0xa000..=0xbfff => {
+                if !self.ram_open {
+                    return;
+                }
+                if self.ram_bank <= 0x07 {
+                    let ram_bank = self.ram_bank % self.ram_maxm;
+                    let bank_off = a as usize & 0x1fff;
+                    self.ram[ram_bank * 0x2000 + bank_off] = v;
+                    return;
+                }
+                self.rtc.set(self.ram_bank as u16, v)
+            }
+            _ => unreachable!(),
         }
     }
 }
