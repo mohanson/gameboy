@@ -61,6 +61,34 @@ const READABLE_TYPE: LazyLock<HashMap<u8, &str>> = LazyLock::new(|| {
     m.insert(0xff, "HuC1+RAM+BATTERY");
     m
 });
+const ROM_BANK_LENGTH: usize = 1024 * 16;
+const ROM_BANK_NUMBER: LazyLock<HashMap<u8, usize>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert(0x00, 2);
+    m.insert(0x01, 4);
+    m.insert(0x02, 8);
+    m.insert(0x03, 16);
+    m.insert(0x04, 32);
+    m.insert(0x05, 64);
+    m.insert(0x06, 128);
+    m.insert(0x07, 256);
+    m.insert(0x08, 512);
+    m.insert(0x52, 72);
+    m.insert(0x53, 80);
+    m.insert(0x54, 96);
+    m
+});
+const RAM_BANK_LENGTH: usize = 1024;
+const RAM_BANK_NUMBER: LazyLock<HashMap<u8, usize>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert(0x00, 0);
+    m.insert(0x01, 0);
+    m.insert(0x02, 8);
+    m.insert(0x03, 32);
+    m.insert(0x04, 128);
+    m.insert(0x05, 64);
+    m
+});
 
 pub trait Stable {
     fn sav(&self);
@@ -152,10 +180,11 @@ pub struct Mbc1 {
 
 impl Mbc1 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
+        let rom_max = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
         Mbc1 {
             rom: rom.clone(),
             ram,
-            rom_max: rom_size(rom[0x0148]) / 0x4000,
+            rom_max,
             rom_bank: 0x01,
             ram_bank: 0x00,
             bank_mode: BankMode::Rom,
@@ -663,7 +692,7 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
     if rom[0x0104..0x0134] != NINTENDO_LOGO {
         panic!("Nintendo logo is not correct");
     }
-    let rom_max = rom_size(rom[0x0148]);
+    let rom_max = ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap() * ROM_BANK_LENGTH;
     if rom.len() > rom_max {
         panic!("Rom size more than {}", rom_max);
     }
@@ -671,11 +700,11 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
         0x00 => Box::new(RomOnly::power_up(rom)),
         0x01 => Box::new(Mbc1::power_up(rom, vec![], "")),
         0x02 => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             Box::new(Mbc1::power_up(rom, vec![0; ram_max], ""))
         }
         0x03 => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
             let ram = ram_read(sav_path.clone(), ram_max);
             Box::new(Mbc1::power_up(rom, ram, sav_path))
@@ -696,7 +725,7 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
             Box::new(Mbc3::power_up(rom, vec![], sav_path, rtc_path))
         }
         0x10 => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
             let ram = ram_read(sav_path.clone(), ram_max);
             let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
@@ -704,28 +733,28 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
         }
         0x11 => Box::new(Mbc3::power_up(rom, vec![], "", "")),
         0x12 => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             Box::new(Mbc3::power_up(rom, vec![0; ram_max], "", ""))
         }
         0x13 => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
             let ram = ram_read(sav_path.clone(), ram_max);
             Box::new(Mbc3::power_up(rom, ram, sav_path, ""))
         }
         0x19 => Box::new(Mbc5::power_up(rom, vec![], "")),
         0x1a => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             Box::new(Mbc5::power_up(rom, vec![0; ram_max], ""))
         }
         0x1b => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
             let ram = ram_read(sav_path.clone(), ram_max);
             Box::new(Mbc5::power_up(rom, ram, sav_path))
         }
         0xff => {
-            let ram_max = ram_size(rom[0x0149]);
+            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
             let ram = ram_read(sav_path.clone(), ram_max);
             Box::new(HuC1::power_up(rom, ram, sav_path))
@@ -736,39 +765,6 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
     rog::debugln!("Cartridge type is {}", READABLE_TYPE.get(&cart.get(0x0147)).unwrap());
     ensure_header_checksum(cart.as_ref());
     cart
-}
-
-// Specifies the ROM Size of the cartridge. Typically calculated as "32KB shl N".
-fn rom_size(b: u8) -> usize {
-    let bank = 16384;
-    match b {
-        0x00 => bank * 2,
-        0x01 => bank * 4,
-        0x02 => bank * 8,
-        0x03 => bank * 16,
-        0x04 => bank * 32,
-        0x05 => bank * 64,
-        0x06 => bank * 128,
-        0x07 => bank * 256,
-        0x08 => bank * 512,
-        0x52 => bank * 72,
-        0x53 => bank * 80,
-        0x54 => bank * 96,
-        n => panic!("Unsupported rom size: 0x{:02x}", n),
-    }
-}
-
-// Specifies the size of the external RAM in the cartridge (if any).
-fn ram_size(b: u8) -> usize {
-    match b {
-        0x00 => 0,
-        0x01 => 1024 * 2,
-        0x02 => 1024 * 8,
-        0x03 => 1024 * 32,
-        0x04 => 1024 * 128,
-        0x05 => 1024 * 64,
-        n => panic!("Unsupported ram size: 0x{:02x}", n),
-    }
 }
 
 // Specifies the size of the external RAM in the cartridge (if any).
