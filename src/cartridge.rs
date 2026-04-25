@@ -381,33 +381,26 @@ struct RealTimeClock {
     s: u8,
     m: u8,
     h: u8,
-    dl: u8,
-    dh: u8,
-    zero: u64,
+    d: u8,
+    f: u8,
+    z: u64,
 }
 
 impl RealTimeClock {
-    fn power_up(zero: u64) -> Self {
-        Self { zero, s: 0, m: 0, h: 0, dl: 0, dh: 0 }
+    fn power_up(z: u64) -> Self {
+        Self { s: 0, m: 0, h: 0, d: 0, f: 0, z }
     }
 
     fn latch(&mut self) {
-        let d = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() - self.zero;
-
-        self.s = (d % 60) as u8;
-        self.m = (d / 60 % 60) as u8;
-        self.h = (d / 3600 % 24) as u8;
-        let days = (d / 3600 / 24) as u16;
-        self.dl = (days % 256) as u8;
-        match days {
-            0x0000..=0x00ff => {}
-            0x0100..=0x01ff => {
-                self.dh |= 0x01;
-            }
-            _ => {
-                self.dh |= 0x01;
-                self.dh |= 0x80;
-            }
+        let el = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() - self.z;
+        self.s = (el % 60) as u8;
+        self.m = (el / 60 % 60) as u8;
+        self.h = (el / 3600 % 24) as u8;
+        let ad = (el / 3600 / 24) as u16;
+        self.d = (ad % 256) as u8;
+        self.f = (self.f & 0xc0) | (ad >> 8) as u8 & 0x01;
+        if ad >= 512 {
+            self.f |= 0x80;
         }
     }
 }
@@ -418,9 +411,9 @@ impl Memory for RealTimeClock {
             0x08 => self.s,
             0x09 => self.m,
             0x0a => self.h,
-            0x0b => self.dl,
-            0x0c => self.dh,
-            _ => panic!("No entry"),
+            0x0b => self.d,
+            0x0c => self.f,
+            _ => unreachable!(),
         }
     }
 
@@ -429,10 +422,14 @@ impl Memory for RealTimeClock {
             0x08 => self.s = v,
             0x09 => self.m = v,
             0x0a => self.h = v,
-            0x0b => self.dl = v,
-            0x0c => self.dh = v,
-            _ => panic!("No entry"),
+            0x0b => self.d = v,
+            0x0c => self.f = v,
+            _ => unreachable!(),
         }
+        // Recalculate z so the updated registers are reflected on next sav().
+        let ad = self.d as u64 | ((self.f as u64 & 0x01) << 8);
+        let el = ad * 86400 + self.h as u64 * 3600 + self.m as u64 * 60 + self.s as u64;
+        self.z = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs().saturating_sub(el);
     }
 }
 
@@ -596,7 +593,7 @@ impl Stable for Mbc3 {
         if self.rtc_path.to_str().unwrap().is_empty() {
             return;
         }
-        fs::write(&self.rtc_path, &self.rtc.zero.to_be_bytes()).unwrap();
+        fs::write(&self.rtc_path, &self.rtc.z.to_be_bytes()).unwrap();
     }
 }
 
