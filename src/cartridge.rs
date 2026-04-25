@@ -266,10 +266,10 @@ impl Memory for Mbc1 {
 
 impl Stable for Mbc1 {
     fn sav(&self) {
-        rog::debugln!("Ram is being persisted");
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
+        rog::debugln!("Ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
@@ -298,15 +298,15 @@ impl Stable for Mbc1 {
 // range to use for MBC2 rom bank selection is 2100-21FF.
 pub struct Mbc2 {
     rom: Vec<u8>,
-    ram: Vec<u8>,
     rom_bank: usize,
-    ram_enable: bool,
+    ram: Vec<u8>,
+    ram_open: bool,
     sav_path: PathBuf,
 }
 
 impl Mbc2 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self { rom, ram, rom_bank: 1, ram_enable: false, sav_path: PathBuf::from(sav.as_ref()) }
+        Self { rom, rom_bank: 0x00, ram, ram_open: false, sav_path: PathBuf::from(sav.as_ref()) }
     }
 }
 
@@ -315,17 +315,24 @@ impl Memory for Mbc2 {
         match a {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
-                let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
-                self.rom[i]
+                let rom_bank = self.rom_bank.max(1);
+                let rom_bank = rom_bank % 16;
+                let bank_off = a as usize & 0x3fff;
+                self.rom[rom_bank * 0x4000 + bank_off]
             }
             0xa000..=0xa1ff => {
-                if self.ram_enable {
-                    self.ram[(a - 0xa000) as usize]
-                } else {
-                    0x00
+                if !self.ram_open {
+                    return 0x00;
                 }
+                self.ram[a as usize & 0x01ff]
             }
-            _ => 0x00,
+            0xa200..=0xbfff => {
+                if !self.ram_open {
+                    return 0x00;
+                }
+                self.ram[a as usize & 0x01ff]
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -333,14 +340,9 @@ impl Memory for Mbc2 {
         // Only the lower 4 bits of the "bytes" in this memory area are used.
         let v = v & 0x0f;
         match a {
-            0xa000..=0xa1ff => {
-                if self.ram_enable {
-                    self.ram[(a - 0xa000) as usize] = v
-                }
-            }
             0x0000..=0x1fff => {
                 if a & 0x0100 == 0 {
-                    self.ram_enable = v == 0x0a;
+                    self.ram_open = v == 0x0a;
                 }
             }
             0x2000..=0x3fff => {
@@ -348,17 +350,29 @@ impl Memory for Mbc2 {
                     self.rom_bank = v as usize;
                 }
             }
-            _ => {}
+            0xa000..=0xa1ff => {
+                if !self.ram_open {
+                    return;
+                }
+                self.ram[a as usize & 0x01ff] = v
+            }
+            0xa200..=0xbfff => {
+                if !self.ram_open {
+                    return;
+                }
+                self.ram[a as usize & 0x01ff] = v
+            }
+            _ => unreachable!(),
         }
     }
 }
 
 impl Stable for Mbc2 {
     fn sav(&self) {
-        rog::debugln!("Ram is being persisted");
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
+        rog::debugln!("Ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
@@ -583,12 +597,12 @@ impl Memory for Mbc3 {
 
 impl Stable for Mbc3 {
     fn sav(&self) {
-        rog::debugln!("Ram is being persisted");
-        self.rtc.sav();
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
+        rog::debugln!("Ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
+        self.rtc.sav();
     }
 }
 
@@ -648,10 +662,10 @@ impl Memory for Mbc5 {
 
 impl Stable for Mbc5 {
     fn sav(&self) {
-        rog::debugln!("Ram is being persisted");
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
+        rog::debugln!("Ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
