@@ -512,11 +512,11 @@ impl Stable for RealTimeClock {
 // the separate accesses.
 pub struct Mbc3 {
     rom: Vec<u8>,
-    ram: Vec<u8>,
-    rtc: RealTimeClock,
     rom_bank: usize,
+    ram: Vec<u8>,
     ram_bank: usize,
-    ram_enable: bool,
+    ram_open: bool,
+    rtc: RealTimeClock,
     sav_path: PathBuf,
 }
 
@@ -524,11 +524,11 @@ impl Mbc3 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>, rtc: impl AsRef<Path>) -> Self {
         Self {
             rom,
-            ram,
-            rtc: RealTimeClock::power_up(rtc),
             rom_bank: 1,
+            ram,
             ram_bank: 0,
-            ram_enable: false,
+            ram_open: false,
+            rtc: RealTimeClock::power_up(rtc),
             sav_path: PathBuf::from(sav.as_ref()),
         }
     }
@@ -543,7 +543,7 @@ impl Memory for Mbc3 {
                 self.rom[i]
             }
             0xa000..=0xbfff => {
-                if self.ram_enable {
+                if self.ram_open {
                     if self.ram_bank <= 0x03 {
                         let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
                         self.ram[i]
@@ -561,7 +561,7 @@ impl Memory for Mbc3 {
     fn set(&mut self, a: u16, v: u8) {
         match a {
             0xa000..=0xbfff => {
-                if self.ram_enable {
+                if self.ram_open {
                     if self.ram_bank <= 0x03 {
                         let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
                         self.ram[i] = v;
@@ -571,7 +571,7 @@ impl Memory for Mbc3 {
                 }
             }
             0x0000..=0x1fff => {
-                self.ram_enable = v & 0x0f == 0x0a;
+                self.ram_open = v & 0x0f == 0x0a;
             }
             0x2000..=0x3fff => {
                 let n = (v & 0x7f) as usize;
