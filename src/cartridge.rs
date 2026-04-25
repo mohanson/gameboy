@@ -10,8 +10,7 @@
 //   - http://gbdev.gg8.se/wiki/articles/Memory_Bank_Controllers
 use super::memory::Memory;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Write};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::SystemTime;
@@ -271,7 +270,7 @@ impl Stable for Mbc1 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap()
+        fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
 
@@ -360,7 +359,7 @@ impl Stable for Mbc2 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap()
+        fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
 
@@ -437,7 +436,7 @@ impl Stable for RealTimeClock {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.zero.to_be_bytes())).unwrap()
+        fs::write(&self.sav_path, &self.zero.to_be_bytes()).unwrap();
     }
 }
 
@@ -589,7 +588,7 @@ impl Stable for Mbc3 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap();
+        fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
 
@@ -653,7 +652,7 @@ impl Stable for Mbc5 {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        File::create(self.sav_path.clone()).and_then(|mut f| f.write_all(&self.ram)).unwrap()
+        fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
 
@@ -690,9 +689,7 @@ impl Stable for HuC1 {
 // the cartridge.
 pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
     rog::debugln!("Loading cartridge from {:?}", path.as_ref());
-    let mut f = File::open(path.as_ref()).unwrap();
-    let mut rom = Vec::new();
-    f.read_to_end(&mut rom).unwrap();
+    let rom = fs::read(&path).unwrap();
     if rom.len() < 0x150 {
         panic!("Missing required information area which located at 0100-014F")
     }
@@ -707,23 +704,24 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
         0x00 => Box::new(RomOnly::power_up(rom)),
         0x01 => Box::new(Mbc1::power_up(rom, vec![], "")),
         0x02 => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            Box::new(Mbc1::power_up(rom, vec![0; ram_max], ""))
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram = vec![0; ram_size];
+            Box::new(Mbc1::power_up(rom, ram, ""))
         }
         0x03 => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = ram_read(sav_path.clone(), ram_max);
+            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
             Box::new(Mbc1::power_up(rom, ram, sav_path))
         }
         0x05 => {
-            let ram_max = 512;
-            Box::new(Mbc2::power_up(rom, vec![0; ram_max], ""))
+            let ram_size = 512;
+            Box::new(Mbc2::power_up(rom, vec![0; ram_size], ""))
         }
         0x06 => {
-            let ram_max = 512;
+            let ram_size = 512;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = ram_read(sav_path.clone(), ram_max);
+            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
             Box::new(Mbc2::power_up(rom, ram, sav_path))
         }
         0x0f => {
@@ -732,58 +730,48 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
             Box::new(Mbc3::power_up(rom, vec![], sav_path, rtc_path))
         }
         0x10 => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = ram_read(sav_path.clone(), ram_max);
             let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
+            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
             Box::new(Mbc3::power_up(rom, ram, sav_path, rtc_path))
         }
         0x11 => Box::new(Mbc3::power_up(rom, vec![], "", "")),
         0x12 => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            Box::new(Mbc3::power_up(rom, vec![0; ram_max], "", ""))
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram = vec![0; ram_size];
+            Box::new(Mbc3::power_up(rom, ram, "", ""))
         }
         0x13 => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = ram_read(sav_path.clone(), ram_max);
+            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
             Box::new(Mbc3::power_up(rom, ram, sav_path, ""))
         }
         0x19 => Box::new(Mbc5::power_up(rom, vec![], "")),
         0x1a => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            Box::new(Mbc5::power_up(rom, vec![0; ram_max], ""))
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram = vec![0; ram_size];
+            Box::new(Mbc5::power_up(rom, ram, ""))
         }
         0x1b => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = ram_read(sav_path.clone(), ram_max);
+            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
             Box::new(Mbc5::power_up(rom, ram, sav_path))
         }
         0xff => {
-            let ram_max = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
             let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = ram_read(sav_path.clone(), ram_max);
+            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
             Box::new(HuC1::power_up(rom, ram, sav_path))
         }
-        n => panic!("Unsupported cartridge type: 0x{:02x}", n),
+        _ => unreachable!(),
     };
     rog::debugln!("Cartridge name is {}", cart.title());
     rog::debugln!("Cartridge type is {}", READABLE_TYPE.get(&cart.get(0x0147)).unwrap());
     ensure_header_checksum(cart.as_ref());
     cart
-}
-
-// Specifies the size of the external RAM in the cartridge (if any).
-fn ram_read(path: impl AsRef<Path>, size: usize) -> Vec<u8> {
-    match File::open(path) {
-        Ok(mut ok) => {
-            let mut ram = Vec::new();
-            ok.read_to_end(&mut ram).unwrap();
-            ram
-        }
-        Err(_) => vec![0; size],
-    }
 }
 
 // In position 0x14d, contains an 8 bit checksum across the cartridge header bytes 0134-014C. The checksum is
