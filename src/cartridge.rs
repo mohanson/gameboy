@@ -9,10 +9,58 @@
 //   - http://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
 //   - http://gbdev.gg8.se/wiki/articles/Memory_Bank_Controllers
 use super::memory::Memory;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::time::SystemTime;
+
+// These bytes define the bitmap of the Nintendo logo that is displayed when the gameboy gets turned on.
+// The reason for joining is because if the pirates copy the cartridge, they must also copy Nintendo's LOGO,
+// which infringes the trademark law. In the early days, the copyright law is not perfect for the determination of
+// electronic data.
+// The hexdump of this bitmap is:
+const NINTENDO_LOGO: [u8; 48] = [
+    0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D, 0x00, 0x08, 0x11,
+    0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99, 0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E,
+    0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
+];
+const READABLE_TYPE: LazyLock<HashMap<u8, &str>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert(0x00, "ROM ONLY");
+    m.insert(0x01, "MBC1");
+    m.insert(0x02, "MBC1+RAM");
+    m.insert(0x03, "MBC1+RAM+BATTERY");
+    m.insert(0x05, "MBC2");
+    m.insert(0x06, "MBC2+BATTERY");
+    m.insert(0x08, "ROM+RAM");
+    m.insert(0x09, "ROM+RAM+BATTERY");
+    m.insert(0x0b, "MMM01");
+    m.insert(0x0c, "MMM01+RAM");
+    m.insert(0x0d, "MMM01+RAM+BATTERY");
+    m.insert(0x0f, "MBC3+TIMER+BATTERY");
+    m.insert(0x10, "MBC3+TIMER+RAM+BATTERY");
+    m.insert(0x11, "MBC3");
+    m.insert(0x12, "MBC3+RAM");
+    m.insert(0x13, "MBC3+RAM+BATTERY");
+    m.insert(0x15, "MBC4");
+    m.insert(0x16, "MBC4+RAM");
+    m.insert(0x17, "MBC4+RAM+BATTERY");
+    m.insert(0x19, "MBC5");
+    m.insert(0x1a, "MBC5+RAM");
+    m.insert(0x1b, "MBC5+RAM+BATTERY");
+    m.insert(0x1c, "MBC5+RUMBLE");
+    m.insert(0x1d, "MBC5+RUMBLE+RAM");
+    m.insert(0x1e, "MBC5+RUMBLE+RAM+BATTERY");
+    m.insert(0x20, "MBC6");
+    m.insert(0x22, "MBC7+SENSOR+RUMBLE+RAM+BATTERY");
+    m.insert(0xfc, "POCKET CAMERA");
+    m.insert(0xfd, "BANDAI TAMA5");
+    m.insert(0xfe, "HuC3");
+    m.insert(0xff, "HuC1+RAM+BATTERY");
+    m
+});
 
 pub trait Stable {
     fn sav(&self);
@@ -604,22 +652,6 @@ impl Stable for HuC1 {
 
 // Specifies which Memory Bank Controller (if any) is used in the cartridge, and if further external hardware exists in
 // the cartridge.
-//  00h  ROM ONLY                 19h  MBC5
-//  01h  MBC1                     1Ah  MBC5+RAM
-//  02h  MBC1+RAM                 1Bh  MBC5+RAM+BATTERY
-//  03h  MBC1+RAM+BATTERY         1Ch  MBC5+RUMBLE
-//  05h  MBC2                     1Dh  MBC5+RUMBLE+RAM
-//  06h  MBC2+BATTERY             1Eh  MBC5+RUMBLE+RAM+BATTERY
-//  08h  ROM+RAM                  20h  MBC6
-//  09h  ROM+RAM+BATTERY          22h  MBC7+SENSOR+RUMBLE+RAM+BATTERY
-//  0Bh  MMM01
-//  0Ch  MMM01+RAM
-//  0Dh  MMM01+RAM+BATTERY
-//  0Fh  MBC3+TIMER+BATTERY
-//  10h  MBC3+TIMER+RAM+BATTERY   FCh  POCKET CAMERA
-//  11h  MBC3                     FDh  BANDAI TAMA5
-//  12h  MBC3+RAM                 FEh  HuC3
-//  13h  MBC3+RAM+BATTERY         FFh  HuC1+RAM+BATTERY
 pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
     rog::debugln!("Loading cartridge from {:?}", path.as_ref());
     let mut f = File::open(path.as_ref()).unwrap();
@@ -627,6 +659,9 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
     f.read_to_end(&mut rom).unwrap();
     if rom.len() < 0x150 {
         panic!("Missing required information area which located at 0100-014F")
+    }
+    if rom[0x0104..0x0134] != NINTENDO_LOGO {
+        panic!("Nintendo logo is not correct");
     }
     let rom_max = rom_size(rom[0x0148]);
     if rom.len() > rom_max {
@@ -698,8 +733,7 @@ pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
         n => panic!("Unsupported cartridge type: 0x{:02x}", n),
     };
     rog::debugln!("Cartridge name is {}", cart.title());
-    rog::debugln!("Cartridge type is {}", mbc_info(cart.get(0x0147)));
-    ensure_logo(cart.as_ref());
+    rog::debugln!("Cartridge type is {}", READABLE_TYPE.get(&cart.get(0x0147)).unwrap());
     ensure_header_checksum(cart.as_ref());
     cart
 }
@@ -746,62 +780,6 @@ fn ram_read(path: impl AsRef<Path>, size: usize) -> Vec<u8> {
             ram
         }
         Err(_) => vec![0; size],
-    }
-}
-
-// Readable form of MBC representation
-fn mbc_info(b: u8) -> String {
-    String::from(match b {
-        0x00 => "ROM ONLY",
-        0x01 => "MBC1",
-        0x02 => "MBC1+RAM",
-        0x03 => "MBC1+RAM+BATTERY",
-        0x05 => "MBC2",
-        0x06 => "MBC2+BATTERY",
-        0x08 => "ROM+RAM",
-        0x09 => "ROM+RAM+BATTERY",
-        0x0b => "MMM01",
-        0x0c => "MMM01+RAM",
-        0x0d => "MMM01+RAM+BATTERY",
-        0x0f => "MBC3+TIMER+BATTERY",
-        0x10 => "MBC3+TIMER+RAM+BATTERY",
-        0x11 => "MBC3",
-        0x12 => "MBC3+RAM",
-        0x13 => "MBC3+RAM+BATTERY",
-        0x15 => "MBC4",
-        0x16 => "MBC4+RAM",
-        0x17 => "MBC4+RAM+BATTERY",
-        0x19 => "MBC5",
-        0x1a => "MBC5+RAM",
-        0x1b => "MBC5+RAM+BATTERY",
-        0x1c => "MBC5+RUMBLE",
-        0x1d => "MBC5+RUMBLE+RAM",
-        0x1e => "MBC5+RUMBLE+RAM+BATTERY",
-        0xfc => "POCKET CAMERA",
-        0xfd => "BANDAI TAMA5",
-        0xfe => "HuC3",
-        0xff => "HuC1+RAM+BATTERY",
-        n => panic!("Unsupported cartridge type: 0x{:02x}", n),
-    })
-}
-
-// These bytes define the bitmap of the Nintendo logo that is displayed when the gameboy gets turned on.
-// The reason for joining is because if the pirates copy the cartridge, they must also copy Nintendo's LOGO,
-// which infringes the trademark law. In the early days, the copyright law is not perfect for the determination of
-// electronic data.
-// The hexdump of this bitmap is:
-const NINTENDO_LOGO: [u8; 48] = [
-    0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D, 0x00, 0x08, 0x11,
-    0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99, 0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E,
-    0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
-];
-
-// Ensure Nintendo Logo.
-fn ensure_logo(cart: &dyn Cartridge) {
-    for i in 0..48 {
-        if cart.get(0x0104 + i as u16) != NINTENDO_LOGO[i as usize] {
-            panic!("Nintendo logo is incorrect")
-        }
     }
 }
 
