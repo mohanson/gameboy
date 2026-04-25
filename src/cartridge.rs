@@ -117,11 +117,6 @@ impl Stable for RomOnly {
     fn sav(&self) {}
 }
 
-enum BankMode {
-    Rom,
-    Ram,
-}
-
 // This is the first MBC chip for the gameboy. Any newer MBC chips are working similiar, so that is relative easy to
 // upgrade a program from one MBC chip to another - or even to make it compatible to several different types of MBCs.
 // Note that the memory in range 0000-7FFF is used for both reading from ROM, and for writing to the MBCs Control
@@ -175,7 +170,7 @@ pub struct Mbc1 {
     ram_bank: usize,
     ram_maxm: usize,
     ram_open: bool,
-    bank_mode: BankMode,
+    mbc_mode: u8,
     sav_path: PathBuf,
 }
 
@@ -191,7 +186,7 @@ impl Mbc1 {
             ram_bank: 0x00,
             ram_maxm,
             ram_open: false,
-            bank_mode: BankMode::Rom,
+            mbc_mode: 0x00,
             sav_path: PathBuf::from(sav.as_ref()),
         }
     }
@@ -201,9 +196,10 @@ impl Memory for Mbc1 {
     fn get(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x3fff => {
-                let rom_bank = match self.bank_mode {
-                    BankMode::Rom => 0x00,
-                    BankMode::Ram => 0x00 | self.ram_bank << 5,
+                let rom_bank = match self.mbc_mode {
+                    0x00 => 0x00,
+                    0x01 => 0x00 | self.ram_bank << 5,
+                    _ => unreachable!(),
                 };
                 let rom_bank = rom_bank % self.rom_maxm;
                 let bank_off = a as usize & 0x3fff;
@@ -211,9 +207,10 @@ impl Memory for Mbc1 {
             }
             0x4000..=0x7fff => {
                 let rom_bank = self.rom_bank.max(1);
-                let rom_bank = match self.bank_mode {
-                    BankMode::Rom => rom_bank | self.ram_bank << 5,
-                    BankMode::Ram => rom_bank,
+                let rom_bank = match self.mbc_mode {
+                    0x00 => rom_bank | self.ram_bank << 5,
+                    0x01 => rom_bank,
+                    _ => unreachable!(),
                 };
                 let rom_bank = rom_bank % self.rom_maxm;
                 let bank_off = a as usize & 0x3fff;
@@ -223,9 +220,10 @@ impl Memory for Mbc1 {
                 if !self.ram_open {
                     return 0x00;
                 }
-                let ram_bank = match self.bank_mode {
-                    BankMode::Rom => 0x00,
-                    BankMode::Ram => self.ram_bank,
+                let ram_bank = match self.mbc_mode {
+                    0x00 => 0x00,
+                    0x01 => self.ram_bank,
+                    _ => unreachable!(),
                 };
                 let ram_bank = ram_bank % self.ram_maxm;
                 let bank_off = a as usize & 0x1fff;
@@ -246,18 +244,17 @@ impl Memory for Mbc1 {
             0x4000..=0x5fff => {
                 self.ram_bank = v as usize & 0x03;
             }
-            0x6000..=0x7fff => match v {
-                0x00 => self.bank_mode = BankMode::Rom,
-                0x01 => self.bank_mode = BankMode::Ram,
-                _ => unreachable!(),
-            },
+            0x6000..=0x7fff => {
+                self.mbc_mode = v;
+            }
             0xa000..=0xbfff => {
                 if !self.ram_open {
                     return;
                 }
-                let ram_bank = match self.bank_mode {
-                    BankMode::Rom => 0x00,
-                    BankMode::Ram => self.ram_bank,
+                let ram_bank = match self.mbc_mode {
+                    0x00 => 0x00,
+                    0x01 => self.ram_bank,
+                    _ => unreachable!(),
                 };
                 let ram_bank = ram_bank % self.ram_maxm;
                 let bank_off = a as usize & 0x1fff;
