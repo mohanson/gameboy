@@ -169,26 +169,29 @@ enum BankMode {
 // Mode 0, and only ROM Banks 00-1Fh can be used during Mode 1.
 pub struct Mbc1 {
     rom: Vec<u8>,
-    ram: Vec<u8>,
-    rom_max: usize,
     rom_bank: usize,
+    rom_maxm: usize,
+    ram: Vec<u8>,
     ram_bank: usize,
+    ram_maxm: usize,
+    ram_open: bool,
     bank_mode: BankMode,
-    ram_enable: bool,
     sav_path: PathBuf,
 }
 
 impl Mbc1 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        let rom_max = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
+        let rom_maxm = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
+        let ram_maxm = *RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap();
         Mbc1 {
             rom: rom.clone(),
+            rom_bank: 0x00,
+            rom_maxm,
             ram,
-            rom_max,
-            rom_bank: 0x01,
             ram_bank: 0x00,
+            ram_maxm,
+            ram_open: false,
             bank_mode: BankMode::Rom,
-            ram_enable: false,
             sav_path: PathBuf::from(sav.as_ref()),
         }
     }
@@ -197,53 +200,48 @@ impl Mbc1 {
 impl Memory for Mbc1 {
     fn get(&self, a: u16) -> u8 {
         match a {
-            0x0000..=0x3fff => self.rom[a as usize],
-            0x4000..=0x7fff => {
+            0x0000..=0x3fff => {
                 let rom_bank = match self.bank_mode {
-                    BankMode::Rom => self.rom_bank | self.ram_bank << 5,
-                    BankMode::Ram => self.rom_bank,
-                } % self.rom_max;
-                let i = a as usize - 0x4000 + rom_bank * 0x4000;
-                self.rom[i]
+                    BankMode::Rom => 0x00,
+                    BankMode::Ram => 0x00 | self.ram_bank << 5,
+                };
+                let rom_bank = rom_bank % self.rom_maxm;
+                let bank_off = a as usize & 0x3fff;
+                self.rom[rom_bank * 0x4000 + bank_off]
+            }
+            0x4000..=0x7fff => {
+                let rom_bank = self.rom_bank.max(1);
+                let rom_bank = match self.bank_mode {
+                    BankMode::Rom => rom_bank | self.ram_bank << 5,
+                    BankMode::Ram => rom_bank,
+                };
+                let rom_bank = rom_bank % self.rom_maxm;
+                let bank_off = a as usize & 0x3fff;
+                self.rom[rom_bank * 0x4000 + bank_off]
             }
             0xa000..=0xbfff => {
-                if !self.ram_enable {
+                if !self.ram_open {
                     return 0x00;
                 }
                 let ram_bank = match self.bank_mode {
                     BankMode::Rom => 0x00,
                     BankMode::Ram => self.ram_bank,
                 };
-                let i = a as usize - 0xa000 + ram_bank * 0x2000;
-                self.ram[i]
+                let ram_bank = ram_bank % self.ram_maxm;
+                let bank_off = a as usize & 0x1fff;
+                self.ram[ram_bank * 0x2000 + bank_off]
             }
-            _ => 0x00,
+            _ => unreachable!(),
         }
     }
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xa000..=0xbfff => {
-                if !self.ram_enable {
-                    return;
-                }
-                let ram_bank = match self.bank_mode {
-                    BankMode::Rom => 0x00,
-                    BankMode::Ram => self.ram_bank,
-                };
-                let i = a as usize - 0xa000 + ram_bank * 0x2000;
-                self.ram[i] = v;
-            }
             0x0000..=0x1fff => {
-                self.ram_enable = v & 0x0f == 0x0a;
+                self.ram_open = v & 0x0f == 0x0a;
             }
             0x2000..=0x3fff => {
-                let n = v as usize & 0x1f;
-                let n = match n {
-                    0x00 => 0x01,
-                    _ => n,
-                };
-                self.rom_bank = n;
+                self.rom_bank = v as usize & 0x1f;
             }
             0x4000..=0x5fff => {
                 self.ram_bank = v as usize & 0x03;
@@ -251,9 +249,21 @@ impl Memory for Mbc1 {
             0x6000..=0x7fff => match v {
                 0x00 => self.bank_mode = BankMode::Rom,
                 0x01 => self.bank_mode = BankMode::Ram,
-                n => panic!("Invalid cartridge type {}", n),
+                _ => unreachable!(),
             },
-            _ => {}
+            0xa000..=0xbfff => {
+                if !self.ram_open {
+                    return;
+                }
+                let ram_bank = match self.bank_mode {
+                    BankMode::Rom => 0x00,
+                    BankMode::Ram => self.ram_bank,
+                };
+                let ram_bank = ram_bank % self.ram_maxm;
+                let bank_off = a as usize & 0x1fff;
+                self.ram[ram_bank * 0x2000 + bank_off] = v;
+            }
+            _ => unreachable!(),
         }
     }
 }
