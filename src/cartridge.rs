@@ -384,20 +384,11 @@ struct RealTimeClock {
     dl: u8,
     dh: u8,
     zero: u64,
-    sav_path: PathBuf,
 }
 
 impl RealTimeClock {
-    fn power_up(sav_path: impl AsRef<Path>) -> Self {
-        let zero = match std::fs::read(sav_path.as_ref()) {
-            Ok(ok) => {
-                let mut b: [u8; 8] = Default::default();
-                b.copy_from_slice(&ok);
-                u64::from_be_bytes(b)
-            }
-            Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
-        };
-        Self { zero, s: 0, m: 0, h: 0, dl: 0, dh: 0, sav_path: sav_path.as_ref().to_path_buf() }
+    fn power_up(zero: u64) -> Self {
+        Self { zero, s: 0, m: 0, h: 0, dl: 0, dh: 0 }
     }
 
     fn tic(&mut self) {
@@ -442,15 +433,6 @@ impl Memory for RealTimeClock {
             0x0c => self.dh = v,
             _ => panic!("No entry"),
         }
-    }
-}
-
-impl Stable for RealTimeClock {
-    fn sav(&self) {
-        if self.sav_path.to_str().unwrap().is_empty() {
-            return;
-        }
-        fs::write(&self.sav_path, &self.zero.to_be_bytes()).unwrap();
     }
 }
 
@@ -518,18 +500,24 @@ pub struct Mbc3 {
     ram_open: bool,
     rtc: RealTimeClock,
     sav_path: PathBuf,
+    rtc_path: PathBuf,
 }
 
 impl Mbc3 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>, rtc: impl AsRef<Path>) -> Self {
+        let rtc_zero = match fs::read(&rtc) {
+            Ok(ok) => u64::from_be_bytes(ok.try_into().unwrap()),
+            Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+        };
         Self {
             rom,
             rom_bank: 1,
             ram,
             ram_bank: 0,
             ram_open: false,
-            rtc: RealTimeClock::power_up(rtc),
+            rtc: RealTimeClock::power_up(rtc_zero),
             sav_path: PathBuf::from(sav.as_ref()),
+            rtc_path: PathBuf::from(rtc.as_ref()),
         }
     }
 }
@@ -602,7 +590,10 @@ impl Stable for Mbc3 {
         }
         rog::debugln!("Ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
-        self.rtc.sav();
+        if self.rtc_path.to_str().unwrap().is_empty() {
+            return;
+        }
+        fs::write(&self.rtc_path, &self.rtc.zero.to_be_bytes()).unwrap();
     }
 }
 
