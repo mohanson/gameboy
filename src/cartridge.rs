@@ -94,6 +94,7 @@ enum BankMode {
 pub struct Mbc1 {
     rom: Vec<u8>,
     ram: Vec<u8>,
+    rom_max: usize,
     rom_bank: usize,
     ram_bank: usize,
     bank_mode: BankMode,
@@ -104,8 +105,9 @@ pub struct Mbc1 {
 impl Mbc1 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
         Mbc1 {
-            rom,
+            rom: rom.clone(),
             ram,
+            rom_max: rom_size(rom[0x0148]) / 0x4000,
             rom_bank: 0x01,
             ram_bank: 0x00,
             bank_mode: BankMode::Rom,
@@ -123,7 +125,7 @@ impl Memory for Mbc1 {
                 let rom_bank = match self.bank_mode {
                     BankMode::Rom => self.rom_bank | self.ram_bank << 5,
                     BankMode::Ram => self.rom_bank,
-                };
+                } % self.rom_max;
                 let i = a as usize - 0x4000 + rom_bank * 0x4000;
                 self.rom[i]
             }
