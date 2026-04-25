@@ -377,7 +377,7 @@ impl Stable for Mbc2 {
     }
 }
 
-struct RealTimeClock {
+struct Mbc3Clock {
     s: u8,
     m: u8,
     h: u8,
@@ -386,7 +386,7 @@ struct RealTimeClock {
     z: u64,
 }
 
-impl RealTimeClock {
+impl Mbc3Clock {
     fn power_up(z: u64) -> Self {
         Self { s: 0, m: 0, h: 0, d: 0, f: 0, z }
     }
@@ -405,7 +405,7 @@ impl RealTimeClock {
     }
 }
 
-impl Memory for RealTimeClock {
+impl Memory for Mbc3Clock {
     fn get(&self, a: u16) -> u8 {
         match a {
             0x08 => self.s,
@@ -497,7 +497,7 @@ pub struct Mbc3 {
     ram_bank: usize,
     ram_maxm: usize,
     ram_open: bool,
-    rtc: RealTimeClock,
+    rtc: Mbc3Clock,
     sav_path: PathBuf,
     rtc_path: PathBuf,
 }
@@ -518,7 +518,7 @@ impl Mbc3 {
             ram_bank: 0,
             ram_maxm,
             ram_open: false,
-            rtc: RealTimeClock::power_up(rtc_zero),
+            rtc: Mbc3Clock::power_up(rtc_zero),
             sav_path: PathBuf::from(sav.as_ref()),
             rtc_path: PathBuf::from(rtc.as_ref()),
         }
