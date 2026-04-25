@@ -4,34 +4,87 @@ use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
+use gameboy::memory::Memory;
 use gameboy::motherboard::MotherBoard;
+use std::io::Write;
+
+struct Argument {
+    audio: bool,
+    mode: String,
+    rom: String,
+    scale: u32,
+}
 
 fn main() {
     rog::reg("gameboy");
     rog::reg("gameboy::cartridge");
-
-    let mut rom = String::from("");
-    let mut c_audio = false;
-    let mut c_scale = 2;
+    let mut argu = Argument { audio: false, mode: String::from("minifb"), rom: String::from(""), scale: 2 };
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
-        ap.refer(&mut c_audio).add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
-        ap.refer(&mut c_scale).add_option(
+        ap.refer(&mut argu.audio).add_option(&["-a", "--enable-audio"], argparse::StoreTrue, "Enable audio");
+        ap.refer(&mut argu.mode).add_option(
+            &["-m", "--mode"],
+            argparse::Store,
+            "Set the emulator mode (minifb or blargg)",
+        );
+        ap.refer(&mut argu.scale).add_option(
             &["-x", "--scale-factor"],
             argparse::Store,
             "Scale the video by a factor of 1, 2, 4, or 8",
         );
-        ap.refer(&mut rom).add_argument("rom", argparse::Store, "Rom name");
+        ap.refer(&mut argu.rom).add_argument("rom", argparse::Store, "Rom name");
         ap.parse_args_or_exit();
     }
 
-    let mut mbrd = MotherBoard::power_up(rom);
+    match argu.mode.as_str() {
+        "blargg" => mode_blargg(&argu),
+        "minifb" => mode_minifb(&argu),
+        _ => panic!("Supported mode: blargg or minifb"),
+    }
+}
+
+fn mode_blargg(argu: &Argument) {
+    let mut mbrd = MotherBoard::power_up(&argu.rom);
+    loop {
+        let a = [mbrd.mmu.borrow().get(0xa001), mbrd.mmu.borrow().get(0xa002), mbrd.mmu.borrow().get(0xa003)];
+        let b = [0xde, 0xb0, 0x61];
+        if a == b {
+            break;
+        }
+        mbrd.next();
+    }
+    loop {
+        if mbrd.mmu.borrow().get(0xa000) == 0x80 {
+            break;
+        }
+        mbrd.next();
+    }
+    loop {
+        if mbrd.mmu.borrow().get(0xa000) != 0x80 {
+            break;
+        }
+        mbrd.next();
+    }
+
+    for i in 0..1024 {
+        let ch = mbrd.mmu.borrow().get(0xa004 + i);
+        if ch == 0 {
+            break;
+        }
+        print!("{}", char::from(ch));
+    }
+    std::io::stdout().flush().unwrap();
+    std::process::exit(i32::from(mbrd.mmu.borrow().get(0xa000)));
+}
+
+fn mode_minifb(argu: &Argument) {
+    let mut mbrd = MotherBoard::power_up(&argu.rom);
     let rom_name = mbrd.mmu.borrow().cartridge.title();
 
     let mut option = minifb::WindowOptions::default();
     option.resize = true;
-    option.scale = match c_scale {
+    option.scale = match argu.scale {
         1 => minifb::Scale::X1,
         2 => minifb::Scale::X2,
         4 => minifb::Scale::X4,
@@ -45,7 +98,7 @@ fn main() {
 
     // Initialize audio related. It is necessary to ensure that the stream object remains alive.
     let stream: cpal::Stream;
-    if c_audio {
+    if argu.audio {
         let host = cpal::default_host();
         let device = host.default_output_device().unwrap();
         rog::debugln!("Open the audio player: {}", device.name().unwrap());
