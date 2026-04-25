@@ -306,7 +306,7 @@ pub struct Mbc2 {
 
 impl Mbc2 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self { rom, rom_bank: 0x00, ram, ram_open: false, sav_path: PathBuf::from(sav.as_ref()) }
+        Self { rom, rom_bank: 0x01, ram, ram_open: false, sav_path: PathBuf::from(sav.as_ref()) }
     }
 }
 
