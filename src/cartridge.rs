@@ -503,13 +503,9 @@ pub struct Mbc3 {
 }
 
 impl Mbc3 {
-    pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>, rtc: impl AsRef<Path>) -> Self {
+    pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, rtc: u64, sav: impl AsRef<Path>) -> Self {
         let rom_maxm = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
         let ram_maxm = *RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap();
-        let rtc_zero = match fs::read(&rtc) {
-            Ok(ok) => u64::from_be_bytes(ok.try_into().unwrap()),
-            Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
-        };
         Self {
             rom,
             rom_bank: 0,
@@ -518,9 +514,9 @@ impl Mbc3 {
             ram_bank: 0,
             ram_maxm,
             ram_open: false,
-            rtc: Mbc3Clock::power_up(rtc_zero),
+            rtc: Mbc3Clock::power_up(rtc),
             sav_path: PathBuf::from(sav.as_ref()),
-            rtc_path: PathBuf::from(rtc.as_ref()),
+            rtc_path: PathBuf::from(sav.as_ref().to_path_buf().with_extension("rtc")),
         }
     }
 }
@@ -842,26 +838,34 @@ impl Cartridge {
             0x0f => {
                 let sav_path = path.as_ref().to_path_buf().with_extension("sav");
                 let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
-                Box::new(Mbc3::power_up(rom, vec![], sav_path, rtc_path))
+                let rtc = match fs::read(&rtc_path) {
+                    Ok(ok) => u64::from_be_bytes(ok.try_into().unwrap()),
+                    Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+                };
+                Box::new(Mbc3::power_up(rom, vec![], rtc, sav_path))
             }
             0x10 => {
                 let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
                 let sav_path = path.as_ref().to_path_buf().with_extension("sav");
                 let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
                 let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-                Box::new(Mbc3::power_up(rom, ram, sav_path, rtc_path))
+                let rtc = match fs::read(&rtc_path) {
+                    Ok(ok) => u64::from_be_bytes(ok.try_into().unwrap()),
+                    Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+                };
+                Box::new(Mbc3::power_up(rom, ram, rtc, sav_path))
             }
-            0x11 => Box::new(Mbc3::power_up(rom, vec![], "", "")),
+            0x11 => Box::new(Mbc3::power_up(rom, vec![], 0, "")),
             0x12 => {
                 let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
                 let ram = vec![0; ram_size];
-                Box::new(Mbc3::power_up(rom, ram, "", ""))
+                Box::new(Mbc3::power_up(rom, ram, 0, ""))
             }
             0x13 => {
                 let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
                 let sav_path = path.as_ref().to_path_buf().with_extension("sav");
                 let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-                Box::new(Mbc3::power_up(rom, ram, sav_path, ""))
+                Box::new(Mbc3::power_up(rom, ram, 0, sav_path))
             }
             0x19 => Box::new(Mbc5::power_up(rom, vec![], "")),
             0x1a => {
