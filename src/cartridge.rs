@@ -790,16 +790,10 @@ impl Stable for HuC1 {
 pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
     rog::debugln!("Loading cartridge from {:?}", path.as_ref());
     let rom = fs::read(&path).unwrap();
-    if rom.len() < 0x150 {
-        panic!("Missing required information area which located at 0100-014F")
-    }
-    if rom[0x0104..0x0134] != NINTENDO_LOGO {
-        panic!("Nintendo logo is not correct");
-    }
+    assert!(rom.len() >= 0x150, "Missing required information area which located at 0100-014F");
+    assert!(rom[0x0104..0x0134] == NINTENDO_LOGO, "Nintendo logo is not correct");
     let rom_max = ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap() * ROM_BANK_LENGTH;
-    if rom.len() > rom_max {
-        panic!("Rom size more than {}", rom_max);
-    }
+    assert!(rom.len() <= rom_max, "Rom size more than {}", rom_max);
     let cart: Box<dyn Cartridge> = match rom[0x0147] {
         0x00 => Box::new(RomOnly::power_up(rom)),
         0x01 => Box::new(Mbc1::power_up(rom, vec![], "")),
