@@ -677,32 +677,111 @@ impl Stable for Mbc5 {
     }
 }
 
-// This controller (made by Hudson Soft) appears to be very similar to an MBC1 with the main difference being that it
-// supports infrared LED input / output. (Similiar to the infrared port that has been later invented in CGBs.)
+// HuC1 is an MBC developed by Hudson Soft. It implements ROM and RAM banking, and also provides infrared
+// communication. Despite many sources on the internet claiming that HuC1 is "similar to MBC1", it actually differs
+// from MBC1 significantly.
 // The Japanese cart "Fighting Phoenix" (internal cart name: SUPER B DAMAN) is known to contain this chip.
+//
+// 0000-1FFF - IR Select (Write Only)
+// Most MBCs can disable the cartridge RAM to prevent accidental writes. HuC1 doesn't do this. Instead, this register
+// switches the A000-BFFF region between "RAM mode" and "IR mode". Write $0E to switch to IR mode, or anything else
+// to switch to RAM mode.
+//
+// 2000-3FFF - ROM Bank Number (Write Only)
+// HuC1 can accept a bank number of at least 6 bits here.
+//
+// 4000-5FFF - RAM Bank Select (Write Only)
+// HuC1 can accept a bank number of at least 2 bits here.
+//
+// 6000-7FFF - Nothing (Write Only)
+// Writes to this region seem to have no effect.
+//
+// A000-BFFF - Cart RAM or IR register (Read/Write)
+// When in IR mode (wrote $0E to $0000), the IR register is visible here. Write to this region to control the IR
+// transmitter ($01 = on, $00 = off). Read from this region to see either $C1 (saw light) or $C0 (did not see light).
+// When in RAM mode (wrote something other than $0E to $0000) this region behaves like normal cart RAM.
 pub struct HuC1 {
-    cart: Mbc1,
+    rom: Vec<u8>,
+    rom_bank: usize,
+    rom_maxm: usize,
+    ram: Vec<u8>,
+    ram_bank: usize,
+    ram_maxm: usize,
+    ram_open: bool,
+    sav_path: PathBuf,
 }
 
 impl HuC1 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self { cart: Mbc1::power_up(rom, ram, sav) }
+        let rom_maxm = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
+        let ram_maxm = *RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap();
+        Self {
+            rom,
+            rom_bank: 0x01,
+            rom_maxm,
+            ram,
+            ram_bank: 0x00,
+            ram_maxm,
+            ram_open: true,
+            sav_path: PathBuf::from(sav.as_ref()),
+        }
     }
 }
 
 impl Memory for HuC1 {
     fn get(&self, a: u16) -> u8 {
-        self.cart.get(a)
+        match a {
+            0x0000..=0x3fff => self.rom[a as usize],
+            0x4000..=0x7fff => {
+                let rom_bank = self.rom_bank.max(1);
+                let rom_bank = rom_bank % self.rom_maxm;
+                let bank_off = a as usize & 0x3fff;
+                self.rom[rom_bank * 0x4000 + bank_off]
+            }
+            0xa000..=0xbfff => {
+                if !self.ram_open {
+                    return 0xc0;
+                }
+                let ram_bank = self.ram_bank % self.ram_maxm;
+                let bank_off = a as usize & 0x1fff;
+                self.ram[ram_bank * 0x2000 + bank_off]
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn set(&mut self, a: u16, v: u8) {
-        self.cart.set(a, v)
+        match a {
+            0x0000..=0x1fff => {
+                self.ram_open = v != 0x0e;
+            }
+            0x2000..=0x3fff => {
+                self.rom_bank = v as usize & 0x3f;
+            }
+            0x4000..=0x5fff => {
+                self.ram_bank = v as usize & 0x03;
+            }
+            0x6000..=0x7fff => {}
+            0xa000..=0xbfff => {
+                if !self.ram_open {
+                    return;
+                }
+                let ram_bank = self.ram_bank % self.ram_maxm;
+                let bank_off = a as usize & 0x1fff;
+                self.ram[ram_bank * 0x2000 + bank_off] = v;
+            }
+            _ => unreachable!(),
+        }
     }
 }
 
 impl Stable for HuC1 {
     fn sav(&self) {
-        self.cart.sav()
+        if self.sav_path.to_str().unwrap().is_empty() {
+            return;
+        }
+        rog::debugln!("Ram is being persisted");
+        fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
 
