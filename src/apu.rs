@@ -1,6 +1,6 @@
 use super::clock::Clock;
+use super::convention::Memory;
 use super::cpu;
-use super::memory::Memory;
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -458,7 +458,7 @@ impl ChannelSquare {
 }
 
 impl Memory for ChannelSquare {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0xff10 | 0xff15 => self.reg.borrow().nrx0,
             0xff11 | 0xff16 => self.reg.borrow().nrx1,
@@ -469,7 +469,7 @@ impl Memory for ChannelSquare {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0xff10 | 0xff15 => self.reg.borrow_mut().nrx0 = v,
             0xff11 | 0xff16 => {
@@ -575,7 +575,7 @@ impl ChannelWave {
 }
 
 impl Memory for ChannelWave {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0xff1a => self.reg.borrow().nrx0,
             0xff1b => self.reg.borrow().nrx1,
@@ -587,7 +587,7 @@ impl Memory for ChannelWave {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0xff1a => self.reg.borrow_mut().nrx0 = v,
             0xff1b => {
@@ -678,7 +678,7 @@ impl ChannelNoise {
 }
 
 impl Memory for ChannelNoise {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0xff1f => self.reg.borrow().nrx0,
             0xff20 => self.reg.borrow().nrx1,
@@ -689,7 +689,7 @@ impl Memory for ChannelNoise {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0xff1f => self.reg.borrow_mut().nrx0 = v,
             0xff20 => {
@@ -876,12 +876,12 @@ const RD_MASK: [u8; 48] = [
 ];
 
 impl Memory for Apu {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         let r = match a {
-            0xff10..=0xff14 => self.channel1.get(a),
-            0xff15..=0xff19 => self.channel2.get(a),
-            0xff1a..=0xff1e => self.channel3.get(a),
-            0xff1f..=0xff23 => self.channel4.get(a),
+            0xff10..=0xff14 => self.channel1.lb(a),
+            0xff15..=0xff19 => self.channel2.lb(a),
+            0xff1a..=0xff1e => self.channel3.lb(a),
+            0xff1f..=0xff23 => self.channel4.lb(a),
             0xff24 => self.reg.nrx0,
             0xff25 => self.reg.nrx1,
             0xff26 => {
@@ -897,21 +897,21 @@ impl Memory for Apu {
                 a | b | c | d | e
             }
             0xff27..=0xff2f => 0x00,
-            0xff30..=0xff3f => self.channel3.get(a),
+            0xff30..=0xff3f => self.channel3.lb(a),
             _ => unreachable!(),
         };
         r | RD_MASK[a as usize - 0xff10]
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         if a != 0xff26 && !self.reg.get_power() {
             return;
         }
         match a {
-            0xff10..=0xff14 => self.channel1.set(a, v),
-            0xff15..=0xff19 => self.channel2.set(a, v),
-            0xff1a..=0xff1e => self.channel3.set(a, v),
-            0xff1f..=0xff23 => self.channel4.set(a, v),
+            0xff10..=0xff14 => self.channel1.sb(a, v),
+            0xff15..=0xff19 => self.channel2.sb(a, v),
+            0xff1a..=0xff1e => self.channel3.sb(a, v),
+            0xff1f..=0xff23 => self.channel4.sb(a, v),
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
             0xff26 => {
@@ -947,7 +947,7 @@ impl Memory for Apu {
                 }
             }
             0xff27..=0xff2f => {}
-            0xff30..=0xff3f => self.channel3.set(a, v),
+            0xff30..=0xff3f => self.channel3.sb(a, v),
             _ => unreachable!(),
         }
     }

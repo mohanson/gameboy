@@ -3,9 +3,8 @@
 use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
-use gameboy::cartridge::Stable;
+use gameboy::convention::{Memory, Stable};
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
-use gameboy::memory::Memory;
 use gameboy::motherboard::MotherBoard;
 use std::io::Write;
 
@@ -48,7 +47,7 @@ fn main() {
 fn mode_blargg(argu: &Argument) {
     let mut mbrd = MotherBoard::power_up(&argu.rom);
     loop {
-        let a = [mbrd.mmu.borrow().get(0xa001), mbrd.mmu.borrow().get(0xa002), mbrd.mmu.borrow().get(0xa003)];
+        let a = [mbrd.mmu.borrow().lb(0xa001), mbrd.mmu.borrow().lb(0xa002), mbrd.mmu.borrow().lb(0xa003)];
         let b = [0xde, 0xb0, 0x61];
         if a == b {
             break;
@@ -56,27 +55,27 @@ fn mode_blargg(argu: &Argument) {
         mbrd.next();
     }
     loop {
-        if mbrd.mmu.borrow().get(0xa000) == 0x80 {
+        if mbrd.mmu.borrow().lb(0xa000) == 0x80 {
             break;
         }
         mbrd.next();
     }
     loop {
-        if mbrd.mmu.borrow().get(0xa000) != 0x80 {
+        if mbrd.mmu.borrow().lb(0xa000) != 0x80 {
             break;
         }
         mbrd.next();
     }
 
     for i in 0..1024 {
-        let ch = mbrd.mmu.borrow().get(0xa004 + i);
+        let ch = mbrd.mmu.borrow().lb(0xa004 + i);
         if ch == 0 {
             break;
         }
         print!("{}", char::from(ch));
     }
     std::io::stdout().flush().unwrap();
-    std::process::exit(i32::from(mbrd.mmu.borrow().get(0xa000)));
+    std::process::exit(i32::from(mbrd.mmu.borrow().lb(0xa000)));
 }
 
 fn mode_minifb(argu: &Argument) {

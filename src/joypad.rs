@@ -14,8 +14,8 @@
 //
 // Note: Most programs are repeatedly reading from this port several times (the first reads used as short delay,
 // allowing the inputs to stabilize, and only the value from the last read actually used).
+use super::convention::Memory;
 use super::intf::{Flag, Intf};
-use super::memory::Memory;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -56,7 +56,7 @@ impl Joypad {
 }
 
 impl Memory for Joypad {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         assert_eq!(a, 0xff00);
         if (self.select & 0b0001_0000) == 0x00 {
             return self.select | (self.matrix & 0x0f);
@@ -67,7 +67,7 @@ impl Memory for Joypad {
         self.select
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         assert_eq!(a, 0xff00);
         self.select = v;
     }

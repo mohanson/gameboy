@@ -1,6 +1,5 @@
-use super::convention::Term;
+use super::convention::{Memory, Term};
 use super::intf::{Flag, Intf};
-use super::memory::Memory;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -46,7 +45,7 @@ impl Hdma {
 }
 
 impl Memory for Hdma {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0xff51 => (self.src >> 8) as u8,
             0xff52 => self.src as u8,
@@ -57,7 +56,7 @@ impl Memory for Hdma {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0xff51 => self.src = (u16::from(v) << 8) | (self.src & 0x00ff),
             0xff52 => self.src = (self.src & 0xff00) | u16::from(v & 0xf0),
@@ -596,10 +595,10 @@ impl Gpu {
         let sprite_size = if self.lcdc.bit2() { 16 } else { 8 };
         for i in 0..40 {
             let sprite_addr = 0xfe00 + (i as u16) * 4;
-            let py = self.get(sprite_addr).wrapping_sub(16);
-            let px = self.get(sprite_addr + 1).wrapping_sub(8);
-            let tile_number = self.get(sprite_addr + 2) & if self.lcdc.bit2() { 0xfe } else { 0xff };
-            let tile_attr = Attr::from(self.get(sprite_addr + 3));
+            let py = self.lb(sprite_addr).wrapping_sub(16);
+            let px = self.lb(sprite_addr + 1).wrapping_sub(8);
+            let tile_number = self.lb(sprite_addr + 2) & if self.lcdc.bit2() { 0xfe } else { 0xff };
+            let tile_attr = Attr::from(self.lb(sprite_addr + 3));
 
             // If this is true the scanline is out of the area we care about
             if py <= 0xff - sprite_size + 1 {
@@ -674,7 +673,7 @@ impl Gpu {
 }
 
 impl Memory for Gpu {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000],
             0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00],
@@ -729,7 +728,7 @@ impl Memory for Gpu {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v,
             0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00] = v,

@@ -6,7 +6,6 @@ pub mod cpu;
 pub mod gpu;
 pub mod intf;
 pub mod joypad;
-pub mod memory;
 pub mod mmunit;
 pub mod motherboard;
 pub mod register;

@@ -8,7 +8,7 @@
 // Reference:
 //   - http://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
 //   - http://gbdev.gg8.se/wiki/articles/Memory_Bank_Controllers
-use super::memory::Memory;
+use super::convention::{Memory, Stable};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,10 +89,6 @@ const RAM_BANK_NUMBER: LazyLock<HashMap<u8, usize>> = LazyLock::new(|| {
     m
 });
 
-pub trait Stable: Memory {
-    fn save(&self);
-}
-
 // This is a 32kB (256kb) ROM and occupies 0000-7FFF.
 pub struct RomOnly {
     rom: Vec<u8>,
@@ -105,11 +101,11 @@ impl RomOnly {
 }
 
 impl Memory for RomOnly {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         self.rom[a as usize]
     }
 
-    fn set(&mut self, _: u16, _: u8) {}
+    fn sb(&mut self, _: u16, _: u8) {}
 }
 
 impl Stable for RomOnly {
@@ -192,7 +188,7 @@ impl Mbc1 {
 }
 
 impl Memory for Mbc1 {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x3fff => {
                 let rom_bank = match self.mbc_mode {
@@ -232,7 +228,7 @@ impl Memory for Mbc1 {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0x0000..=0x1fff => {
                 self.ram_open = v & 0x0f == 0x0a;
@@ -311,7 +307,7 @@ impl Mbc2 {
 }
 
 impl Memory for Mbc2 {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
@@ -336,7 +332,7 @@ impl Memory for Mbc2 {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         // Only the lower 4 bits of the "bytes" in this memory area are used.
         let v = v & 0x0f;
         match a {
@@ -406,7 +402,7 @@ impl Mbc3Clock {
 }
 
 impl Memory for Mbc3Clock {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0x08 => self.s,
             0x09 => self.m,
@@ -417,7 +413,7 @@ impl Memory for Mbc3Clock {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0x08 => self.s = v,
             0x09 => self.m = v,
@@ -522,7 +518,7 @@ impl Mbc3 {
 }
 
 impl Memory for Mbc3 {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
@@ -540,13 +536,13 @@ impl Memory for Mbc3 {
                     let bank_off = a as usize & 0x1fff;
                     return self.ram[ram_bank * 0x2000 + bank_off];
                 }
-                self.rtc.get(self.ram_bank as u16)
+                self.rtc.lb(self.ram_bank as u16)
             }
             _ => unreachable!(),
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0x0000..=0x1fff => {
                 self.ram_open = v & 0x0f == 0x0a;
@@ -572,7 +568,7 @@ impl Memory for Mbc3 {
                     self.ram[ram_bank * 0x2000 + bank_off] = v;
                     return;
                 }
-                self.rtc.set(self.ram_bank as u16, v)
+                self.rtc.sb(self.ram_bank as u16, v)
             }
             _ => unreachable!(),
         }
@@ -622,7 +618,7 @@ impl Mbc5 {
 }
 
 impl Memory for Mbc5 {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
@@ -642,7 +638,7 @@ impl Memory for Mbc5 {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0x0000..=0x1fff => {
                 self.ram_open = v & 0x0f == 0x0a;
@@ -725,7 +721,7 @@ impl HuC1 {
 }
 
 impl Memory for HuC1 {
-    fn get(&self, a: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
@@ -746,7 +742,7 @@ impl Memory for HuC1 {
         }
     }
 
-    fn set(&mut self, a: u16, v: u8) {
+    fn sb(&mut self, a: u16, v: u8) {
         match a {
             0x0000..=0x1fff => {
                 self.ram_open = v != 0x0e;
@@ -893,12 +889,12 @@ impl Cartridge {
 }
 
 impl Memory for Cartridge {
-    fn get(&self, a: u16) -> u8 {
-        self.inner.get(a)
+    fn lb(&self, a: u16) -> u8 {
+        self.inner.lb(a)
     }
 
-    fn set(&mut self, a: u16, v: u8) {
-        self.inner.set(a, v);
+    fn sb(&mut self, a: u16, v: u8) {
+        self.inner.sb(a, v);
     }
 }
 
