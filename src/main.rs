@@ -3,6 +3,7 @@
 use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
+use gameboy::cartridge::Stable;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::memory::Memory;
 use gameboy::motherboard::MotherBoard;
@@ -80,7 +81,7 @@ fn mode_blargg(argu: &Argument) {
 
 fn mode_minifb(argu: &Argument) {
     let mut mbrd = MotherBoard::power_up(&argu.rom);
-    let rom_name = mbrd.mmu.borrow().cartridge.title();
+    let rom_name = mbrd.mmu.borrow().cartridge.title.clone();
 
     let mut option = minifb::WindowOptions::default();
     option.resize = true;

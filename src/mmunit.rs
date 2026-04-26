@@ -2,7 +2,7 @@
 // having all memory references passed through itself, primarily performing the translation of virtual memory addresses
 // to physical addresses.
 use super::apu::Apu;
-use super::cartridge::{self, Cartridge};
+use super::cartridge::Cartridge;
 use super::convention::Term;
 use super::gpu::{Gpu, Hdma, HdmaMode};
 use super::intf::Intf;
@@ -21,7 +21,7 @@ pub enum Speed {
 }
 
 pub struct Mmunit {
-    pub cartridge: Box<dyn Cartridge>,
+    pub cartridge: Cartridge,
     pub apu: Apu,
     pub gpu: Gpu,
     pub joypad: Joypad,
@@ -40,7 +40,7 @@ pub struct Mmunit {
 
 impl Mmunit {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
-        let cart = cartridge::power_up(path);
+        let cart = Cartridge::power_up(path);
         let term = match cart.get(0x0143) & 0x80 {
             0x80 => Term::GBC,
             _ => Term::GB,

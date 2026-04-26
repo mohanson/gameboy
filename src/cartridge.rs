@@ -89,7 +89,7 @@ const RAM_BANK_NUMBER: LazyLock<HashMap<u8, usize>> = LazyLock::new(|| {
     m
 });
 
-pub trait Stable {
+pub trait Stable: Memory {
     fn sav(&self);
 }
 
@@ -785,129 +785,121 @@ impl Stable for HuC1 {
     }
 }
 
-// Specifies which Memory Bank Controller (if any) is used in the cartridge, and if further external hardware exists in
-// the cartridge.
-pub fn power_up(path: impl AsRef<Path>) -> Box<dyn Cartridge> {
-    rog::debugln!("Loading cartridge from {:?}", path.as_ref());
-    let rom = fs::read(&path).unwrap();
-    assert!(rom.len() >= 0x150, "Missing required information area which located at 0100-014F");
-    assert!(rom[0x0104..0x0134] == NINTENDO_LOGO, "Nintendo logo is not correct");
-    let rom_max = ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap() * ROM_BANK_LENGTH;
-    assert!(rom.len() <= rom_max, "Rom size more than {}", rom_max);
-    let cart: Box<dyn Cartridge> = match rom[0x0147] {
-        0x00 => Box::new(RomOnly::power_up(rom)),
-        0x01 => Box::new(Mbc1::power_up(rom, vec![], "")),
-        0x02 => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let ram = vec![0; ram_size];
-            Box::new(Mbc1::power_up(rom, ram, ""))
-        }
-        0x03 => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-            Box::new(Mbc1::power_up(rom, ram, sav_path))
-        }
-        0x05 => {
-            let ram_size = 512;
-            let ram = vec![0; ram_size];
-            Box::new(Mbc2::power_up(rom, ram, ""))
-        }
-        0x06 => {
-            let ram_size = 512;
-            let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-            Box::new(Mbc2::power_up(rom, ram, sav_path))
-        }
-        0x0f => {
-            let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
-            Box::new(Mbc3::power_up(rom, vec![], sav_path, rtc_path))
-        }
-        0x10 => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
-            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-            Box::new(Mbc3::power_up(rom, ram, sav_path, rtc_path))
-        }
-        0x11 => Box::new(Mbc3::power_up(rom, vec![], "", "")),
-        0x12 => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let ram = vec![0; ram_size];
-            Box::new(Mbc3::power_up(rom, ram, "", ""))
-        }
-        0x13 => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-            Box::new(Mbc3::power_up(rom, ram, sav_path, ""))
-        }
-        0x19 => Box::new(Mbc5::power_up(rom, vec![], "")),
-        0x1a => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let ram = vec![0; ram_size];
-            Box::new(Mbc5::power_up(rom, ram, ""))
-        }
-        0x1b => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-            Box::new(Mbc5::power_up(rom, ram, sav_path))
-        }
-        0xff => {
-            let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
-            let sav_path = path.as_ref().to_path_buf().with_extension("sav");
-            let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-            Box::new(HuC1::power_up(rom, ram, sav_path))
-        }
-        _ => unreachable!(),
-    };
-    rog::debugln!("Cartridge name is {}", cart.title());
-    rog::debugln!("Cartridge type is {}", READABLE_TYPE.get(&cart.get(0x0147)).unwrap());
-    ensure_header_checksum(cart.as_ref());
-    cart
+pub struct Cartridge {
+    pub inner: Box<dyn Stable>,
+    pub title: String,
 }
 
-// In position 0x14d, contains an 8 bit checksum across the cartridge header bytes 0134-014C. The checksum is
-// calculated as follows:
-//
-//   x=0:FOR i=0134h TO 014Ch:x=x-MEM[i]-1:NEXT
-//
-// The lower 8 bits of the result must be the same than the value in this entry. The GAME WON'T WORK if this
-// checksum is incorrect.
-fn ensure_header_checksum(cart: &dyn Cartridge) {
-    let mut v: u8 = 0;
-    for i in 0x0134..0x014d {
-        v = v.wrapping_sub(cart.get(i)).wrapping_sub(1);
-    }
-    if cart.get(0x014d) != v {
-        panic!("Cartridge's header checksum is incorrect")
-    }
-}
-
-pub trait Cartridge: Memory + Stable + Send {
-    // Title of the game in UPPER CASE ASCII. If it is less than 16 characters then the remaining bytes are filled with
-    // 00's. When inventing the CGB, Nintendo has reduced the length of this area to 15 characters, and some months
-    // later they had the fantastic idea to reduce it to 11 characters only. The new meaning of the ex-title bytes is
-    // described below.
-    fn title(&self) -> String {
-        let mut buf = String::new();
-        let ic = 0x0134;
-        let oc = if self.get(0x0143) & 0x80 != 0 { 0x013f } else { 0x0144 };
-        for i in ic..oc {
-            match self.get(i) {
+impl Cartridge {
+    // Specifies which Memory Bank Controller (if any) is used in the cartridge, and if further external hardware exists
+    // in the cartridge.
+    pub fn power_up(path: impl AsRef<Path>) -> Self {
+        rog::debugln!("Loading cartridge from {:?}", path.as_ref());
+        let rom = fs::read(&path).unwrap();
+        assert!(rom.len() >= 0x150, "Missing required information area which located at 0100-014F");
+        assert!(rom[0x0104..0x0134] == NINTENDO_LOGO, "Nintendo logo is not correct");
+        let rom_max = ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap() * ROM_BANK_LENGTH;
+        assert!(rom.len() <= rom_max, "Rom size more than {}", rom_max);
+        let mut title = String::new();
+        for i in 0x0134..if rom[0x0143] & 0x80 != 0 { 0x013f } else { 0x0144 } {
+            match rom[i] {
                 0 => break,
-                v => buf.push(v as char),
+                v => title.push(v as char),
             }
         }
-        buf
+        rog::debugln!("Cartridge name is {}", title);
+        rog::debugln!("Cartridge type is {}", READABLE_TYPE.get(&rom[0x0147]).unwrap());
+        let mut check: u8 = 0;
+        for i in 0x0134..0x014d {
+            check = check.wrapping_sub(rom[i]).wrapping_sub(1);
+        }
+        assert!(rom[0x014d] == check, "Cartridge's header checksum is incorrect");
+        let mut inner: Box<dyn Stable> = match rom[0x0147] {
+            0x00 => Box::new(RomOnly::power_up(rom)),
+            0x01 => Box::new(Mbc1::power_up(rom, vec![], "")),
+            0x02 => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let ram = vec![0; ram_size];
+                Box::new(Mbc1::power_up(rom, ram, ""))
+            }
+            0x03 => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let sav_path = path.as_ref().to_path_buf().with_extension("sav");
+                let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
+                Box::new(Mbc1::power_up(rom, ram, sav_path))
+            }
+            0x05 => {
+                let ram_size = 512;
+                let ram = vec![0; ram_size];
+                Box::new(Mbc2::power_up(rom, ram, ""))
+            }
+            0x06 => {
+                let ram_size = 512;
+                let sav_path = path.as_ref().to_path_buf().with_extension("sav");
+                let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
+                Box::new(Mbc2::power_up(rom, ram, sav_path))
+            }
+            0x0f => {
+                let sav_path = path.as_ref().to_path_buf().with_extension("sav");
+                let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
+                Box::new(Mbc3::power_up(rom, vec![], sav_path, rtc_path))
+            }
+            0x10 => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let sav_path = path.as_ref().to_path_buf().with_extension("sav");
+                let rtc_path = path.as_ref().to_path_buf().with_extension("rtc");
+                let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
+                Box::new(Mbc3::power_up(rom, ram, sav_path, rtc_path))
+            }
+            0x11 => Box::new(Mbc3::power_up(rom, vec![], "", "")),
+            0x12 => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let ram = vec![0; ram_size];
+                Box::new(Mbc3::power_up(rom, ram, "", ""))
+            }
+            0x13 => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let sav_path = path.as_ref().to_path_buf().with_extension("sav");
+                let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
+                Box::new(Mbc3::power_up(rom, ram, sav_path, ""))
+            }
+            0x19 => Box::new(Mbc5::power_up(rom, vec![], "")),
+            0x1a => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let ram = vec![0; ram_size];
+                Box::new(Mbc5::power_up(rom, ram, ""))
+            }
+            0x1b => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let sav_path = path.as_ref().to_path_buf().with_extension("sav");
+                let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
+                Box::new(Mbc5::power_up(rom, ram, sav_path))
+            }
+            0xff => {
+                let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
+                let sav_path = path.as_ref().to_path_buf().with_extension("sav");
+                let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
+                Box::new(HuC1::power_up(rom, ram, sav_path))
+            }
+            _ => unreachable!(),
+        };
+        let _ = inner.as_mut();
+        Self { inner, title }
     }
 }
 
-impl Cartridge for RomOnly {}
-impl Cartridge for Mbc1 {}
-impl Cartridge for Mbc2 {}
-impl Cartridge for Mbc3 {}
-impl Cartridge for Mbc5 {}
-impl Cartridge for HuC1 {}
+impl Memory for Cartridge {
+    fn get(&self, a: u16) -> u8 {
+        self.inner.get(a)
+    }
+
+    fn set(&mut self, a: u16, v: u8) {
+        self.inner.set(a, v);
+    }
+}
+
+impl Stable for Cartridge {
+    fn sav(&self) {
+        self.inner.sav();
+    }
+}
