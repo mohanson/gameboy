@@ -201,5 +201,5 @@ fn mode_minifb(argu: &Argument) {
         }
     }
 
-    mbrd.mmu.borrow_mut().cartridge.sav();
+    mbrd.mmu.borrow_mut().cartridge.save();
 }

@@ -90,7 +90,7 @@ const RAM_BANK_NUMBER: LazyLock<HashMap<u8, usize>> = LazyLock::new(|| {
 });
 
 pub trait Stable: Memory {
-    fn sav(&self);
+    fn save(&self);
 }
 
 // This is a 32kB (256kb) ROM and occupies 0000-7FFF.
@@ -113,7 +113,7 @@ impl Memory for RomOnly {
 }
 
 impl Stable for RomOnly {
-    fn sav(&self) {}
+    fn save(&self) {}
 }
 
 // This is the first MBC chip for the gameboy. Any newer MBC chips are working similiar, so that is relative easy to
@@ -265,11 +265,11 @@ impl Memory for Mbc1 {
 }
 
 impl Stable for Mbc1 {
-    fn sav(&self) {
+    fn save(&self) {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        rog::debugln!("Ram is being persisted");
+        rog::debugln!("Cartridge ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
@@ -368,11 +368,11 @@ impl Memory for Mbc2 {
 }
 
 impl Stable for Mbc2 {
-    fn sav(&self) {
+    fn save(&self) {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        rog::debugln!("Ram is being persisted");
+        rog::debugln!("Cartridge ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
@@ -503,7 +503,7 @@ pub struct Mbc3 {
 }
 
 impl Mbc3 {
-    pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, rtc: u64, sav: impl AsRef<Path>) -> Self {
+    pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, rtc: u64, sav: impl AsRef<Path>, ext: impl AsRef<Path>) -> Self {
         let rom_maxm = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
         let ram_maxm = *RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap();
         Self {
@@ -516,7 +516,7 @@ impl Mbc3 {
             ram_open: false,
             rtc: Mbc3Clock::power_up(rtc),
             sav_path: PathBuf::from(sav.as_ref()),
-            rtc_path: PathBuf::from(sav.as_ref().to_path_buf().with_extension("rtc")),
+            rtc_path: PathBuf::from(ext.as_ref()),
         }
     }
 }
@@ -580,11 +580,11 @@ impl Memory for Mbc3 {
 }
 
 impl Stable for Mbc3 {
-    fn sav(&self) {
+    fn save(&self) {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        rog::debugln!("Ram is being persisted");
+        rog::debugln!("Cartridge ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
         if self.rtc_path.to_str().unwrap().is_empty() {
             return;
@@ -664,11 +664,11 @@ impl Memory for Mbc5 {
 }
 
 impl Stable for Mbc5 {
-    fn sav(&self) {
+    fn save(&self) {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        rog::debugln!("Ram is being persisted");
+        rog::debugln!("Cartridge ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
@@ -772,11 +772,11 @@ impl Memory for HuC1 {
 }
 
 impl Stable for HuC1 {
-    fn sav(&self) {
+    fn save(&self) {
         if self.sav_path.to_str().unwrap().is_empty() {
             return;
         }
-        rog::debugln!("Ram is being persisted");
+        rog::debugln!("Cartridge ram is being persisted");
         fs::write(&self.sav_path, &self.ram).unwrap();
     }
 }
@@ -790,7 +790,7 @@ impl Cartridge {
     // Specifies which Memory Bank Controller (if any) is used in the cartridge, and if further external hardware exists
     // in the cartridge.
     pub fn power_up(path: impl AsRef<Path>) -> Self {
-        rog::debugln!("Loading cartridge from {:?}", path.as_ref());
+        rog::debugln!("Cartridge loading from {:?}", path.as_ref());
         let rom = fs::read(&path).unwrap();
         assert!(rom.len() >= 0x150, "Missing required information area which located at 0100-014F");
         assert!(rom[0x0104..0x0134] == NINTENDO_LOGO, "Nintendo logo is not correct");
@@ -842,7 +842,7 @@ impl Cartridge {
                     Ok(ok) => u64::from_be_bytes(ok.try_into().unwrap()),
                     Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
                 };
-                Box::new(Mbc3::power_up(rom, vec![], rtc, sav_path))
+                Box::new(Mbc3::power_up(rom, vec![], rtc, sav_path, rtc_path))
             }
             0x10 => {
                 let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
@@ -853,19 +853,19 @@ impl Cartridge {
                     Ok(ok) => u64::from_be_bytes(ok.try_into().unwrap()),
                     Err(_) => SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
                 };
-                Box::new(Mbc3::power_up(rom, ram, rtc, sav_path))
+                Box::new(Mbc3::power_up(rom, ram, rtc, sav_path, rtc_path))
             }
-            0x11 => Box::new(Mbc3::power_up(rom, vec![], 0, "")),
+            0x11 => Box::new(Mbc3::power_up(rom, vec![], 0, "", "")),
             0x12 => {
                 let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
                 let ram = vec![0; ram_size];
-                Box::new(Mbc3::power_up(rom, ram, 0, ""))
+                Box::new(Mbc3::power_up(rom, ram, 0, "", ""))
             }
             0x13 => {
                 let ram_size = RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap() * RAM_BANK_LENGTH;
                 let sav_path = path.as_ref().to_path_buf().with_extension("sav");
                 let ram = fs::read(&sav_path).unwrap_or_else(|_| vec![0; ram_size]);
-                Box::new(Mbc3::power_up(rom, ram, 0, sav_path))
+                Box::new(Mbc3::power_up(rom, ram, 0, sav_path, ""))
             }
             0x19 => Box::new(Mbc5::power_up(rom, vec![], "")),
             0x1a => {
@@ -903,7 +903,7 @@ impl Memory for Cartridge {
 }
 
 impl Stable for Cartridge {
-    fn sav(&self) {
-        self.inner.sav();
+    fn save(&self) {
+        self.inner.save();
     }
 }
