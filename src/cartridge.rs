@@ -599,16 +599,29 @@ impl Stable for Mbc3 {
 
 pub struct Mbc5 {
     rom: Vec<u8>,
-    ram: Vec<u8>,
     rom_bank: usize,
+    rom_maxm: usize,
+    ram: Vec<u8>,
     ram_bank: usize,
-    ram_enable: bool,
+    ram_maxm: usize,
+    ram_open: bool,
     sav_path: PathBuf,
 }
 
 impl Mbc5 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self { rom, ram, rom_bank: 1, ram_bank: 0, ram_enable: false, sav_path: PathBuf::from(sav.as_ref()) }
+        let rom_maxm = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
+        let ram_maxm = *RAM_BANK_NUMBER.get(&rom[0x0149]).unwrap();
+        Self {
+            rom,
+            rom_bank: 1,
+            rom_maxm,
+            ram,
+            ram_bank: 0,
+            ram_maxm,
+            ram_open: false,
+            sav_path: PathBuf::from(sav.as_ref()),
+        }
     }
 }
 
@@ -617,36 +630,39 @@ impl Memory for Mbc5 {
         match a {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
-                let i = self.rom_bank * 0x4000 + a as usize - 0x4000;
-                self.rom[i]
+                let rom_bank = self.rom_bank % self.rom_maxm;
+                let bank_off = a as usize & 0x3fff;
+                self.rom[rom_bank * 0x4000 + bank_off]
             }
             0xa000..=0xbfff => {
-                if self.ram_enable {
-                    let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
-                    self.ram[i]
-                } else {
-                    0x00
+                if !self.ram_open {
+                    return 0x00;
                 }
+                let ram_bank = self.ram_bank % self.ram_maxm;
+                let bank_off = a as usize & 0x1fff;
+                self.ram[ram_bank * 0x2000 + bank_off]
             }
-            _ => 0x00,
+            _ => unreachable!(),
         }
     }
 
     fn set(&mut self, a: u16, v: u8) {
         match a {
-            0xa000..=0xbfff => {
-                if self.ram_enable {
-                    let i = self.ram_bank * 0x2000 + a as usize - 0xa000;
-                    self.ram[i] = v;
-                }
-            }
             0x0000..=0x1fff => {
-                self.ram_enable = v & 0x0f == 0x0a;
+                self.ram_open = v & 0x0f == 0x0a;
             }
-            0x2000..=0x2fff => self.rom_bank = (self.rom_bank & 0x100) | (v as usize),
+            0x2000..=0x2fff => self.rom_bank = (self.rom_bank & 0x100) | (((v & 0xff) as usize) << 0),
             0x3000..=0x3fff => self.rom_bank = (self.rom_bank & 0x0ff) | (((v & 0x01) as usize) << 8),
             0x4000..=0x5fff => self.ram_bank = (v & 0x0f) as usize,
-            _ => {}
+            0xa000..=0xbfff => {
+                if !self.ram_open {
+                    return;
+                }
+                let ram_bank = self.ram_bank % self.ram_maxm;
+                let bank_off = a as usize & 0x1fff;
+                self.ram[ram_bank * 0x2000 + bank_off] = v;
+            }
+            _ => unreachable!(),
         }
     }
 }
