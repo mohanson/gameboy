@@ -68,13 +68,13 @@ pub struct Cpu {
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
 // If 'Flags affected' is not given for a command then none are affected.
 impl Cpu {
-    fn imm(&mut self) -> u8 {
+    fn fetch_b(&mut self) -> u8 {
         let v = self.mem.borrow().lb(self.reg.pc);
         self.reg.pc += 1;
         v
     }
 
-    fn imm_word(&mut self) -> u16 {
+    fn fetch_h(&mut self) -> u16 {
         let v = self.mem.borrow().lh(self.reg.pc);
         self.reg.pc += 2;
         v
@@ -289,7 +289,7 @@ impl Cpu {
     // C - Set or reset according to operation.
     fn alu_add_sp(&mut self) {
         let a = self.reg.sp;
-        let b = i16::from(self.imm() as i8) as u16;
+        let b = i16::from(self.fetch_b() as i8) as u16;
         self.reg.set_flag(C, (a & 0x00ff) + (b & 0x00ff) > 0x00ff);
         self.reg.set_flag(H, (a & 0x000f) + (b & 0x000f) > 0x000f);
         self.reg.set_flag(N, false);
@@ -590,22 +590,22 @@ impl Cpu {
     }
 
     fn ex(&mut self) -> u32 {
-        let opcode = self.imm();
+        let opcode = self.fetch_b();
         let mut cbcode: u8 = 0;
         match opcode {
             // LD r8, d8
-            0x06 => self.reg.b = self.imm(),
-            0x0e => self.reg.c = self.imm(),
-            0x16 => self.reg.d = self.imm(),
-            0x1e => self.reg.e = self.imm(),
-            0x26 => self.reg.h = self.imm(),
-            0x2e => self.reg.l = self.imm(),
+            0x06 => self.reg.b = self.fetch_b(),
+            0x0e => self.reg.c = self.fetch_b(),
+            0x16 => self.reg.d = self.fetch_b(),
+            0x1e => self.reg.e = self.fetch_b(),
+            0x26 => self.reg.h = self.fetch_b(),
+            0x2e => self.reg.l = self.fetch_b(),
             0x36 => {
                 let a = self.reg.get_hl();
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.mem.borrow_mut().sb(a, v);
             }
-            0x3e => self.reg.a = self.imm(),
+            0x3e => self.reg.a = self.fetch_b(),
 
             // LD (r16), A
             0x02 => self.mem.borrow_mut().sb(self.reg.get_bc(), self.reg.a),
@@ -707,12 +707,12 @@ impl Cpu {
 
             // LDH (a8), A
             0xe0 => {
-                let a = 0xff00 | u16::from(self.imm());
+                let a = 0xff00 | u16::from(self.fetch_b());
                 self.mem.borrow_mut().sb(a, self.reg.a);
             }
             // LDH A, (a8)
             0xf0 => {
-                let a = 0xff00 | u16::from(self.imm());
+                let a = 0xff00 | u16::from(self.fetch_b());
                 self.reg.a = self.mem.borrow().lb(a);
             }
 
@@ -723,18 +723,18 @@ impl Cpu {
 
             // LD (a16), A
             0xea => {
-                let a = self.imm_word();
+                let a = self.fetch_h();
                 self.mem.borrow_mut().sb(a, self.reg.a);
             }
             // LD A, (a16)
             0xfa => {
-                let a = self.imm_word();
+                let a = self.fetch_h();
                 self.reg.a = self.mem.borrow().lb(a);
             }
 
             // LD r16, d16
             0x01 | 0x11 | 0x21 | 0x31 => {
-                let v = self.imm_word();
+                let v = self.fetch_h();
                 match opcode {
                     0x01 => self.reg.set_bc(v),
                     0x11 => self.reg.set_de(v),
@@ -749,7 +749,7 @@ impl Cpu {
             // LD SP, d8
             0xf8 => {
                 let a = self.reg.sp;
-                let b = i16::from(self.imm() as i8) as u16;
+                let b = i16::from(self.fetch_b() as i8) as u16;
                 self.reg.set_flag(C, (a & 0x00ff) + (b & 0x00ff) > 0x00ff);
                 self.reg.set_flag(H, (a & 0x000f) + (b & 0x000f) > 0x000f);
                 self.reg.set_flag(N, false);
@@ -758,7 +758,7 @@ impl Cpu {
             }
             // LD (d16), SP
             0x08 => {
-                let a = self.imm_word();
+                let a = self.fetch_h();
                 self.mem.borrow_mut().sh(a, self.reg.sp);
             }
 
@@ -793,7 +793,7 @@ impl Cpu {
             }
             0x87 => self.alu_add(self.reg.a),
             0xc6 => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_add(v);
             }
 
@@ -810,7 +810,7 @@ impl Cpu {
             }
             0x8f => self.alu_adc(self.reg.a),
             0xce => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_adc(v);
             }
 
@@ -827,7 +827,7 @@ impl Cpu {
             }
             0x97 => self.alu_sub(self.reg.a),
             0xd6 => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_sub(v);
             }
 
@@ -844,7 +844,7 @@ impl Cpu {
             }
             0x9f => self.alu_sbc(self.reg.a),
             0xde => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_sbc(v);
             }
 
@@ -861,7 +861,7 @@ impl Cpu {
             }
             0xa7 => self.alu_and(self.reg.a),
             0xe6 => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_and(v);
             }
 
@@ -878,7 +878,7 @@ impl Cpu {
             }
             0xb7 => self.alu_or(self.reg.a),
             0xf6 => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_or(v);
             }
 
@@ -895,7 +895,7 @@ impl Cpu {
             }
             0xaf => self.alu_xor(self.reg.a),
             0xee => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_xor(v);
             }
 
@@ -912,7 +912,7 @@ impl Cpu {
             }
             0xbf => self.alu_cp(self.reg.a),
             0xfe => {
-                let v = self.imm();
+                let v = self.fetch_b();
                 self.alu_cp(v);
             }
 
@@ -1041,12 +1041,12 @@ impl Cpu {
             }
 
             // JUMP
-            0xc3 => self.reg.pc = self.imm_word(),
+            0xc3 => self.reg.pc = self.fetch_h(),
             0xe9 => self.reg.pc = self.reg.get_hl(),
 
             // JUMP IF
             0xc2 | 0xca | 0xd2 | 0xda => {
-                let pc = self.imm_word();
+                let pc = self.fetch_h();
                 let cond = match opcode {
                     0xc2 => !self.reg.get_flag(Z),
                     0xca => self.reg.get_flag(Z),
@@ -1061,7 +1061,7 @@ impl Cpu {
 
             // JR
             0x18 => {
-                let n = self.imm();
+                let n = self.fetch_b();
                 self.alu_jr(n);
             }
 
@@ -1074,7 +1074,7 @@ impl Cpu {
                     0x38 => self.reg.get_flag(C),
                     _ => panic!(""),
                 };
-                let n = self.imm();
+                let n = self.fetch_b();
                 if cond {
                     self.alu_jr(n);
                 }
@@ -1082,7 +1082,7 @@ impl Cpu {
 
             // CALL
             0xcd => {
-                let nn = self.imm_word();
+                let nn = self.fetch_h();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = nn;
             }
@@ -1096,7 +1096,7 @@ impl Cpu {
                     0xdc => self.reg.get_flag(C),
                     _ => panic!(""),
                 };
-                let nn = self.imm_word();
+                let nn = self.fetch_h();
                 if cond {
                     self.stack_add(self.reg.pc);
                     self.reg.pc = nn;
