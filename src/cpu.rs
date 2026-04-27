@@ -1608,57 +1608,23 @@ impl Cpu {
             0xfc => panic!("Opcode 0xfc is not implemented"),
             0xfd => panic!("Opcode 0xfd is not implemented"),
         };
-
         let ecycle = match opcode {
-            0x20 | 0x30 => {
-                if self.reg.get_flag(Z) {
-                    0x00
-                } else {
-                    0x01
-                }
-            }
-            0x28 | 0x38 => {
-                if self.reg.get_flag(Z) {
-                    0x01
-                } else {
-                    0x00
-                }
-            }
-            0xc0 | 0xd0 => {
-                if self.reg.get_flag(Z) {
-                    0x00
-                } else {
-                    0x03
-                }
-            }
-            0xc8 | 0xcc | 0xd8 | 0xdc => {
-                if self.reg.get_flag(Z) {
-                    0x03
-                } else {
-                    0x00
-                }
-            }
-            0xc2 | 0xd2 => {
-                if self.reg.get_flag(Z) {
-                    0x00
-                } else {
-                    0x01
-                }
-            }
-            0xca | 0xda => {
-                if self.reg.get_flag(Z) {
-                    0x01
-                } else {
-                    0x00
-                }
-            }
-            0xc4 | 0xd4 => {
-                if self.reg.get_flag(Z) {
-                    0x00
-                } else {
-                    0x03
-                }
-            }
+            0x20 if !self.reg.get_flag(Z) => 0x01,
+            0x28 if self.reg.get_flag(Z) => 0x01,
+            0x30 if !self.reg.get_flag(C) => 0x01,
+            0x38 if self.reg.get_flag(C) => 0x01,
+            0xc0 if !self.reg.get_flag(Z) => 0x03,
+            0xc2 if !self.reg.get_flag(Z) => 0x01,
+            0xc4 if !self.reg.get_flag(Z) => 0x03,
+            0xc8 if self.reg.get_flag(Z) => 0x03,
+            0xca if self.reg.get_flag(Z) => 0x01,
+            0xcc if self.reg.get_flag(Z) => 0x03,
+            0xd0 if !self.reg.get_flag(C) => 0x03,
+            0xd2 if !self.reg.get_flag(C) => 0x01,
+            0xd4 if !self.reg.get_flag(C) => 0x03,
+            0xd8 if self.reg.get_flag(C) => 0x03,
+            0xda if self.reg.get_flag(C) => 0x01,
+            0xdc if self.reg.get_flag(C) => 0x03,
             _ => 0x00,
         };
         if opcode == 0xcb { CB_CYCLES[cbcode as usize] } else { OP_CYCLES[opcode as usize] + ecycle }
