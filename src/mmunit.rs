@@ -41,8 +41,9 @@ impl Mmunit {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let cart = Cartridge::power_up(path);
         let term = match cart.lb(0x0143) & 0x80 {
-            0x80 => Term::GBC,
-            _ => Term::GB,
+            0x00 => Term::DMG,
+            0x80 => Term::CGB,
+            _ => unreachable!(),
         };
         let intf = Rc::new(RefCell::new(Intf::power_up()));
         let mut r = Self {

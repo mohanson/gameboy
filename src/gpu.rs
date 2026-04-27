@@ -485,7 +485,7 @@ impl Gpu {
                     self.intf.borrow_mut().hi(Flag::LCDStat);
                 }
                 // Render scanline
-                if self.term == Term::GBC || self.lcdc.bit0() {
+                if self.term == Term::CGB || self.lcdc.bit0() {
                     self.draw_bg();
                 }
                 if self.lcdc.bit1() {
@@ -530,7 +530,7 @@ impl Gpu {
             let tile_attr = Attr::from(self.get_ram1(tile_addr));
 
             let tile_y = if tile_attr.yflip { 7 - py % 8 } else { py % 8 };
-            let tile_y_data: [u8; 2] = if self.term == Term::GBC && tile_attr.bank {
+            let tile_y_data: [u8; 2] = if self.term == Term::CGB && tile_attr.bank {
                 let a = self.get_ram1(tile_location + u16::from(tile_y * 2));
                 let b = self.get_ram1(tile_location + u16::from(tile_y * 2) + 1);
                 [a, b]
@@ -549,7 +549,7 @@ impl Gpu {
             // Priority
             self.prio[x] = (tile_attr.priority, color);
 
-            if self.term == Term::GBC {
+            if self.term == Term::CGB {
                 let r = self.cbgpd[tile_attr.palette_number_1][color][0];
                 let g = self.cbgpd[tile_attr.palette_number_1][color][1];
                 let b = self.cbgpd[tile_attr.palette_number_1][color][2];
@@ -617,7 +617,7 @@ impl Gpu {
             let tile_y =
                 if tile_attr.yflip { sprite_size - 1 - self.ly.wrapping_sub(py) } else { self.ly.wrapping_sub(py) };
             let tile_y_addr = 0x8000u16 + u16::from(tile_number) * 16 + u16::from(tile_y) * 2;
-            let tile_y_data: [u8; 2] = if self.term == Term::GBC && tile_attr.bank {
+            let tile_y_data: [u8; 2] = if self.term == Term::CGB && tile_attr.bank {
                 let b1 = self.get_ram1(tile_y_addr);
                 let b2 = self.get_ram1(tile_y_addr + 1);
                 [b1, b2]
@@ -643,7 +643,7 @@ impl Gpu {
 
                 // Confirm the priority of background and sprite.
                 let prio = self.prio[px.wrapping_add(x) as usize];
-                let skip = if self.term == Term::GBC && !self.lcdc.bit0() {
+                let skip = if self.term == Term::CGB && !self.lcdc.bit0() {
                     prio.1 == 0
                 } else if prio.0 {
                     prio.1 != 0
@@ -654,7 +654,7 @@ impl Gpu {
                     continue;
                 }
 
-                if self.term == Term::GBC {
+                if self.term == Term::CGB {
                     let r = self.cobpd[tile_attr.palette_number_1][color][0];
                     let g = self.cobpd[tile_attr.palette_number_1][color][1];
                     let b = self.cobpd[tile_attr.palette_number_1][color][2];

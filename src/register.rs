@@ -3,14 +3,14 @@ use super::convention::Term;
 // The GameBoy has instructions & registers similar to the Intel 8080, Intel 8085, & Zilog Z80 microprocessors. It has
 // eight 8-bit registers A,B,C,D,E,F,H,L and two 16-bit registers SP & PC
 //
-// -------------
+// +-----------+
 // | A   Flags |  ---> Program Status Word
 // | B       C |  ---> B
 // | D       E |  ---> D
 // | H       L |  ---> H
 // |    SP     |  ---> Stack Pointer
 // |    PC     |  ---> Program Counter
-// -------------
+// +-----------+
 #[derive(Clone, Default)]
 pub struct Register {
     pub a: u8,
@@ -107,26 +107,31 @@ impl Register {
     pub fn power_up(term: Term) -> Self {
         let mut r = Self::default();
         match term {
-            Term::GB => {
+            Term::DMG => {
                 r.a = 0x01;
+                // If the header checksum is $00, then the carry and half-carry flags are clear; otherwise, they are
+                // both set.
+                // There doesn't seem to be any problem with fixing it directly.
+                // See: https://gbdev.io/pandocs/Power_Up_Sequence.html
+                r.f = 0x80;
+                r.b = 0x00;
+                r.c = 0x13;
+                r.d = 0x00;
+                r.e = 0xd8;
+                r.h = 0x01;
+                r.l = 0x4d;
             }
-            Term::GBP => {
-                r.a = 0xff;
-            }
-            Term::GBC => {
+            Term::CGB => {
                 r.a = 0x11;
-            }
-            Term::SGB => {
-                r.a = 0x01;
+                r.f = 0x80;
+                r.b = 0x00;
+                r.c = 0x00;
+                r.d = 0xff;
+                r.e = 0x56;
+                r.h = 0x00;
+                r.l = 0x0d;
             }
         }
-        r.f = 0xb0;
-        r.b = 0x00;
-        r.c = 0x13;
-        r.d = 0x00;
-        r.e = 0xd8;
-        r.h = 0x01;
-        r.l = 0x4d;
         // The GameBoy stack pointer is initialized to 0xfffe on power up but a programmer should not rely on this
         // setting and rather should explicitly set its value.
         r.sp = 0xfffe;
