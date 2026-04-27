@@ -66,6 +66,8 @@ impl Register {
 }
 
 // The Fleg Register consists of the following bits: Z, N, H, C, 0, 0, 0, 0.
+#[repr(u8)]
+#[derive(Clone, Copy)]
 pub enum Flag {
     // Zero Flag. This bit is set when the result of a math operationis zero or two values match when using the CP
     // instruction.
@@ -80,12 +82,12 @@ pub enum Flag {
 }
 
 impl Flag {
-    pub fn og(self) -> u8 {
+    pub fn bit(self) -> u8 {
         self as u8
     }
 
-    pub fn bw(self) -> u8 {
-        !self.og()
+    pub fn not(self) -> u8 {
+        !self.bit()
     }
 }
 
@@ -96,9 +98,9 @@ impl Register {
 
     pub fn set_flag(&mut self, f: Flag, v: bool) {
         if v {
-            self.f |= f.og();
+            self.f |= f.bit();
         } else {
-            self.f &= f.bw();
+            self.f &= f.not();
         }
     }
 }
