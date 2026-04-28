@@ -26,7 +26,7 @@ fn main() {
         ap.refer(&mut argu.mode).add_option(
             &["-m", "--mode"],
             argparse::Store,
-            "Set the emulator mode (minifb or blargg)",
+            "Set the emulator mode (blargg-memory-output, blargg-serial-output or minifb)",
         );
         ap.refer(&mut argu.scale).add_option(
             &["-x", "--scale-factor"],
@@ -41,7 +41,7 @@ fn main() {
         "blargg-memory-output" => mode_blargg_memory_output(&argu),
         "blargg-serial-output" => mode_blargg_serial_output(&argu),
         "minifb" => mode_minifb(&argu),
-        _ => panic!("Supported mode: blargg or minifb"),
+        _ => panic!("Supported mode: blargg-memory-output, blargg-serial-output or minifb"),
     }
 }
 
