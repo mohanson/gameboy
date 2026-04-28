@@ -38,13 +38,37 @@ fn main() {
     }
 
     match argu.mode.as_str() {
-        "blargg" => mode_blargg(&argu),
+        "blargg-memory-output" => mode_blargg_memory_output(&argu),
+        "blargg-serial-output" => mode_blargg_serial_output(&argu),
         "minifb" => mode_minifb(&argu),
         _ => panic!("Supported mode: blargg or minifb"),
     }
 }
 
-fn mode_blargg(argu: &Argument) {
+fn mode_blargg_serial_output(argu: &Argument) {
+    let mut mbrd = MotherBoard::power_up(&argu.rom);
+    let mut buff = String::new();
+    loop {
+        mbrd.next();
+        if mbrd.mmu.borrow().serial.control == 0x81 {
+            print!("{}", char::from(mbrd.mmu.borrow().serial.data));
+            buff.push(char::from(mbrd.mmu.borrow().serial.data));
+            // Clear the transfer start flag to indicate that the transfer is complete.
+            mbrd.mmu.borrow_mut().serial.control = 0x01;
+            std::io::stdout().flush().unwrap();
+            if buff.contains("Passed") {
+                print!("\n");
+                std::process::exit(0);
+            }
+            if buff.contains("Failed") {
+                print!("\n");
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn mode_blargg_memory_output(argu: &Argument) {
     let mut mbrd = MotherBoard::power_up(&argu.rom);
     loop {
         let a = [mbrd.mmu.borrow().lb(0xa001), mbrd.mmu.borrow().lb(0xa002), mbrd.mmu.borrow().lb(0xa003)];

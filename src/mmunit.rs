@@ -51,7 +51,7 @@ impl Mmunit {
             apu: Apu::power_up(48000),
             gpu: Gpu::power_up(term, intf.clone()),
             joypad: Joypad::power_up(intf.clone()),
-            serial: Serial::power_up(intf.clone()),
+            serial: Serial::power_up(),
             shift: false,
             speed: Speed::Normal,
             term,
@@ -176,7 +176,7 @@ impl Memory for Mmunit {
             0xfe00..=0xfe9f => self.gpu.lb(a),
             0xfea0..=0xfeff => 0x00,
             0xff00 => self.joypad.lb(a),
-            0xff01..=0xff02 => self.serial.get(a),
+            0xff01..=0xff02 => self.serial.lb(a),
             0xff04..=0xff07 => self.timer.get(a),
             0xff0f => self.intf.borrow().data,
             0xff10..=0xff3f => self.apu.lb(a),
@@ -207,7 +207,7 @@ impl Memory for Mmunit {
             0xfe00..=0xfe9f => self.gpu.sb(a, v),
             0xfea0..=0xfeff => {}
             0xff00 => self.joypad.sb(a, v),
-            0xff01..=0xff02 => self.serial.set(a, v),
+            0xff01..=0xff02 => self.serial.sb(a, v),
             0xff04..=0xff07 => self.timer.set(a, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff46 => {
