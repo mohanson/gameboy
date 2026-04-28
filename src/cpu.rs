@@ -604,14 +604,14 @@ impl Cpu {
     }
 
     fn ex(&mut self) -> u32 {
-        let opcode = self.fetch_b();
+        let mut opcode = self.fetch_b();
         // HALT bug: opcode is fetched without incrementing PC, so the same byte is re-read as the first operand,
         // duplicating the instruction byte.
         if self.low == 2 {
             self.low = 0;
             self.reg.pc = self.reg.pc.wrapping_sub(1);
         }
-        let mut cbcode: u8 = 0;
+        let mut cycles = OP_CYCLES[opcode as usize];
         match opcode {
             0x00 => {}
             0x01 => {
@@ -675,6 +675,7 @@ impl Cpu {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(Z) {
                     Alu::jr(self, b);
+                    cycles += 0x01;
                 }
             }
             0x21 => {
@@ -695,6 +696,7 @@ impl Cpu {
                 let b = self.fetch_b();
                 if self.reg.get_flag(Z) {
                     Alu::jr(self, b);
+                    cycles += 0x01;
                 }
             }
             0x29 => Alu::add_hl(self, self.reg.get_hl()),
@@ -712,6 +714,7 @@ impl Cpu {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(C) {
                     Alu::jr(self, b);
+                    cycles += 0x01;
                 }
             }
             0x31 => self.reg.sp = self.fetch_h(),
@@ -743,6 +746,7 @@ impl Cpu {
                 let b = self.fetch_b();
                 if self.reg.get_flag(C) {
                     Alu::jr(self, b);
+                    cycles += 0x01;
                 }
             }
             0x39 => Alu::add_hl(self, self.reg.sp),
@@ -921,6 +925,7 @@ impl Cpu {
             0xc0 => {
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
+                    cycles += 0x03;
                 }
             }
             0xc1 => {
@@ -931,6 +936,7 @@ impl Cpu {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = h;
+                    cycles += 0x01;
                 }
             }
             0xc3 => self.reg.pc = self.fetch_h(),
@@ -939,6 +945,7 @@ impl Cpu {
                 if !self.reg.get_flag(Z) {
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
+                    cycles += 0x03;
                 }
             }
             0xc5 => self.stack_add(self.reg.get_bc()),
@@ -953,6 +960,7 @@ impl Cpu {
             0xc8 => {
                 if self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
+                    cycles += 0x03;
                 }
             }
             0xc9 => self.reg.pc = self.stack_pop(),
@@ -960,12 +968,14 @@ impl Cpu {
                 let h = self.fetch_h();
                 if self.reg.get_flag(Z) {
                     self.reg.pc = h;
+                    cycles += 0x01;
                 }
             }
             // Extended Bit Operations
             0xcb => {
-                cbcode = self.fetch_b();
-                match cbcode {
+                opcode = self.fetch_b();
+                cycles += CB_CYCLES[opcode as usize];
+                match opcode {
                     // RLC r8
                     0x00 => self.reg.b = Alu::rlc(self, self.reg.b),
                     0x01 => self.reg.c = Alu::rlc(self, self.reg.c),
@@ -1382,6 +1392,7 @@ impl Cpu {
                 if self.reg.get_flag(Z) {
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
+                    cycles += 0x03;
                 }
             }
             0xcd => {
@@ -1400,6 +1411,7 @@ impl Cpu {
             0xd0 => {
                 if !self.reg.get_flag(C) {
                     self.reg.pc = self.stack_pop();
+                    cycles += 0x03;
                 }
             }
             0xd1 => {
@@ -1410,6 +1422,7 @@ impl Cpu {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(C) {
                     self.reg.pc = h;
+                    cycles += 0x01;
                 }
             }
             0xd3 => unreachable!(),
@@ -1419,6 +1432,7 @@ impl Cpu {
                 if !self.reg.get_flag(C) {
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
+                    cycles += 0x03;
                 }
             }
             0xd5 => self.stack_add(self.reg.get_de()),
@@ -1433,6 +1447,7 @@ impl Cpu {
             0xd8 => {
                 if self.reg.get_flag(C) {
                     self.reg.pc = self.stack_pop();
+                    cycles += 0x03;
                 }
             }
             0xd9 => {
@@ -1443,6 +1458,7 @@ impl Cpu {
                 let h = self.fetch_h();
                 if self.reg.get_flag(C) {
                     self.reg.pc = h;
+                    cycles += 0x01;
                 }
             }
             0xdb => unreachable!(),
@@ -1451,6 +1467,7 @@ impl Cpu {
                 if self.reg.get_flag(C) {
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
+                    cycles += 0x03;
                 }
             }
             0xdd => unreachable!(),
@@ -1545,26 +1562,7 @@ impl Cpu {
                 self.reg.pc = 0x38;
             }
         };
-        let ecycle = match opcode {
-            0x20 if !self.reg.get_flag(Z) => 0x01,
-            0x28 if self.reg.get_flag(Z) => 0x01,
-            0x30 if !self.reg.get_flag(C) => 0x01,
-            0x38 if self.reg.get_flag(C) => 0x01,
-            0xc0 if !self.reg.get_flag(Z) => 0x03,
-            0xc2 if !self.reg.get_flag(Z) => 0x01,
-            0xc4 if !self.reg.get_flag(Z) => 0x03,
-            0xc8 if self.reg.get_flag(Z) => 0x03,
-            0xca if self.reg.get_flag(Z) => 0x01,
-            0xcc if self.reg.get_flag(Z) => 0x03,
-            0xd0 if !self.reg.get_flag(C) => 0x03,
-            0xd2 if !self.reg.get_flag(C) => 0x01,
-            0xd4 if !self.reg.get_flag(C) => 0x03,
-            0xd8 if self.reg.get_flag(C) => 0x03,
-            0xda if self.reg.get_flag(C) => 0x01,
-            0xdc if self.reg.get_flag(C) => 0x03,
-            _ => 0x00,
-        };
-        if opcode == 0xcb { CB_CYCLES[cbcode as usize] } else { OP_CYCLES[opcode as usize] + ecycle }
+        cycles
     }
 
     pub fn next(&mut self) -> u32 {
