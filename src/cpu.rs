@@ -521,8 +521,8 @@ impl Alu {
 pub struct Cpu {
     pub reg: Register,
     pub mem: Rc<RefCell<dyn Memory>>,
-    pub halted: bool,
-    pub ei: bool,
+    pub ime: bool, // Interrupt Master Enable flag, which controls whether the CPU will respond to interrupts.
+    pub low: bool, // Low power mode.
 }
 
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
@@ -554,7 +554,7 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, halted: false, ei: true }
+        Self { reg: Register::power_up(term), mem, ime: true, low: false }
     }
 
     // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
@@ -565,7 +565,7 @@ impl Cpu {
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
     fn hi(&mut self) -> u32 {
-        if !self.halted && !self.ei {
+        if !self.low && !self.ime {
             return 0;
         }
         let intf = self.mem.borrow().lb(0xff0f);
@@ -574,11 +574,11 @@ impl Cpu {
         if ii == 0x00 {
             return 0;
         }
-        self.halted = false;
-        if !self.ei {
+        self.low = false;
+        if !self.ime {
             return 0;
         }
-        self.ei = false;
+        self.ime = false;
 
         // Consumer an interrupter, the rest is written back to the register
         let n = ii.trailing_zeros();
@@ -797,7 +797,7 @@ impl Cpu {
             0x73 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.e),
             0x74 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.h),
             0x75 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.l),
-            0x76 => self.halted = true,
+            0x76 => self.low = true,
             0x77 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.a),
             0x78 => self.reg.a = self.reg.b,
             0x79 => self.reg.a = self.reg.c,
@@ -1414,7 +1414,7 @@ impl Cpu {
             }
             0xd9 => {
                 self.reg.pc = self.stack_pop();
-                self.ei = true;
+                self.ime = true;
             }
             0xda => {
                 let h = self.fetch_h();
@@ -1485,7 +1485,7 @@ impl Cpu {
                 self.reg.set_af(h);
             }
             0xf2 => self.reg.a = self.mem.borrow().lb(0xff00 | u16::from(self.reg.c)),
-            0xf3 => self.ei = false,
+            0xf3 => self.ime = false,
             0xf4 => unreachable!(),
             0xf5 => self.stack_add(self.reg.get_af()),
             0xf6 => {
@@ -1510,7 +1510,7 @@ impl Cpu {
                 let h = self.fetch_h();
                 self.reg.a = self.mem.borrow().lb(h);
             }
-            0xfb => self.ei = true,
+            0xfb => self.ime = true,
             0xfc => unreachable!(),
             0xfd => unreachable!(),
             0xfe => {
@@ -1549,7 +1549,7 @@ impl Cpu {
             let c = self.hi();
             if c != 0 {
                 c
-            } else if self.halted {
+            } else if self.low {
                 OP_CYCLES[0]
             } else {
                 self.ex()
