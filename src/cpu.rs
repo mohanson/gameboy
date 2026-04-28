@@ -521,7 +521,11 @@ impl Alu {
 pub struct Cpu {
     pub reg: Register,
     pub mem: Rc<RefCell<dyn Memory>>,
-    pub ime: bool, // Interrupt Master Enable flag, which controls whether the CPU will respond to interrupts.
+    // Interrupt master enable flag, which controls whether the CPU will respond to interrupts.
+    // 0: Disable.
+    // 1: Enabled.
+    // 2: Pending (EI executed; becomes 1 at the start of the next instruction).
+    pub ime: u8,
     pub low: bool, // Low power mode.
 }
 
@@ -554,7 +558,7 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, ime: true, low: false }
+        Self { reg: Register::power_up(term), mem, ime: 1, low: false }
     }
 
     // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
@@ -565,7 +569,7 @@ impl Cpu {
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
     fn hi(&mut self) -> u32 {
-        if !self.low && !self.ime {
+        if !self.low && self.ime != 1 {
             return 0;
         }
         let intf = self.mem.borrow().lb(0xff0f);
@@ -575,10 +579,10 @@ impl Cpu {
             return 0;
         }
         self.low = false;
-        if !self.ime {
+        if self.ime != 1 {
             return 0;
         }
-        self.ime = false;
+        self.ime = 0;
 
         // Consumer an interrupter, the rest is written back to the register
         let n = ii.trailing_zeros();
@@ -1414,7 +1418,7 @@ impl Cpu {
             }
             0xd9 => {
                 self.reg.pc = self.stack_pop();
-                self.ime = true;
+                self.ime = 1;
             }
             0xda => {
                 let h = self.fetch_h();
@@ -1485,7 +1489,7 @@ impl Cpu {
                 self.reg.set_af(h);
             }
             0xf2 => self.reg.a = self.mem.borrow().lb(0xff00 | u16::from(self.reg.c)),
-            0xf3 => self.ime = false,
+            0xf3 => self.ime = 0,
             0xf4 => unreachable!(),
             0xf5 => self.stack_add(self.reg.get_af()),
             0xf6 => {
@@ -1510,7 +1514,7 @@ impl Cpu {
                 let h = self.fetch_h();
                 self.reg.a = self.mem.borrow().lb(h);
             }
-            0xfb => self.ime = true,
+            0xfb => self.ime = 2,
             0xfc => unreachable!(),
             0xfd => unreachable!(),
             0xfe => {
@@ -1552,7 +1556,12 @@ impl Cpu {
             } else if self.low {
                 OP_CYCLES[0]
             } else {
-                self.ex()
+                let c = self.ime == 2;
+                let r = self.ex();
+                if c {
+                    self.ime = 1;
+                }
+                r
             }
         };
         mac * 4
