@@ -215,6 +215,9 @@ impl Memory for Mbc1 {
                 if !self.ram_open {
                     return 0x00;
                 }
+                if !self.ram_maxm == usize::MAX {
+                    return 0x00;
+                }
                 let ram_bank = match self.mbc_mode {
                     0x00 => 0x00,
                     0x01 => self.ram_bank,
@@ -244,6 +247,9 @@ impl Memory for Mbc1 {
             }
             0xa000..=0xbfff => {
                 if !self.ram_open {
+                    return;
+                }
+                if !self.ram_maxm == usize::MAX {
                     return;
                 }
                 let ram_bank = match self.mbc_mode {
