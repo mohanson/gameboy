@@ -47,7 +47,7 @@ impl Joypad {
 impl Joypad {
     pub fn keydown(&mut self, key: JoypadKey) {
         self.matrix &= !(key as u8);
-        self.intf.borrow_mut().hi(Flag::Joypad);
+        self.intf.borrow_mut().raise(Flag::Joypad);
     }
 
     pub fn keyup(&mut self, key: JoypadKey) {

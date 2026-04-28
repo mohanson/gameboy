@@ -526,7 +526,10 @@ pub struct Cpu {
     // 1: Enabled.
     // 2: Pending (EI executed; becomes 1 at the start of the next instruction).
     pub ime: u8,
-    pub low: bool, // Low power mode.
+    // 0: Normal.
+    // 1: HALT mode.
+    // 2: HALT bug triggered (next opcode byte is read without incrementing PC).
+    pub low: u8, // Low power mode.
 }
 
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
@@ -558,7 +561,7 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, ime: 1, low: false }
+        Self { reg: Register::power_up(term), mem, ime: 1, low: 0 }
     }
 
     // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
@@ -569,22 +572,22 @@ impl Cpu {
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
     fn hi(&mut self) -> u32 {
-        if !self.low && self.ime != 1 {
+        if self.low != 1 && self.ime != 1 {
             return 0;
         }
         let intf = self.mem.borrow().lb(0xff0f);
         let inte = self.mem.borrow().lb(0xffff);
-        let ii = intf & inte;
+        let ii = intf & inte & 0x1f;
         if ii == 0x00 {
             return 0;
         }
-        self.low = false;
+        self.low = 0;
         if self.ime != 1 {
             return 0;
         }
         self.ime = 0;
 
-        // Consumer an interrupter, the rest is written back to the register
+        // Consume an interrupter, the rest is written back to the register
         let n = ii.trailing_zeros();
         let intf = intf & !(1 << n);
         self.mem.borrow_mut().sb(0xff0f, intf);
@@ -602,6 +605,12 @@ impl Cpu {
 
     fn ex(&mut self) -> u32 {
         let opcode = self.fetch_b();
+        // HALT bug: opcode is fetched without incrementing PC, so the same byte is re-read as the first operand,
+        // duplicating the instruction byte.
+        if self.low == 2 {
+            self.low = 0;
+            self.reg.pc = self.reg.pc.wrapping_sub(1);
+        }
         let mut cbcode: u8 = 0;
         match opcode {
             0x00 => {}
@@ -801,7 +810,17 @@ impl Cpu {
             0x73 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.e),
             0x74 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.h),
             0x75 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.l),
-            0x76 => self.low = true,
+            0x76 => {
+                let intf = self.mem.borrow().lb(0xff0f);
+                let inte = self.mem.borrow().lb(0xffff);
+                if self.ime != 1 && (intf & inte & 0x1f) != 0 {
+                    // HALT bug: IME=0 and there is a pending interrupt. CPU does not halt; instead the next opcode
+                    // byte is read without advancing PC (it is effectively read twice).
+                    self.low = 2;
+                } else {
+                    self.low = 1;
+                }
+            }
             0x77 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.a),
             0x78 => self.reg.a = self.reg.b,
             0x79 => self.reg.a = self.reg.c,
@@ -1553,7 +1572,7 @@ impl Cpu {
             let c = self.hi();
             if c != 0 {
                 c
-            } else if self.low {
+            } else if self.low == 1 {
                 OP_CYCLES[0]
             } else {
                 let c = self.ime == 2;

@@ -72,6 +72,7 @@ $ cargo run --example blargg
 | Test Name    | Result                              |
 |--------------|-------------------------------------|
 | cpu_instrs   | ![img](./res/imgs/cpu_instrs.png)   |
+| halt_bug     | ![img](./res/imgs/halt_bug.png)     |
 | instr_timing | ![img](./res/imgs/instr_timing.png) |
 
 # References

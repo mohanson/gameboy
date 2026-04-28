@@ -93,7 +93,7 @@ impl Timer {
                 self.reg.tima = self.reg.tima.wrapping_add(1);
                 if self.reg.tima == 0x00 {
                     self.reg.tima = self.reg.tma;
-                    self.intf.borrow_mut().hi(Flag::Timer);
+                    self.intf.borrow_mut().raise(Flag::Timer);
                 }
             }
         }

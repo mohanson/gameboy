@@ -178,7 +178,7 @@ impl Memory for Mmunit {
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
             0xff04..=0xff07 => self.timer.get(a),
-            0xff0f => self.intf.borrow().data,
+            0xff0f => self.intf.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff4d => {
                 let a = if self.speed == Speed::Double { 0x80 } else { 0x00 };
@@ -225,7 +225,7 @@ impl Memory for Mmunit {
             0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.sb(a, v),
             0xff51..=0xff55 => self.hdma.sb(a, v),
             0xff68..=0xff6b => self.gpu.sb(a, v),
-            0xff0f => self.intf.borrow_mut().data = v,
+            0xff0f => self.intf.borrow_mut().sb(0xff0f, v),
             0xff70 => {
                 self.wram_bank = match v & 0x7 {
                     0 => 1,

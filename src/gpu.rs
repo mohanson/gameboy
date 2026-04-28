@@ -452,7 +452,7 @@ impl Gpu {
             if d != self.dots {
                 self.ly = (self.ly + 1) % 154;
                 if self.stat.enable_ly_interrupt && self.ly == self.lc {
-                    self.intf.borrow_mut().hi(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(Flag::LCDStat);
                 }
             }
             if self.ly >= 144 {
@@ -461,9 +461,9 @@ impl Gpu {
                 }
                 self.stat.mode = 1;
                 self.v_blank = true;
-                self.intf.borrow_mut().hi(Flag::VBlank);
+                self.intf.borrow_mut().raise(Flag::VBlank);
                 if self.stat.enable_m1_interrupt {
-                    self.intf.borrow_mut().hi(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(Flag::LCDStat);
                 }
             } else if self.dots <= 80 {
                 if self.stat.mode == 2 {
@@ -471,7 +471,7 @@ impl Gpu {
                 }
                 self.stat.mode = 2;
                 if self.stat.enable_m2_interrupt {
-                    self.intf.borrow_mut().hi(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(Flag::LCDStat);
                 }
             } else if self.dots <= (80 + 172) {
                 self.stat.mode = 3;
@@ -482,7 +482,7 @@ impl Gpu {
                 self.stat.mode = 0;
                 self.h_blank = true;
                 if self.stat.enable_m0_interrupt {
-                    self.intf.borrow_mut().hi(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(Flag::LCDStat);
                 }
                 // Render scanline
                 if self.term == Term::CGB || self.lcdc.bit0() {
