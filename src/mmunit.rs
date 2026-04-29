@@ -48,7 +48,7 @@ impl Mmunit {
         let intf = Rc::new(RefCell::new(Intf::power_up()));
         let mut r = Self {
             cartridge: cart,
-            apu: Apu::power_up(48000),
+            apu: Apu::power_up(term, 48000),
             gpu: Gpu::power_up(term, intf.clone()),
             joypad: Joypad::power_up(intf.clone()),
             serial: Serial::power_up(),

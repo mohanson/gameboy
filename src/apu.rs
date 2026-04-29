@@ -1,5 +1,5 @@
 use super::clock::Clock;
-use super::convention::Memory;
+use super::convention::{Memory, Term};
 use super::cpu;
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
@@ -724,10 +724,12 @@ pub struct Apu {
     channel3: ChannelWave,
     channel4: ChannelNoise,
     sample_rate: u32,
+    #[allow(dead_code)]
+    term: Term,
 }
 
 impl Apu {
-    pub fn power_up(sample_rate: u32) -> Self {
+    pub fn power_up(term: Term, sample_rate: u32) -> Self {
         let blipbuf1 = create_blipbuf(sample_rate);
         let blipbuf2 = create_blipbuf(sample_rate);
         let blipbuf3 = create_blipbuf(sample_rate);
@@ -742,6 +744,7 @@ impl Apu {
             channel3: ChannelWave::power_up(blipbuf3),
             channel4: ChannelNoise::power_up(blipbuf4),
             sample_rate,
+            term,
         }
     }
 
