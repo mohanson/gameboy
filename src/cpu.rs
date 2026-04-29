@@ -522,14 +522,11 @@ pub struct Cpu {
     pub reg: Register,
     pub mem: Rc<RefCell<dyn Memory>>,
     // Interrupt master enable flag, which controls whether the CPU will respond to interrupts.
-    // 0: Disable.
-    // 1: Enabled.
     pub ime: u8,
     pub imp: u8,
-    // 0: Normal.
-    // 1: HALT mode.
-    // 2: HALT bug triggered (next opcode byte is read without incrementing PC).
-    pub low: u8, // Low power mode.
+    // Halt.
+    pub low: u8,
+    pub bug: u8,
 }
 
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
@@ -561,15 +558,15 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, ime: 0, imp: 0, low: 0 }
+        Self { reg: Register::power_up(term), mem, ime: 0, imp: 0, low: 0, bug: 0 }
     }
 
     fn ex(&mut self) -> u32 {
         let mut opcode = self.fetch_b();
         // HALT bug: opcode is fetched without incrementing PC, so the same byte is re-read as the first operand,
         // duplicating the instruction byte.
-        if self.low == 2 {
-            self.low = 0;
+        if self.bug == 1 {
+            self.bug = 0;
             self.reg.pc = self.reg.pc.wrapping_sub(1);
         }
         let mut cycles = OP_CYCLES[opcode as usize];
@@ -781,7 +778,7 @@ impl Cpu {
                 if self.ime == 0 && (intf & inte & 0x1f) != 0 {
                     // HALT bug: IME=0 and there is a pending interrupt. CPU does not halt; instead the next opcode
                     // byte is read without advancing PC (it is effectively read twice).
-                    self.low = 2;
+                    self.bug = 1;
                 } else {
                     self.low = 1;
                 }
@@ -1544,7 +1541,7 @@ impl Cpu {
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
     fn hi(&mut self) -> u32 {
-        if self.low != 1 && self.ime == 0 {
+        if self.low == 0 && self.ime == 0 {
             return 0;
         }
         let intf = self.mem.borrow().lb(0xff0f);
