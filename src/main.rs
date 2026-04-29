@@ -80,35 +80,33 @@ fn mode_blargg_memory_output(argu: &Argument) {
     let mut mbrd = MotherBoard::power_up(&argu.rom);
     mbrd.cpu.spd = argu.speed;
     loop {
+        mbrd.next();
         let a = [mbrd.mmu.borrow().lb(0xa001), mbrd.mmu.borrow().lb(0xa002), mbrd.mmu.borrow().lb(0xa003)];
         let b = [0xde, 0xb0, 0x61];
         if a == b {
             break;
         }
-        mbrd.next();
     }
     loop {
+        mbrd.next();
         if mbrd.mmu.borrow().lb(0xa000) == 0x80 {
             break;
         }
-        mbrd.next();
     }
+    let mut i: usize = 0;
     loop {
-        if mbrd.mmu.borrow().lb(0xa000) != 0x80 {
-            break;
-        }
         mbrd.next();
-    }
-
-    for i in 0..1024 {
-        let ch = mbrd.mmu.borrow().lb(0xa004 + i);
-        if ch == 0 {
-            break;
+        let ch = mbrd.mmu.borrow().lb(0xa004 + i as u16);
+        if ch != 0 {
+            print!("{}", char::from(ch));
+            i += 1;
         }
-        print!("{}", char::from(ch));
+        let ex = mbrd.mmu.borrow().lb(0xa000);
+        if ex != 0x80 {
+            std::io::stdout().flush().unwrap();
+            std::process::exit(0);
+        }
     }
-    std::io::stdout().flush().unwrap();
-    std::process::exit(i32::from(mbrd.mmu.borrow().lb(0xa000)));
 }
 
 fn mode_minifb(argu: &Argument) {
