@@ -70,11 +70,12 @@ Thanks to [Blargg's Gameboy hardware test ROMs](https://github.com/retrio/gb-tes
 $ cargo run --example blargg
 ```
 
-| Test Name    | Result                              |
-|--------------|-------------------------------------|
-| cpu_instrs   | ![img](./res/imgs/cpu_instrs.png)   |
-| halt_bug     | ![img](./res/imgs/halt_bug.png)     |
-| instr_timing | ![img](./res/imgs/instr_timing.png) |
+|   Test Name    |                Result                 |
+| -------------- | ------------------------------------- |
+| cpu_instrs     | ![img](./res/imgs/cpu_instrs.png)     |
+| halt_bug       | ![img](./res/imgs/halt_bug.png)       |
+| instr_timing   | ![img](./res/imgs/instr_timing.png)   |
+| interrupt_time | ![img](./res/imgs/interrupt_time.png) |
 
 # References
 

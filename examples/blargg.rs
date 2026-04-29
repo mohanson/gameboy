@@ -12,8 +12,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for rom in [
         "./res/gb-test-roms/cpu_instrs/cpu_instrs.gb",
-        "./res/gb-test-roms/instr_timing/instr_timing.gb",
         "./res/gb-test-roms/halt_bug.gb",
+        "./res/gb-test-roms/instr_timing/instr_timing.gb",
+        "./res/gb-test-roms/interrupt_time/interrupt_time.gb",
     ] {
         rog::println!("$ cargo run -- {}", rom);
         std::process::Command::new("cargo")
