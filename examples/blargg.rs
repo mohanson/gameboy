@@ -16,7 +16,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "./res/gb-test-roms/halt_bug.gb",
     ] {
         rog::println!("$ cargo run -- {}", rom);
-        std::process::Command::new("cargo").arg("run").arg("--").arg(rom).spawn()?.wait()?;
+        std::process::Command::new("cargo")
+            .arg("run")
+            .arg("--release")
+            .arg("--")
+            .arg("-s")
+            .arg("8")
+            .arg(rom)
+            .spawn()?
+            .wait()?;
     }
 
     Ok(())

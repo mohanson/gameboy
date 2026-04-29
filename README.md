@@ -15,6 +15,7 @@ The following options are supported:
 ```text
 -a, --enable-audio    Enable audio, default is false
 -x, --scale-factor    Scale the video by a factor of 1, 2, 4, or 8
+-s, --speed-factor    Set the emulator speed (1 for normal speed, 2 for double speed, etc.)
 ```
 
 Gameboy is developed in Rust and has been thoroughly tested on Windows, Ubuntu, and Mac.

@@ -1589,45 +1589,34 @@ impl Cpu {
 // Real time cpu provided to simulate real hardware speed.
 pub struct Rtc {
     pub cpu: Cpu,
-    step_cycles: u32,
-    step_zero: time::Instant,
-    step_flip: bool,
+    pub spd: u32,
+    c: u32,
+    z: time::Instant,
 }
 
 impl Rtc {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
         let cpu = Cpu::power_up(term, mem);
-        Self { cpu, step_cycles: 0, step_zero: time::Instant::now(), step_flip: false }
+        Self { cpu, spd: 1, c: 0, z: time::Instant::now() }
     }
 
     // Function next simulates real hardware execution speed, by limiting the frequency of the function cpu.step().
     pub fn step(&mut self) -> u32 {
-        if self.step_cycles > STEP_CYCLES {
-            self.step_flip = true;
-            self.step_cycles -= STEP_CYCLES;
+        if self.c > STEP_CYCLES {
+            self.c -= STEP_CYCLES;
             let now = time::Instant::now();
-            let d = now.duration_since(self.step_zero);
-            let s = u64::from(STEP_TIME.saturating_sub(d.as_millis() as u32));
+            let d = now.duration_since(self.z);
+            let s = u64::from((STEP_TIME / self.spd).saturating_sub(d.as_millis() as u32));
             rog::debugln!("CPU: sleep {} millis", s);
             thread::sleep(time::Duration::from_millis(s));
-            self.step_zero = self.step_zero.checked_add(time::Duration::from_millis(u64::from(STEP_TIME))).unwrap();
-
-            // If now is after the just updated target frame time, reset to
-            // avoid drift.
-            if now.checked_duration_since(self.step_zero).is_some() {
-                self.step_zero = now;
+            self.z = self.z.checked_add(time::Duration::from_millis(u64::from(STEP_TIME / self.spd))).unwrap();
+            // If now is after the just updated target frame time, reset to avoid drift.
+            if now.checked_duration_since(self.z).is_some() {
+                self.z = now;
             }
         }
         let cycles = self.cpu.step();
-        self.step_cycles += cycles;
+        self.c += cycles;
         cycles
-    }
-
-    pub fn flip(&mut self) -> bool {
-        let r = self.step_flip;
-        if r {
-            self.step_flip = false;
-        }
-        r
     }
 }

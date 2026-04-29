@@ -4,6 +4,7 @@ use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
 use gameboy::convention::{Memory, Stable};
+use gameboy::cpu;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use gameboy::motherboard::MotherBoard;
 use std::io::Write;
@@ -13,12 +14,13 @@ struct Argument {
     mode: String,
     rom: String,
     scale: u32,
+    speed: u32,
 }
 
 fn main() {
     rog::reg("gameboy");
     rog::reg("gameboy::cartridge");
-    let mut argu = Argument { audio: false, mode: String::from("minifb"), rom: String::from(""), scale: 2 };
+    let mut argu = Argument { audio: false, mode: String::from("minifb"), rom: String::from(""), scale: 2, speed: 1 };
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Gameboy emulator");
@@ -32,6 +34,11 @@ fn main() {
             &["-x", "--scale-factor"],
             argparse::Store,
             "Scale the video by a factor of 1, 2, 4, or 8",
+        );
+        ap.refer(&mut argu.speed).add_option(
+            &["-s", "--speed-factor"],
+            argparse::Store,
+            "Set the emulator speed (1 for normal speed, 2 for double speed, etc.)",
         );
         ap.refer(&mut argu.rom).add_argument("rom", argparse::Store, "Rom name");
         ap.parse_args_or_exit();
@@ -47,6 +54,7 @@ fn main() {
 
 fn mode_blargg_serial_output(argu: &Argument) {
     let mut mbrd = MotherBoard::power_up(&argu.rom);
+    mbrd.cpu.spd = argu.speed;
     let mut buff = String::new();
     loop {
         mbrd.next();
@@ -70,6 +78,7 @@ fn mode_blargg_serial_output(argu: &Argument) {
 
 fn mode_blargg_memory_output(argu: &Argument) {
     let mut mbrd = MotherBoard::power_up(&argu.rom);
+    mbrd.cpu.spd = argu.speed;
     loop {
         let a = [mbrd.mmu.borrow().lb(0xa001), mbrd.mmu.borrow().lb(0xa002), mbrd.mmu.borrow().lb(0xa003)];
         let b = [0xde, 0xb0, 0x61];
@@ -104,6 +113,7 @@ fn mode_blargg_memory_output(argu: &Argument) {
 
 fn mode_minifb(argu: &Argument) {
     let mut mbrd = MotherBoard::power_up(&argu.rom);
+    mbrd.cpu.spd = argu.speed;
     let rom_name = mbrd.mmu.borrow().cartridge.title.clone();
 
     let mut option = minifb::WindowOptions::default();
@@ -171,6 +181,8 @@ fn mode_minifb(argu: &Argument) {
     }
     let _ = stream;
 
+    let mut cycles = 0;
+
     loop {
         // Stop the program, if the GUI is closed by the user
         if !window.is_open() {
@@ -178,7 +190,7 @@ fn mode_minifb(argu: &Argument) {
         }
 
         // Execute an instruction
-        mbrd.next();
+        cycles += mbrd.next();
 
         // Update the window
         if mbrd.check_and_reset_gpu_updated() {
@@ -197,9 +209,10 @@ fn mode_minifb(argu: &Argument) {
             window.update_with_buffer(window_buffer.as_slice(), SCREEN_W, SCREEN_H).unwrap();
         }
 
-        if !mbrd.cpu.flip() {
+        if cycles < cpu::STEP_CYCLES {
             continue;
         }
+        cycles -= cpu::STEP_CYCLES;
 
         // Handling keyboard events
         if window.is_key_down(minifb::Key::Escape) {
