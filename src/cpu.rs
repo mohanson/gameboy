@@ -69,7 +69,7 @@ impl Alu {
     // N - Reset.
     // H - Set if carry from bit 3.
     // C - Set if carry from bit 7.
-    pub fn adc(cpu: &mut Cpu, n: u8) {
+    fn adc(cpu: &mut Cpu, n: u8) {
         let a = cpu.reg.a;
         let c = u8::from(cpu.reg.get_flag(C));
         let r = a.wrapping_add(n).wrapping_add(c);
@@ -88,7 +88,7 @@ impl Alu {
     // N - Reset.
     // H - Set if carry from bit 3.
     // C - Set if carry from bit 7.
-    pub fn add(cpu: &mut Cpu, n: u8) {
+    fn add(cpu: &mut Cpu, n: u8) {
         let a = cpu.reg.a;
         let r = a.wrapping_add(n);
         cpu.reg.set_flag(C, u16::from(a) + u16::from(n) > 0xff);
@@ -106,7 +106,7 @@ impl Alu {
     // N - Reset.
     // H - Set if carry from bit 11.
     // C - Set if carry from bit 15.
-    pub fn add_hl(cpu: &mut Cpu, n: u16) {
+    fn add_hl(cpu: &mut Cpu, n: u16) {
         let a = cpu.reg.get_hl();
         let r = a.wrapping_add(n);
         cpu.reg.set_flag(C, a > 0xffff - n);
@@ -123,7 +123,7 @@ impl Alu {
     // N - Reset.
     // H - Set or reset according to operation.
     // C - Set or reset according to operation.
-    pub fn add_sp(cpu: &mut Cpu) {
+    fn add_sp(cpu: &mut Cpu) {
         let a = cpu.reg.sp;
         let b = i16::from(cpu.fetch_b() as i8) as u16;
         cpu.reg.set_flag(C, (a & 0x00ff) + (b & 0x00ff) > 0x00ff);
@@ -141,7 +141,7 @@ impl Alu {
     // N - Reset.
     // H - Set.
     // C - Reset
-    pub fn and(cpu: &mut Cpu, n: u8) {
+    fn and(cpu: &mut Cpu, n: u8) {
         let r = cpu.reg.a & n;
         cpu.reg.set_flag(C, false);
         cpu.reg.set_flag(H, true);
@@ -158,7 +158,7 @@ impl Alu {
     // N - Reset.
     // H - Set.
     // C - Not affected
-    pub fn bit(cpu: &mut Cpu, a: u8, b: u8) {
+    fn bit(cpu: &mut Cpu, a: u8, b: u8) {
         let r = a & (1 << b) == 0x00;
         cpu.reg.set_flag(H, true);
         cpu.reg.set_flag(N, false);
@@ -172,7 +172,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Complemented.
-    pub fn ccf(cpu: &mut Cpu) {
+    fn ccf(cpu: &mut Cpu) {
         let v = !cpu.reg.get_flag(C);
         cpu.reg.set_flag(C, v);
         cpu.reg.set_flag(H, false);
@@ -187,7 +187,7 @@ impl Alu {
     // N - Set.
     // H - Set if no borrow from bit 4.
     // C - Set for no borrow. (Set if A < n.)
-    pub fn cp(cpu: &mut Cpu, n: u8) {
+    fn cp(cpu: &mut Cpu, n: u8) {
         let a = cpu.reg.a;
         let r = a.wrapping_sub(n);
         cpu.reg.set_flag(C, u16::from(a) < u16::from(n));
@@ -203,7 +203,7 @@ impl Alu {
     // N - Set.
     // H - Set.
     // C - Not affected.
-    pub fn cpl(cpu: &mut Cpu) {
+    fn cpl(cpu: &mut Cpu) {
         cpu.reg.a = !cpu.reg.a;
         cpu.reg.set_flag(H, true);
         cpu.reg.set_flag(N, true);
@@ -217,7 +217,7 @@ impl Alu {
     // N - Not affected.
     // H - Reset.
     // C - Set or reset according to operation
-    pub fn daa(cpu: &mut Cpu) {
+    fn daa(cpu: &mut Cpu) {
         let mut a = cpu.reg.a;
         let mut adjust = if cpu.reg.get_flag(C) { 0x60 } else { 0x00 };
         if cpu.reg.get_flag(H) {
@@ -248,7 +248,7 @@ impl Alu {
     // N - Set.
     // H - Set if no borrow from bit 4.
     // C - Not affected
-    pub fn dec(cpu: &mut Cpu, a: u8) -> u8 {
+    fn dec(cpu: &mut Cpu, a: u8) -> u8 {
         let r = a.wrapping_sub(1);
         cpu.reg.set_flag(H, a.trailing_zeros() >= 4);
         cpu.reg.set_flag(N, true);
@@ -264,7 +264,7 @@ impl Alu {
     // N - Reset.
     // H - Set if carry from bit 3.
     // C - Not affected.
-    pub fn inc(cpu: &mut Cpu, a: u8) -> u8 {
+    fn inc(cpu: &mut Cpu, a: u8) -> u8 {
         let r = a.wrapping_add(1);
         cpu.reg.set_flag(H, (a & 0x0f) + 0x01 > 0x0f);
         cpu.reg.set_flag(N, false);
@@ -274,7 +274,7 @@ impl Alu {
 
     // Add n to current address and jump to it.
     // n = one byte signed immediate value
-    pub fn jr(cpu: &mut Cpu, n: u8) {
+    fn jr(cpu: &mut Cpu, n: u8) {
         let n = n as i8;
         cpu.reg.pc = ((u32::from(cpu.reg.pc) as i32) + i32::from(n)) as u16;
     }
@@ -287,7 +287,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Reset.
-    pub fn or(cpu: &mut Cpu, n: u8) {
+    fn or(cpu: &mut Cpu, n: u8) {
         let r = cpu.reg.a | n;
         cpu.reg.set_flag(C, false);
         cpu.reg.set_flag(H, false);
@@ -300,7 +300,7 @@ impl Alu {
     // b = 0 - 7, r = A,B,C,D,E,H,L,(HL)
     //
     // Flags affected:  None.
-    pub fn res(a: u8, b: u8) -> u8 {
+    fn res(a: u8, b: u8) -> u8 {
         a & !(1 << b)
     }
 
@@ -311,7 +311,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Contains old bit 7 data.
-    pub fn rl(cpu: &mut Cpu, a: u8) -> u8 {
+    fn rl(cpu: &mut Cpu, a: u8) -> u8 {
         let c = (a & 0x80) >> 7 == 0x01;
         let r = (a << 1) + u8::from(cpu.reg.get_flag(C));
         cpu.reg.set_flag(C, c);
@@ -328,7 +328,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Contains old bit 7 data.
-    pub fn rlc(cpu: &mut Cpu, a: u8) -> u8 {
+    fn rlc(cpu: &mut Cpu, a: u8) -> u8 {
         let c = (a & 0x80) >> 7 == 0x01;
         let r = (a << 1) | u8::from(c);
         cpu.reg.set_flag(C, c);
@@ -345,7 +345,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Contains old bit 0 data.
-    pub fn rr(cpu: &mut Cpu, a: u8) -> u8 {
+    fn rr(cpu: &mut Cpu, a: u8) -> u8 {
         let c = a & 0x01 == 0x01;
         let r = if cpu.reg.get_flag(C) { 0x80 | (a >> 1) } else { a >> 1 };
         cpu.reg.set_flag(C, c);
@@ -362,7 +362,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Contains old bit 0 data
-    pub fn rrc(cpu: &mut Cpu, a: u8) -> u8 {
+    fn rrc(cpu: &mut Cpu, a: u8) -> u8 {
         let c = a & 0x01 == 0x01;
         let r = if c { 0x80 | (a >> 1) } else { a >> 1 };
         cpu.reg.set_flag(C, c);
@@ -380,7 +380,7 @@ impl Alu {
     // N - Set.
     // H - Set if no borrow from bit 4.
     // C - Set if no borrow.
-    pub fn sbc(cpu: &mut Cpu, n: u8) {
+    fn sbc(cpu: &mut Cpu, n: u8) {
         let a = cpu.reg.a;
         let c = u8::from(cpu.reg.get_flag(C));
         let r = a.wrapping_sub(n).wrapping_sub(c);
@@ -398,7 +398,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Set.
-    pub fn scf(cpu: &mut Cpu) {
+    fn scf(cpu: &mut Cpu) {
         cpu.reg.set_flag(C, true);
         cpu.reg.set_flag(H, false);
         cpu.reg.set_flag(N, false);
@@ -408,7 +408,7 @@ impl Alu {
     // b = 0 - 7, r = A,B,C,D,E,H,L,(HL)
     //
     // Flags affected:  None.
-    pub fn set(a: u8, b: u8) -> u8 {
+    fn set(a: u8, b: u8) -> u8 {
         a | (1 << b)
     }
 
@@ -420,7 +420,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Contains old bit 7 data
-    pub fn sla(cpu: &mut Cpu, a: u8) -> u8 {
+    fn sla(cpu: &mut Cpu, a: u8) -> u8 {
         let c = (a & 0x80) >> 7 == 0x01;
         let r = a << 1;
         cpu.reg.set_flag(C, c);
@@ -438,7 +438,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Contains old bit 0 data.
-    pub fn sra(cpu: &mut Cpu, a: u8) -> u8 {
+    fn sra(cpu: &mut Cpu, a: u8) -> u8 {
         let c = a & 0x01 == 0x01;
         let r = (a >> 1) | (a & 0x80);
         cpu.reg.set_flag(C, c);
@@ -456,7 +456,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Contains old bit 0 data.
-    pub fn srl(cpu: &mut Cpu, a: u8) -> u8 {
+    fn srl(cpu: &mut Cpu, a: u8) -> u8 {
         let c = a & 0x01 == 0x01;
         let r = a >> 1;
         cpu.reg.set_flag(C, c);
@@ -474,7 +474,7 @@ impl Alu {
     // N - Set.
     // H - Set if no borrow from bit 4.
     // C - Set if no borrow
-    pub fn sub(cpu: &mut Cpu, n: u8) {
+    fn sub(cpu: &mut Cpu, n: u8) {
         let a = cpu.reg.a;
         let r = a.wrapping_sub(n);
         cpu.reg.set_flag(C, u16::from(a) < u16::from(n));
@@ -492,7 +492,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Reset.
-    pub fn swap(cpu: &mut Cpu, a: u8) -> u8 {
+    fn swap(cpu: &mut Cpu, a: u8) -> u8 {
         cpu.reg.set_flag(C, false);
         cpu.reg.set_flag(H, false);
         cpu.reg.set_flag(N, false);
@@ -508,7 +508,7 @@ impl Alu {
     // N - Reset.
     // H - Reset.
     // C - Reset.
-    pub fn xor(cpu: &mut Cpu, n: u8) {
+    fn xor(cpu: &mut Cpu, n: u8) {
         let r = cpu.reg.a ^ n;
         cpu.reg.set_flag(C, false);
         cpu.reg.set_flag(H, false);
@@ -561,46 +561,7 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, ime: 1, low: 0 }
-    }
-
-    // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
-    // acknowledges the interrupt setting by the IE register.
-    // 1. When an interrupt is generated, the IF flag will be set.
-    // 2. If the IME flag is set & the corresponding IE flag is set, the following 3 steps are performed.
-    // 3. Reset the IME flag and prevent all interrupts.
-    // 4. The PC (program counter) is pushed onto the stack.
-    // 5. Jump to the starting address of the interrupt.
-    fn hi(&mut self) -> u32 {
-        if self.low != 1 && self.ime != 1 {
-            return 0;
-        }
-        let intf = self.mem.borrow().lb(0xff0f);
-        let inte = self.mem.borrow().lb(0xffff);
-        let ii = intf & inte & 0x1f;
-        if ii == 0x00 {
-            return 0;
-        }
-        self.low = 0;
-        if self.ime != 1 {
-            return 0;
-        }
-        self.ime = 0;
-
-        // Consume an interrupter, the rest is written back to the register
-        let n = ii.trailing_zeros();
-        let intf = intf & !(1 << n);
-        self.mem.borrow_mut().sb(0xff0f, intf);
-
-        self.stack_add(self.reg.pc);
-        // Set the PC to correspond interrupt process program:
-        // V-Blank: 0x40
-        // LCD: 0x48
-        // TIMER: 0x50
-        // JOYPAD: 0x60
-        // Serial: 0x58
-        self.reg.pc = 0x0040 | ((n as u16) << 3);
-        5
+        Self { reg: Register::power_up(term), mem, ime: 0, low: 0 }
     }
 
     fn ex(&mut self) -> u32 {
@@ -1565,6 +1526,44 @@ impl Cpu {
         cycles
     }
 
+    // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
+    // acknowledges the interrupt setting by the IE register.
+    // 1. When an interrupt is generated, the IF flag will be set.
+    // 2. If the IME flag is set & the corresponding IE flag is set, the following 3 steps are performed.
+    // 3. Reset the IME flag and prevent all interrupts.
+    // 4. The PC (program counter) is pushed onto the stack.
+    // 5. Jump to the starting address of the interrupt.
+    fn hi(&mut self) -> u32 {
+        if self.low != 1 && self.ime != 1 {
+            return 0;
+        }
+        let intf = self.mem.borrow().lb(0xff0f);
+        let inte = self.mem.borrow().lb(0xffff);
+        let ivec = intf & inte & 0x1f;
+        if ivec == 0x00 {
+            return 0;
+        }
+        self.low = 0;
+        if self.ime != 1 {
+            return 0;
+        }
+        self.ime = 0;
+
+        // Consume an interrupter, the rest is written back to the register.
+        let isig = ivec.trailing_zeros();
+        let intf = intf & !(1 << isig);
+        self.mem.borrow_mut().sb(0xff0f, intf);
+        self.stack_add(self.reg.pc);
+        // Set the PC to correspond interrupt process program:
+        // V-Blank: 0x40
+        //     LCD: 0x48
+        //   TIMER: 0x50
+        //  Serial: 0x58
+        //  JOYPAD: 0x60
+        self.reg.pc = 0x0040 | ((isig as u16) << 3);
+        5
+    }
+
     pub fn next(&mut self) -> u32 {
         let mac = {
             let c = self.hi();
@@ -1575,7 +1574,8 @@ impl Cpu {
             } else {
                 let c = self.ime == 2;
                 let r = self.ex();
-                if c {
+                // Ei followed immediately by di does not allow any interrupts between them.
+                if c && self.ime != 0 {
                     self.ime = 1;
                 }
                 r
