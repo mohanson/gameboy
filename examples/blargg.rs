@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "./res/gb-test-roms/instr_timing/instr_timing.gb",
         "./res/gb-test-roms/interrupt_time/interrupt_time.gb",
     ] {
-        rog::println!("$ cargo run -- {}", rom);
+        rog::println!("$ cargo run --release -- -s 8 {}", rom);
         std::process::Command::new("cargo")
             .arg("run")
             .arg("--release")
