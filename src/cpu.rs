@@ -524,8 +524,8 @@ pub struct Cpu {
     // Interrupt master enable flag, which controls whether the CPU will respond to interrupts.
     // 0: Disable.
     // 1: Enabled.
-    // 2: Pending (EI executed; becomes 1 at the start of the next instruction).
     pub ime: u8,
+    pub imp: u8,
     // 0: Normal.
     // 1: HALT mode.
     // 2: HALT bug triggered (next opcode byte is read without incrementing PC).
@@ -561,7 +561,7 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, ime: 0, low: 0 }
+        Self { reg: Register::power_up(term), mem, ime: 0, imp: 0, low: 0 }
     }
 
     fn ex(&mut self) -> u32 {
@@ -778,7 +778,7 @@ impl Cpu {
             0x76 => {
                 let intf = self.mem.borrow().lb(0xff0f);
                 let inte = self.mem.borrow().lb(0xffff);
-                if self.ime != 1 && (intf & inte & 0x1f) != 0 {
+                if self.ime == 0 && (intf & inte & 0x1f) != 0 {
                     // HALT bug: IME=0 and there is a pending interrupt. CPU does not halt; instead the next opcode
                     // byte is read without advancing PC (it is effectively read twice).
                     self.low = 2;
@@ -1486,7 +1486,10 @@ impl Cpu {
                 self.reg.set_af(h);
             }
             0xf2 => self.reg.a = self.mem.borrow().lb(0xff00 | u16::from(self.reg.c)),
-            0xf3 => self.ime = 0,
+            0xf3 => {
+                self.ime = 0;
+                self.imp = 0;
+            }
             0xf4 => unreachable!(),
             0xf5 => self.stack_add(self.reg.get_af()),
             0xf6 => {
@@ -1511,7 +1514,7 @@ impl Cpu {
                 let h = self.fetch_h();
                 self.reg.a = self.mem.borrow().lb(h);
             }
-            0xfb => self.ime = 2,
+            0xfb => self.imp = 2,
             0xfc => unreachable!(),
             0xfd => unreachable!(),
             0xfe => {
@@ -1523,6 +1526,13 @@ impl Cpu {
                 self.reg.pc = 0x38;
             }
         };
+        if self.imp == 1 {
+            self.ime = 1;
+            self.imp = 0;
+        }
+        if self.imp == 2 {
+            self.imp = 1;
+        }
         cycles
     }
 
@@ -1534,7 +1544,7 @@ impl Cpu {
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
     fn hi(&mut self) -> u32 {
-        if self.low != 1 && self.ime != 1 {
+        if self.low != 1 && self.ime == 0 {
             return 0;
         }
         let intf = self.mem.borrow().lb(0xff0f);
@@ -1544,7 +1554,7 @@ impl Cpu {
             return 0;
         }
         self.low = 0;
-        if self.ime != 1 {
+        if self.ime == 0 {
             return 0;
         }
         self.ime = 0;
@@ -1572,13 +1582,7 @@ impl Cpu {
             } else if self.low == 1 {
                 OP_CYCLES[0]
             } else {
-                let c = self.ime == 2;
-                let r = self.ex();
-                // Ei followed immediately by di does not allow any interrupts between them.
-                if c && self.ime != 0 {
-                    self.ime = 1;
-                }
-                r
+                self.ex()
             }
         };
         mac * 4
