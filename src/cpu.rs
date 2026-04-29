@@ -557,11 +557,8 @@ impl Cpu {
 }
 
 impl Cpu {
-    pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, ime: 0, imp: 0, low: 0, bug: 0 }
-    }
-
-    fn ex(&mut self) -> u32 {
+    // Execute the instruction pointed by the program counter (PC) and return the number of cycles it took.
+    fn exec_opcode(&mut self) -> u32 {
         let mut opcode = self.fetch_b();
         // HALT bug: opcode is fetched without incrementing PC, so the same byte is re-read as the first operand,
         // duplicating the instruction byte.
@@ -1540,7 +1537,7 @@ impl Cpu {
     // 3. Reset the IME flag and prevent all interrupts.
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
-    fn hi(&mut self) -> u32 {
+    fn handle_trap(&mut self) -> u32 {
         if self.low == 0 && self.ime == 0 {
             return 0;
         }
@@ -1570,19 +1567,22 @@ impl Cpu {
         self.reg.pc = 0x0040 | ((isig as u16) << 3);
         5
     }
+}
 
-    pub fn next(&mut self) -> u32 {
-        let mac = {
-            let c = self.hi();
-            if c != 0 {
-                c
-            } else if self.low == 1 {
-                OP_CYCLES[0]
-            } else {
-                self.ex()
-            }
-        };
-        mac * 4
+impl Cpu {
+    pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
+        Self { reg: Register::power_up(term), mem, ime: 0, imp: 0, low: 0, bug: 0 }
+    }
+
+    pub fn step(&mut self) -> u32 {
+        let c = self.handle_trap();
+        if c != 0 {
+            return 4 * c;
+        }
+        if self.low == 1 {
+            return 4 * OP_CYCLES[0];
+        }
+        4 * self.exec_opcode()
     }
 }
 
@@ -1600,8 +1600,8 @@ impl Rtc {
         Self { cpu, step_cycles: 0, step_zero: time::Instant::now(), step_flip: false }
     }
 
-    // Function next simulates real hardware execution speed, by limiting the frequency of the function cpu.next().
-    pub fn next(&mut self) -> u32 {
+    // Function next simulates real hardware execution speed, by limiting the frequency of the function cpu.step().
+    pub fn step(&mut self) -> u32 {
         if self.step_cycles > STEP_CYCLES {
             self.step_flip = true;
             self.step_cycles -= STEP_CYCLES;
@@ -1618,7 +1618,7 @@ impl Rtc {
                 self.step_zero = now;
             }
         }
-        let cycles = self.cpu.next();
+        let cycles = self.cpu.step();
         self.step_cycles += cycles;
         cycles
     }

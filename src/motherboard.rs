@@ -21,7 +21,7 @@ impl MotherBoard {
         if self.mmu.borrow().lb(self.cpu.cpu.reg.pc) == 0x10 {
             self.mmu.borrow_mut().switch_speed();
         }
-        let cycles = self.cpu.next();
+        let cycles = self.cpu.step();
         self.mmu.borrow_mut().next(cycles);
         cycles
     }
