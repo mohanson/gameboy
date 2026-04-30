@@ -1,8 +1,8 @@
 修复项目代码 bug, 使得其能通过以下测试:
 
 ```sh
-cargo run -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/10-wave trigger while on.gb"
-cargo run -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/10-wave trigger while on.gb"
+cargo run -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/03-trigger.gb"
+cargo run -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/03-trigger.gb"
 ```
 
 Gameboy Apu 的规范可以在以下页面获取, 你可以检查项目的代码实现是否正确. 如果不正确, 请修复它; 你可以在源代码里适当重构以保证代码简洁.
@@ -10,6 +10,12 @@ Gameboy Apu 的规范可以在以下页面获取, 你可以检查项目的代码
 - https://gbdev.io/pandocs/Audio.html
 - https://gbdev.io/pandocs/Audio_Registers.html
 - https://gbdev.io/pandocs/Audio_details.html
+
+修复完成后, 你还需要确保下面的已经通过的测试能继续通过, 没有 Failed 的输出就可以.
+
+```sh
+bash test.sh | grep Failed
+```
 
 
 ------------------------------------------------------------------------------------------------------------------------
