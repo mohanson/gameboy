@@ -22,7 +22,7 @@ cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_so
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/07-len sweep period sync.gb"
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/09-wave read while on.gb"
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/09-wave read while on.gb"
-# cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/12-wave.gb"
+# cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/12-wave write while on.gb
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/12-wave.gb"
 
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/dmg_sound.gb"
