@@ -14,7 +14,7 @@ Gameboy Apu 的规范可以在以下页面获取, 你可以检查项目的代码
 修复完成后, 你还需要确保下面的已经通过的测试能继续通过, 没有 Failed 的输出就可以.
 
 ```sh
-bash test.sh | grep Failed
+bash test.sh 2>&1 | grep Failed
 ```
 
 

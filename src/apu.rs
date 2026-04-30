@@ -438,6 +438,43 @@ impl ChannelSquare {
         }
     }
 
+    // Handles a write to NRx4 (trigger/length-enable register).
+    // extra_clock: true when the DIV-APU next step won't clock the length counter
+    // (i.e. when fs.step is even), which triggers an extra length clock when enabling.
+    fn write_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let triggered = v & 0x80 != 0x00;
+        let was_length_enabled = self.reg.borrow().get_length_enable();
+        self.reg.borrow_mut().nrx4 = v & 0x7f;
+        self.timer.period = period(self.reg.clone());
+        let new_length_enabled = self.reg.borrow().get_length_enable();
+
+        // Extra clock when enabling length counter (0→1) in first half of length period.
+        if extra_clock && !was_length_enabled && new_length_enabled && self.lc.n != 0 {
+            self.lc.n -= 1;
+        }
+
+        if triggered {
+            // Remember if length was zero before reload (used for trigger extra clock).
+            let length_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().set_trigger(true);
+            self.lc.reload();
+            self.ve.reload();
+            if self.reg.borrow().channel == Channel::Square1 {
+                self.fs.reload();
+            }
+            // Extra clock when trigger reloads length from 0 with length enabled in first half.
+            if extra_clock && new_length_enabled && length_was_zero {
+                self.lc.n -= 1;
+            }
+            if !self.reg.borrow().get_dac_enable() {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        } else if extra_clock && !was_length_enabled && new_length_enabled && self.lc.n == 0 {
+            // Non-trigger: disable channel if extra enable clock made length reach zero.
+            self.reg.borrow_mut().set_trigger(false);
+        }
+    }
+
     // This assumes no volume or sweep adjustments need to be done in the meantime
     fn next(&mut self, cycles: u32) {
         let pat = match self.reg.borrow().get_duty() {
@@ -491,37 +528,7 @@ impl Memory for ChannelSquare {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff14 | 0xff19 => {
-                let triggered = v & 0x80 != 0x00;
-                self.reg.borrow_mut().nrx4 = v & 0x7f;
-                self.timer.period = period(self.reg.clone());
-                // Trigger Event
-                //
-                // Writing a value to NRx4 with bit 7 set causes the following things to occur:
-                //
-                //   - Channel is enabled (see length counter).
-                //   - If length counter is zero, it is set to 64 (256 for wave channel).
-                //   - Frequency timer is reloaded with period.
-                //   - Volume envelope timer is reloaded with period.
-                //   - Channel volume is reloaded from NRx2.
-                //   - Noise channel's LFSR bits are all set to 1.
-                //   - Wave channel's position is set to 0 but sample buffer is NOT refilled.
-                //   - Square 1's sweep does several things (see frequency sweep).
-                //
-                // Note that if the channel's DAC is off, after the above actions occur the channel will be immediately
-                // disabled again.
-                if triggered {
-                    self.reg.borrow_mut().set_trigger(true);
-                    self.lc.reload();
-                    self.ve.reload();
-                    if self.reg.borrow().channel == Channel::Square1 {
-                        self.fs.reload();
-                    }
-                    if !self.reg.borrow().get_dac_enable() {
-                        self.reg.borrow_mut().set_trigger(false);
-                    }
-                }
-            }
+            0xff14 | 0xff19 => self.write_nrx4(v, false),
             _ => unreachable!(),
         }
     }
@@ -613,6 +620,53 @@ impl ChannelWave {
             self.waveram[i] = self.waveram[base + i];
         }
     }
+
+    fn write_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let triggered = v & 0x80 != 0x00;
+        let was_length_enabled = self.reg.borrow().get_length_enable();
+        let was_on = self.reg.borrow().get_trigger();
+        self.reg.borrow_mut().nrx4 = v & 0x7f;
+        let new_period = period(self.reg.clone());
+        let new_length_enabled = self.reg.borrow().get_length_enable();
+
+        if triggered {
+            self.sample_period = new_period;
+            self.pending_period = None;
+        } else {
+            self.pending_period = Some(new_period);
+        }
+
+        // Extra clock when enabling length counter (0→1) in first half of length period.
+        if extra_clock && !was_length_enabled && new_length_enabled && self.lc.n != 0 {
+            self.lc.n -= 1;
+        }
+
+        if triggered {
+            let length_was_zero = self.lc.n == 0;
+            if self.term == Term::DMG
+                && was_on
+                && self.reg.borrow().get_dac_power()
+                && self.sample_countdown == 1
+            {
+                self.dmg_corrupt_wave_on_retrigger();
+            }
+            self.reg.borrow_mut().set_trigger(true);
+            self.lc.reload();
+            self.waveidx = 0x00;
+            // CH3 start/restart has an additional startup delay.
+            self.sample_countdown = self.sample_period + 5;
+            // Extra clock when trigger reloads length from 0 with length enabled in first half.
+            if extra_clock && new_length_enabled && length_was_zero {
+                self.lc.n -= 1;
+            }
+            if !self.reg.borrow().get_dac_enable() {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        } else if extra_clock && !was_length_enabled && new_length_enabled && self.lc.n == 0 {
+            // Non-trigger: disable channel if extra enable clock made length reach zero.
+            self.reg.borrow_mut().set_trigger(false);
+        }
+    }
 }
 
 impl Memory for ChannelWave {
@@ -645,35 +699,7 @@ impl Memory for ChannelWave {
                 self.reg.borrow_mut().nrx3 = v;
                 self.pending_period = Some(period(self.reg.clone()));
             }
-            0xff1e => {
-                let triggered = v & 0x80 != 0x00;
-                let was_on = self.reg.borrow().get_trigger();
-                self.reg.borrow_mut().nrx4 = v & 0x7f;
-                let new_period = period(self.reg.clone());
-                if triggered {
-                    self.sample_period = new_period;
-                    self.pending_period = None;
-                } else {
-                    self.pending_period = Some(new_period);
-                }
-                if triggered {
-                    if self.term == Term::DMG
-                        && was_on
-                        && self.reg.borrow().get_dac_power()
-                        && self.sample_countdown == 1
-                    {
-                        self.dmg_corrupt_wave_on_retrigger();
-                    }
-                    self.reg.borrow_mut().set_trigger(true);
-                    self.lc.reload();
-                    self.waveidx = 0x00;
-                    // CH3 start/restart has an additional startup delay.
-                    self.sample_countdown = self.sample_period + 5;
-                    if !self.reg.borrow().get_dac_enable() {
-                        self.reg.borrow_mut().set_trigger(false);
-                    }
-                }
-            }
+            0xff1e => self.write_nrx4(v, false),
             0xff30..=0xff3f => self.waveram[a as usize - 0xff30] = v,
             _ => unreachable!(),
         }
@@ -742,6 +768,36 @@ impl ChannelNoise {
             self.blip.set(self.blip.from.wrapping_add(self.timer.period), ampl);
         }
     }
+
+    fn write_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let triggered = v & 0x80 != 0x00;
+        let was_length_enabled = self.reg.borrow().get_length_enable();
+        self.reg.borrow_mut().nrx4 = v & 0x7f;
+        let new_length_enabled = self.reg.borrow().get_length_enable();
+
+        // Extra clock when enabling length counter (0→1) in first half of length period.
+        if extra_clock && !was_length_enabled && new_length_enabled && self.lc.n != 0 {
+            self.lc.n -= 1;
+        }
+
+        if triggered {
+            let length_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().set_trigger(true);
+            self.lc.reload();
+            self.ve.reload();
+            self.lfsr.reload();
+            // Extra clock when trigger reloads length from 0 with length enabled in first half.
+            if extra_clock && new_length_enabled && length_was_zero {
+                self.lc.n -= 1;
+            }
+            if !self.reg.borrow().get_dac_enable() {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        } else if extra_clock && !was_length_enabled && new_length_enabled && self.lc.n == 0 {
+            // Non-trigger: disable channel if extra enable clock made length reach zero.
+            self.reg.borrow_mut().set_trigger(false);
+        }
+    }
 }
 
 impl Memory for ChannelNoise {
@@ -773,19 +829,7 @@ impl Memory for ChannelNoise {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff23 => {
-                let triggered = v & 0x80 != 0x00;
-                self.reg.borrow_mut().nrx4 = v & 0x7f;
-                if triggered {
-                    self.reg.borrow_mut().set_trigger(true);
-                    self.lc.reload();
-                    self.ve.reload();
-                    self.lfsr.reload();
-                    if !self.reg.borrow().get_dac_enable() {
-                        self.reg.borrow_mut().set_trigger(false);
-                    }
-                }
-            }
+            0xff23 => self.write_nrx4(v, false),
             _ => unreachable!(),
         }
     }
@@ -840,6 +884,10 @@ impl Apu {
 
     pub fn next(&mut self, cycles: u32) {
         if !self.reg.get_power() {
+            // The DIV-APU counter (frame sequencer) always runs, even when APU is off.
+            for _ in 0..self.timer.next(cycles) {
+                self.fs.next();
+            }
             return;
         }
 
@@ -1012,10 +1060,26 @@ impl Memory for Apu {
             return;
         }
         match a {
-            0xff10..=0xff14 => self.channel1.sb(a, v),
-            0xff15..=0xff19 => self.channel2.sb(a, v),
-            0xff1a..=0xff1e => self.channel3.sb(a, v),
-            0xff1f..=0xff23 => self.channel4.sb(a, v),
+            0xff10..=0xff13 => self.channel1.sb(a, v),
+            0xff14 => {
+                let extra_clock = self.fs.step % 2 == 0;
+                self.channel1.write_nrx4(v, extra_clock);
+            }
+            0xff15..=0xff18 => self.channel2.sb(a, v),
+            0xff19 => {
+                let extra_clock = self.fs.step % 2 == 0;
+                self.channel2.write_nrx4(v, extra_clock);
+            }
+            0xff1a..=0xff1d => self.channel3.sb(a, v),
+            0xff1e => {
+                let extra_clock = self.fs.step % 2 == 0;
+                self.channel3.write_nrx4(v, extra_clock);
+            }
+            0xff1f..=0xff22 => self.channel4.sb(a, v),
+            0xff23 => {
+                let extra_clock = self.fs.step % 2 == 0;
+                self.channel4.write_nrx4(v, extra_clock);
+            }
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
             0xff26 => {

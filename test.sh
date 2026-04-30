@@ -2,6 +2,8 @@ cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_so
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/01-registers.gb"
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/02-len ctr.gb"
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/02-len ctr.gb"
+cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/03-trigger.gb"
+cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/03-trigger.gb"
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/06-overflow on trigger.gb"
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/06-overflow on trigger.gb"
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/08-len ctr during power.gb"
@@ -11,8 +13,7 @@ cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_so
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/11-regs after power.gb"
 cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/11-regs after power.gb"
 
-# cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/03-trigger.gb"
-# cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/03-trigger.gb"
+
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/04-sweep.gb"
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/cgb_sound/rom_singles/04-sweep.gb"
 # cargo run --release -- --mode blargg-memory-output -s 8 "res/gb-test-roms/dmg_sound/rom_singles/05-sweep details.gb"
