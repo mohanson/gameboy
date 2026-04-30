@@ -943,6 +943,30 @@ impl Memory for Apu {
 
     fn sb(&mut self, a: u16, v: u8) {
         if a != 0xff26 && !self.reg.get_power() {
+            // While APU is off, only DMG updates length counters from NRx1 writes.
+            // The NRx1 registers themselves still behave as read-only/cleared.
+            if self.term == Term::DMG {
+                match a {
+                    0xff11 => {
+                        self.channel1.lc.n = (1 << 6) - u16::from(v & 0x3f);
+                        return;
+                    }
+                    0xff16 => {
+                        self.channel2.lc.n = (1 << 6) - u16::from(v & 0x3f);
+                        return;
+                    }
+                    0xff1b => {
+                        self.channel3.lc.n = (1 << 8) - u16::from(v);
+                        return;
+                    }
+                    0xff20 => {
+                        self.channel4.lc.n = (1 << 6) - u16::from(v & 0x3f);
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            // On CGB, all writes except NR52 are blocked while APU is off.
             return;
         }
         match a {
@@ -953,6 +977,7 @@ impl Memory for Apu {
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
             0xff26 => {
+                let was_on = self.reg.get_power();
                 self.reg.nrx2 = v;
                 // Powering APU off should write 0 to all regs
                 // Powering APU off shouldn't affect wave, that wave RAM is unchanged
@@ -986,6 +1011,13 @@ impl Memory for Apu {
                     self.reg.nrx2 = 0x00;
                     self.reg.nrx3 = 0x00;
                     self.reg.nrx4 = 0x00;
+                }
+                // On CGB, powering the APU on resets all length counters to their maximum value.
+                if !was_on && self.reg.get_power() && self.term == Term::CGB {
+                    self.channel1.lc.n = 1 << 6;
+                    self.channel2.lc.n = 1 << 6;
+                    self.channel3.lc.n = 1 << 8;
+                    self.channel4.lc.n = 1 << 6;
                 }
             }
             0xff27..=0xff2f => {}
