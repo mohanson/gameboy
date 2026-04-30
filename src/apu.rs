@@ -544,21 +544,27 @@ impl Memory for ChannelSquare {
 // Wave RAM can only be properly accessed when the channel is disabled (see obscure behavior).
 struct ChannelWave {
     reg: Rc<RefCell<Register>>,
-    timer: Clock,
+    sample_period: u32,
+    sample_countdown: u32,
     lc: LengthCounter,
     blip: Blip,
+    term: Term,
+    pending_period: Option<u32>,
     waveram: [u8; 16],
     waveidx: usize,
 }
 
 impl ChannelWave {
-    fn power_up(blip: BlipBuf) -> ChannelWave {
+    fn power_up(blip: BlipBuf, term: Term) -> ChannelWave {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         ChannelWave {
             reg: reg.clone(),
-            timer: Clock::power_up(8192),
+            sample_period: 8192,
+            sample_countdown: 8191,
             lc: LengthCounter::power_up(reg.clone()),
             blip: Blip::power_up(blip),
+            term,
+            pending_period: None,
             waveram: [0x00; 16],
             waveidx: 0x00,
         }
@@ -572,7 +578,11 @@ impl ChannelWave {
             3 => 2,
             _ => unreachable!(),
         };
-        for _ in 0..self.timer.next(cycles) {
+        let mut cycles_left = cycles;
+        while cycles_left > self.sample_countdown {
+            cycles_left -= self.sample_countdown + 1;
+            self.sample_countdown = self.sample_period - 1;
+            self.waveidx = (self.waveidx + 1) % 32;
             let sample = if self.waveidx & 0x01 == 0x00 {
                 self.waveram[self.waveidx / 2] & 0x0f
             } else {
@@ -583,8 +593,24 @@ impl ChannelWave {
             } else {
                 i32::from(sample >> s)
             };
-            self.blip.set(self.blip.from.wrapping_add(self.timer.period), ampl);
-            self.waveidx = (self.waveidx + 1) % 32;
+            self.blip.set(self.blip.from.wrapping_add(self.sample_period), ampl);
+            if let Some(p) = self.pending_period.take() {
+                self.sample_period = p;
+                self.sample_countdown = self.sample_period - 1;
+            }
+        }
+        self.sample_countdown -= cycles_left;
+    }
+
+    fn dmg_corrupt_wave_on_retrigger(&mut self) {
+        let byte_idx = ((self.waveidx + 1) % 32) / 2;
+        if byte_idx < 4 {
+            self.waveram[0] = self.waveram[byte_idx];
+            return;
+        }
+        let base = byte_idx & !0x03;
+        for i in 0..4 {
+            self.waveram[i] = self.waveram[base + i];
         }
     }
 }
@@ -617,16 +643,32 @@ impl Memory for ChannelWave {
             0xff1c => self.reg.borrow_mut().nrx2 = v,
             0xff1d => {
                 self.reg.borrow_mut().nrx3 = v;
-                self.timer.period = period(self.reg.clone());
+                self.pending_period = Some(period(self.reg.clone()));
             }
             0xff1e => {
                 let triggered = v & 0x80 != 0x00;
+                let was_on = self.reg.borrow().get_trigger();
                 self.reg.borrow_mut().nrx4 = v & 0x7f;
-                self.timer.period = period(self.reg.clone());
+                let new_period = period(self.reg.clone());
                 if triggered {
+                    self.sample_period = new_period;
+                    self.pending_period = None;
+                } else {
+                    self.pending_period = Some(new_period);
+                }
+                if triggered {
+                    if self.term == Term::DMG
+                        && was_on
+                        && self.reg.borrow().get_dac_power()
+                        && self.sample_countdown == 1
+                    {
+                        self.dmg_corrupt_wave_on_retrigger();
+                    }
                     self.reg.borrow_mut().set_trigger(true);
                     self.lc.reload();
                     self.waveidx = 0x00;
+                    // CH3 start/restart has an additional startup delay.
+                    self.sample_countdown = self.sample_period + 5;
                     if !self.reg.borrow().get_dac_enable() {
                         self.reg.borrow_mut().set_trigger(false);
                     }
@@ -776,7 +818,7 @@ impl Apu {
             fs: FrameSequencer::power_up(),
             channel1: ChannelSquare::power_up(blipbuf1, Channel::Square1),
             channel2: ChannelSquare::power_up(blipbuf2, Channel::Square2),
-            channel3: ChannelWave::power_up(blipbuf3),
+            channel3: ChannelWave::power_up(blipbuf3, term),
             channel4: ChannelNoise::power_up(blipbuf4),
             sample_rate,
             term,
@@ -801,12 +843,12 @@ impl Apu {
             return;
         }
 
-        for _ in 0..self.timer.next(cycles) {
-            self.channel1.next(self.timer.period);
-            self.channel2.next(self.timer.period);
-            self.channel3.next(self.timer.period);
-            self.channel4.next(self.timer.period);
+        self.channel1.next(cycles);
+        self.channel2.next(cycles);
+        self.channel3.next(cycles);
+        self.channel4.next(cycles);
 
+        for _ in 0..self.timer.next(cycles) {
             let step = self.fs.next();
             if step == 0 || step == 2 || step == 4 || step == 6 {
                 self.channel1.lc.next();
@@ -823,17 +865,17 @@ impl Apu {
                 self.channel1.fs.next();
                 self.channel1.timer.period = period(self.channel1.reg.clone());
             }
-
-            self.channel1.blip.data.end_frame(self.timer.period);
-            self.channel2.blip.data.end_frame(self.timer.period);
-            self.channel3.blip.data.end_frame(self.timer.period);
-            self.channel4.blip.data.end_frame(self.timer.period);
-            self.channel1.blip.from = self.channel1.blip.from.wrapping_sub(self.timer.period);
-            self.channel2.blip.from = self.channel2.blip.from.wrapping_sub(self.timer.period);
-            self.channel3.blip.from = self.channel3.blip.from.wrapping_sub(self.timer.period);
-            self.channel4.blip.from = self.channel4.blip.from.wrapping_sub(self.timer.period);
-            self.mix();
         }
+
+        self.channel1.blip.data.end_frame(cycles);
+        self.channel2.blip.data.end_frame(cycles);
+        self.channel3.blip.data.end_frame(cycles);
+        self.channel4.blip.data.end_frame(cycles);
+        self.channel1.blip.from = self.channel1.blip.from.wrapping_sub(cycles);
+        self.channel2.blip.from = self.channel2.blip.from.wrapping_sub(cycles);
+        self.channel3.blip.from = self.channel3.blip.from.wrapping_sub(cycles);
+        self.channel4.blip.from = self.channel4.blip.from.wrapping_sub(cycles);
+        self.mix();
     }
 
     fn mix(&mut self) {
