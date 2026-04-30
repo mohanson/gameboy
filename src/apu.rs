@@ -66,6 +66,7 @@ struct Register {
     nrx2: u8,
     nrx3: u8,
     nrx4: u8,
+    enabled: bool,
 }
 
 impl Register {
@@ -151,19 +152,23 @@ impl Register {
     }
 
     fn get_trigger(&self) -> bool {
-        self.nrx4 & 0x80 != 0x00
+        self.enabled
     }
 
     fn set_trigger(&mut self, b: bool) {
-        if b {
-            self.nrx4 |= 0x80;
-        } else {
-            self.nrx4 &= 0x7f;
-        };
+        self.enabled = b;
     }
 
     fn get_length_enable(&self) -> bool {
         self.nrx4 & 0x40 != 0x00
+    }
+
+    fn get_dac_enable(&self) -> bool {
+        match self.channel {
+            Channel::Square1 | Channel::Square2 | Channel::Noise => self.nrx2 & 0xf8 != 0x00,
+            Channel::Wave => self.nrx0 & 0x80 != 0x00,
+            Channel::Mixer => true,
+        }
     }
 
     fn get_l_vol(&self) -> u8 {
@@ -188,7 +193,7 @@ impl Register {
             Channel::Square1 | Channel::Square2 => 0x40,
             _ => 0x00,
         };
-        Self { channel, nrx0: 0x00, nrx1, nrx2: 0x00, nrx3: 0x00, nrx4: 0x00 }
+        Self { channel, nrx0: 0x00, nrx1, nrx2: 0x00, nrx3: 0x00, nrx4: 0x00, enabled: false }
     }
 }
 
@@ -476,13 +481,19 @@ impl Memory for ChannelSquare {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
+            0xff12 | 0xff17 => {
+                self.reg.borrow_mut().nrx2 = v;
+                if !self.reg.borrow().get_dac_enable() {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff13 | 0xff18 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
             0xff14 | 0xff19 => {
-                self.reg.borrow_mut().nrx4 = v;
+                let triggered = v & 0x80 != 0x00;
+                self.reg.borrow_mut().nrx4 = v & 0x7f;
                 self.timer.period = period(self.reg.clone());
                 // Trigger Event
                 //
@@ -499,11 +510,15 @@ impl Memory for ChannelSquare {
                 //
                 // Note that if the channel's DAC is off, after the above actions occur the channel will be immediately
                 // disabled again.
-                if self.reg.borrow().get_trigger() {
+                if triggered {
+                    self.reg.borrow_mut().set_trigger(true);
                     self.lc.reload();
                     self.ve.reload();
                     if self.reg.borrow().channel == Channel::Square1 {
                         self.fs.reload();
+                    }
+                    if !self.reg.borrow().get_dac_enable() {
+                        self.reg.borrow_mut().set_trigger(false);
                     }
                 }
             }
@@ -589,7 +604,12 @@ impl Memory for ChannelWave {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            0xff1a => self.reg.borrow_mut().nrx0 = v,
+            0xff1a => {
+                self.reg.borrow_mut().nrx0 = v;
+                if !self.reg.borrow().get_dac_enable() {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff1b => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
@@ -600,11 +620,16 @@ impl Memory for ChannelWave {
                 self.timer.period = period(self.reg.clone());
             }
             0xff1e => {
-                self.reg.borrow_mut().nrx4 = v;
+                let triggered = v & 0x80 != 0x00;
+                self.reg.borrow_mut().nrx4 = v & 0x7f;
                 self.timer.period = period(self.reg.clone());
-                if self.reg.borrow().get_trigger() {
+                if triggered {
+                    self.reg.borrow_mut().set_trigger(true);
                     self.lc.reload();
                     self.waveidx = 0x00;
+                    if !self.reg.borrow().get_dac_enable() {
+                        self.reg.borrow_mut().set_trigger(false);
+                    }
                 }
             }
             0xff30..=0xff3f => self.waveram[a as usize - 0xff30] = v,
@@ -696,17 +721,27 @@ impl Memory for ChannelNoise {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xff21 => self.reg.borrow_mut().nrx2 = v,
+            0xff21 => {
+                self.reg.borrow_mut().nrx2 = v;
+                if !self.reg.borrow().get_dac_enable() {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff22 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
             0xff23 => {
-                self.reg.borrow_mut().nrx4 = v;
-                if self.reg.borrow().get_trigger() {
+                let triggered = v & 0x80 != 0x00;
+                self.reg.borrow_mut().nrx4 = v & 0x7f;
+                if triggered {
+                    self.reg.borrow_mut().set_trigger(true);
                     self.lc.reload();
                     self.ve.reload();
                     self.lfsr.reload();
+                    if !self.reg.borrow().get_dac_enable() {
+                        self.reg.borrow_mut().set_trigger(false);
+                    }
                 }
             }
             _ => unreachable!(),
@@ -927,21 +962,25 @@ impl Memory for Apu {
                     self.channel1.reg.borrow_mut().nrx2 = 0x00;
                     self.channel1.reg.borrow_mut().nrx3 = 0x00;
                     self.channel1.reg.borrow_mut().nrx4 = 0x00;
+                    self.channel1.reg.borrow_mut().set_trigger(false);
                     self.channel2.reg.borrow_mut().nrx0 = 0x00;
                     self.channel2.reg.borrow_mut().nrx1 = 0x00;
                     self.channel2.reg.borrow_mut().nrx2 = 0x00;
                     self.channel2.reg.borrow_mut().nrx3 = 0x00;
                     self.channel2.reg.borrow_mut().nrx4 = 0x00;
+                    self.channel2.reg.borrow_mut().set_trigger(false);
                     self.channel3.reg.borrow_mut().nrx0 = 0x00;
                     self.channel3.reg.borrow_mut().nrx1 = 0x00;
                     self.channel3.reg.borrow_mut().nrx2 = 0x00;
                     self.channel3.reg.borrow_mut().nrx3 = 0x00;
                     self.channel3.reg.borrow_mut().nrx4 = 0x00;
+                    self.channel3.reg.borrow_mut().set_trigger(false);
                     self.channel4.reg.borrow_mut().nrx0 = 0x00;
                     self.channel4.reg.borrow_mut().nrx1 = 0x00;
                     self.channel4.reg.borrow_mut().nrx2 = 0x00;
                     self.channel4.reg.borrow_mut().nrx3 = 0x00;
                     self.channel4.reg.borrow_mut().nrx4 = 0x00;
+                    self.channel4.reg.borrow_mut().set_trigger(false);
                     self.reg.nrx0 = 0x00;
                     self.reg.nrx1 = 0x00;
                     self.reg.nrx2 = 0x00;
