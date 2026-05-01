@@ -17,7 +17,7 @@ pub enum Flag {
 }
 
 pub struct Intf {
-    pub data: u8,
+    data: u8,
 }
 
 impl Intf {
@@ -26,6 +26,7 @@ impl Intf {
         Self { data: 0xe1 }
     }
 
+    // Set the specified interrupt flag to 1, indicating that the corresponding interrupt has been requested.
     pub fn raise(&mut self, flag: Flag) {
         self.data |= 1 << flag as u8;
     }
@@ -33,11 +34,11 @@ impl Intf {
 
 impl Memory for Intf {
     fn lb(&self, _: u16) -> u8 {
-        // Bits 5-7 are always 1, these are unused bits and default to high when read from the DMG.
-        self.data | 0xe0
+        self.data
     }
 
     fn sb(&mut self, _: u16, v: u8) {
-        self.data = v;
+        // Bits 5-7 are always 1, these are unused bits and default to high when read from the DMG.
+        self.data = v | 0xe0;
     }
 }

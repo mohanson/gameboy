@@ -104,7 +104,7 @@ fn mode_blargg_memory_output(argu: &Argument) {
         let ex = mbrd.mmu.borrow().lb(0xa000);
         if ex != 0x80 {
             std::io::stdout().flush().unwrap();
-            std::process::exit(0);
+            std::process::exit(ex as i32);
         }
     }
 }
