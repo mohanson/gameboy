@@ -1,14 +1,14 @@
-fn exec(sh: &str) -> std::io::Result<std::process::ExitStatus> {
+fn exec(sh: &str) {
     rog::println!("$ {}", sh);
     let mut parts = sh.split_whitespace();
     let prog = parts.next().unwrap();
     let args = parts;
-    std::process::Command::new(prog).args(args).status()
+    assert_eq!(std::process::Command::new(prog).args(args).status().unwrap().code().unwrap(), 0);
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if !std::path::Path::new("./res/gb-test-roms").exists() {
-        exec("git clone --depth=1 https://github.com/retrio/gb-test-roms ./res/gb-test-roms")?;
+    if !std::path::Path::new("res/gb-test-roms").exists() {
+        exec("git clone --depth=1 https://github.com/retrio/gb-test-roms res/gb-test-roms");
     }
     let mut case = std::collections::BTreeMap::new();
     case.insert("res/gb-test-roms/cgb_sound/cgb_sound.gb", 0);
@@ -24,10 +24,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match v {
             0 => {}
             1 => {
-                exec(&format!("cargo run --release -- --mode blargg-serial-output -s 8 {}", k)).unwrap();
+                exec(&format!("cargo run --release -- --mode blargg-serial-output -s 8 {}", k));
             }
             2 => {
-                exec(&format!("cargo run --release -- --mode blargg-memory-output -s 8 {}", k)).unwrap();
+                exec(&format!("cargo run --release -- --mode blargg-memory-output -s 8 {}", k));
             }
             3 => {
                 if std::env::consts::OS == "windows" {

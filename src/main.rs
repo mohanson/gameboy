@@ -28,7 +28,7 @@ fn main() {
         ap.refer(&mut argu.mode).add_option(
             &["-m", "--mode"],
             argparse::Store,
-            "Set the emulator mode (blargg-memory-output, blargg-serial-output or minifb)",
+            "Set the emulator mode (blargg-memory-output, blargg-serial-output, minifb, mts)",
         );
         ap.refer(&mut argu.scale).add_option(
             &["-x", "--scale-factor"],
@@ -48,7 +48,8 @@ fn main() {
         "blargg-memory-output" => mode_blargg_memory_output(&argu),
         "blargg-serial-output" => mode_blargg_serial_output(&argu),
         "minifb" => mode_minifb(&argu),
-        _ => panic!("Supported mode: blargg-memory-output, blargg-serial-output or minifb"),
+        "mts" => mode_mts(&argu),
+        _ => unreachable!(),
     }
 }
 
@@ -236,4 +237,24 @@ fn mode_minifb(argu: &Argument) {
     }
 
     mbrd.mmu.borrow_mut().cartridge.save();
+}
+
+fn mode_mts(argu: &Argument) {
+    let mut mbrd = MotherBoard::power_up(&argu.rom);
+    mbrd.cpu.spd = argu.speed;
+    let passed = [0x03, 0x05, 0x08, 0x0d, 0x15, 0x22];
+    let failed = [0x42, 0x42, 0x42, 0x42, 0x42, 0x42];
+    loop {
+        mbrd.next();
+        let reg = &mbrd.cpu.cpu.reg;
+        let sig = [reg.b, reg.c, reg.d, reg.e, reg.h, reg.l];
+        if sig != passed && sig != failed {
+            continue;
+        }
+        let pc = reg.pc;
+        if mbrd.mmu.borrow().lb(pc) != 0x18 || mbrd.mmu.borrow().lb(pc.wrapping_add(1)) != 0xfe {
+            continue;
+        }
+        std::process::exit(if sig == passed { 0 } else { 1 });
+    }
 }

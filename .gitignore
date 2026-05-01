@@ -1,8 +1,5 @@
-/target
-**/*.rs.bk
-
-/.vscode
-
 /res/gb-test-roms/
+/res/mts
 /res/*.sav
 /res/*.rtc
+/target
