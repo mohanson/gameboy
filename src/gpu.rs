@@ -1,5 +1,5 @@
 use super::convention::{Memory, Term};
-use super::intf::{Flag, Intf};
+use super::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -245,7 +245,7 @@ pub struct Gpu {
     // ---------- 160
     //        144
     pub data: [[[u8; 3]; SCREEN_W]; SCREEN_H],
-    pub intf: Rc<RefCell<Intf>>,
+    pub intf: Rc<RefCell<Interrupt>>,
     pub term: Term,
     pub h_blank: bool,
     pub v_blank: bool,
@@ -336,7 +336,7 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub fn power_up(term: Term, intf: Rc<RefCell<Intf>>) -> Self {
+    pub fn power_up(term: Term, intf: Rc<RefCell<Interrupt>>) -> Self {
         Self {
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
             intf,
@@ -452,7 +452,7 @@ impl Gpu {
             if d != self.dots {
                 self.ly = (self.ly + 1) % 154;
                 if self.stat.enable_ly_interrupt && self.ly == self.lc {
-                    self.intf.borrow_mut().raise(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
             }
             if self.ly >= 144 {
@@ -461,9 +461,9 @@ impl Gpu {
                 }
                 self.stat.mode = 1;
                 self.v_blank = true;
-                self.intf.borrow_mut().raise(Flag::VBlank);
+                self.intf.borrow_mut().raise(InterruptFlag::VBlank);
                 if self.stat.enable_m1_interrupt {
-                    self.intf.borrow_mut().raise(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
             } else if self.dots <= 80 {
                 if self.stat.mode == 2 {
@@ -471,7 +471,7 @@ impl Gpu {
                 }
                 self.stat.mode = 2;
                 if self.stat.enable_m2_interrupt {
-                    self.intf.borrow_mut().raise(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
             } else if self.dots <= (80 + 172) {
                 self.stat.mode = 3;
@@ -482,7 +482,7 @@ impl Gpu {
                 self.stat.mode = 0;
                 self.h_blank = true;
                 if self.stat.enable_m0_interrupt {
-                    self.intf.borrow_mut().raise(Flag::LCDStat);
+                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
                 // Render scanline
                 if self.term == Term::CGB || self.lcdc.bit0() {

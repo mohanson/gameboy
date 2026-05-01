@@ -4,7 +4,7 @@ pub mod clock;
 pub mod convention;
 pub mod cpu;
 pub mod gpu;
-pub mod intf;
+pub mod interrupt;
 pub mod joypad;
 pub mod mmunit;
 pub mod motherboard;

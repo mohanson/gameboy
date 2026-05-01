@@ -5,7 +5,7 @@ use super::apu::Apu;
 use super::cartridge::Cartridge;
 use super::convention::{Memory, Term};
 use super::gpu::{Gpu, Hdma, HdmaMode};
-use super::intf::Intf;
+use super::interrupt::Interrupt;
 use super::joypad::Joypad;
 use super::serial::Serial;
 use super::timer::Timer;
@@ -29,8 +29,7 @@ pub struct Mmunit {
     pub speed: Speed,
     pub term: Term,
     pub timer: Timer,
-    inte: u8,
-    intf: Rc<RefCell<Intf>>,
+    intf: Rc<RefCell<Interrupt>>,
     hdma: Hdma,
     hram: [u8; 0x7f],
     wram: [u8; 0x8000],
@@ -45,7 +44,7 @@ impl Mmunit {
             0x80 => Term::CGB,
             _ => unreachable!(),
         };
-        let intf = Rc::new(RefCell::new(Intf::power_up()));
+        let intf = Rc::new(RefCell::new(Interrupt::power_up()));
         let mut r = Self {
             cartridge: cart,
             apu: Apu::power_up(48000),
@@ -56,7 +55,6 @@ impl Mmunit {
             speed: Speed::Normal,
             term,
             timer: Timer::power_up(intf.clone()),
-            inte: 0x00,
             intf: intf.clone(),
             hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
@@ -190,7 +188,7 @@ impl Memory for Mmunit {
             0xff68..=0xff6b => self.gpu.lb(a),
             0xff70 => self.wram_bank as u8,
             0xff80..=0xfffe => self.hram[a as usize - 0xff80],
-            0xffff => self.inte,
+            0xffff => self.intf.borrow().lb(0xffff),
             _ => 0x00,
         }
     }
@@ -233,7 +231,7 @@ impl Memory for Mmunit {
                 };
             }
             0xff80..=0xfffe => self.hram[a as usize - 0xff80] = v,
-            0xffff => self.inte = v,
+            0xffff => self.intf.borrow_mut().sb(0xffff, v),
             _ => {}
         }
     }

@@ -15,7 +15,7 @@
 // Note: Most programs are repeatedly reading from this port several times (the first reads used as short delay,
 // allowing the inputs to stabilize, and only the value from the last read actually used).
 use super::convention::Memory;
-use super::intf::{Flag, Intf};
+use super::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -33,13 +33,13 @@ pub enum JoypadKey {
 }
 
 pub struct Joypad {
-    intf: Rc<RefCell<Intf>>,
+    intf: Rc<RefCell<Interrupt>>,
     matrix: u8,
     select: u8,
 }
 
 impl Joypad {
-    pub fn power_up(intf: Rc<RefCell<Intf>>) -> Self {
+    pub fn power_up(intf: Rc<RefCell<Interrupt>>) -> Self {
         Self { intf, matrix: 0xff, select: 0x00 }
     }
 }
@@ -47,7 +47,7 @@ impl Joypad {
 impl Joypad {
     pub fn keydown(&mut self, key: JoypadKey) {
         self.matrix &= !(key as u8);
-        self.intf.borrow_mut().raise(Flag::Joypad);
+        self.intf.borrow_mut().raise(InterruptFlag::Joypad);
     }
 
     pub fn keyup(&mut self, key: JoypadKey) {

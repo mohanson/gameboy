@@ -5,7 +5,7 @@
 //
 // See: http://gbdev.gg8.se/wiki/articles/Timer_and_Divider_Registers
 use super::clock::Clock;
-use super::intf::{Flag, Intf};
+use super::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -34,14 +34,14 @@ struct Register {
 // setting Bit 2 in the IF Register (FF0F). When that interrupt is enabled, then the CPU will execute it by calling
 // the timer interrupt vector at 0050h.
 pub struct Timer {
-    intf: Rc<RefCell<Intf>>,
+    intf: Rc<RefCell<Interrupt>>,
     reg: Register,
     div_clock: Clock,
     tma_clock: Clock,
 }
 
 impl Timer {
-    pub fn power_up(intf: Rc<RefCell<Intf>>) -> Self {
+    pub fn power_up(intf: Rc<RefCell<Interrupt>>) -> Self {
         Timer { intf, reg: Register::default(), div_clock: Clock::power_up(256), tma_clock: Clock::power_up(1024) }
     }
 
@@ -93,7 +93,7 @@ impl Timer {
                 self.reg.tima = self.reg.tima.wrapping_add(1);
                 if self.reg.tima == 0x00 {
                     self.reg.tima = self.reg.tma;
-                    self.intf.borrow_mut().raise(Flag::Timer);
+                    self.intf.borrow_mut().raise(InterruptFlag::Timer);
                 }
             }
         }
