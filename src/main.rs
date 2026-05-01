@@ -255,6 +255,12 @@ fn mode_mts(argu: &Argument) {
         if mbrd.mmu.borrow().lb(pc) != 0x18 || mbrd.mmu.borrow().lb(pc.wrapping_add(1)) != 0xfe {
             continue;
         }
-        std::process::exit(if sig == passed { 0 } else { 1 });
+        if sig == passed {
+            rog::println!("Passed");
+            std::process::exit(0);
+        } else {
+            rog::println!("Failed");
+            std::process::exit(1);
+        }
     }
 }
