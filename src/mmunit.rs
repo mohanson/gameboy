@@ -102,7 +102,7 @@ impl Mmunit {
         let vram_cycles = self.run_dma();
         let gpu_cycles = cycles / cpu_divider + vram_cycles;
         let cpu_cycles = cycles + vram_cycles * cpu_divider;
-        self.timer.next(cpu_cycles);
+        self.timer.tick(cpu_cycles);
         self.gpu.next(gpu_cycles);
         self.apu.next(gpu_cycles);
         gpu_cycles
@@ -175,7 +175,7 @@ impl Memory for Mmunit {
             0xfea0..=0xfeff => 0x00,
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
-            0xff04..=0xff07 => self.timer.get(a),
+            0xff04..=0xff07 => self.timer.lb(a),
             0xff0f => self.intf.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff4d => {
@@ -206,7 +206,7 @@ impl Memory for Mmunit {
             0xfea0..=0xfeff => {}
             0xff00 => self.joypad.sb(a, v),
             0xff01..=0xff02 => self.serial.sb(a, v),
-            0xff04..=0xff07 => self.timer.set(a, v),
+            0xff04..=0xff07 => self.timer.sb(a, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff46 => {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
