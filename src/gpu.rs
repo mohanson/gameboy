@@ -684,7 +684,8 @@ impl Memory for Gpu {
                 let bit4 = if self.stat.enable_m1_interrupt { 0x10 } else { 0x00 };
                 let bit3 = if self.stat.enable_m0_interrupt { 0x08 } else { 0x00 };
                 let bit2 = if self.ly == self.lc { 0x04 } else { 0x00 };
-                bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
+                // Bit 7 is unused and always reads as 1
+                0x80 | bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
             0xff42 => self.sy,
             0xff43 => self.sx,

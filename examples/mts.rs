@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/add_sp_e_timing.gb", 0);
     case.insert("res/mts/acceptance/bits/mem_oam.gb", 1);
     case.insert("res/mts/acceptance/bits/reg_f.gb", 1);
-    case.insert("res/mts/acceptance/bits/unused_hwio-GS.gb", 0);
+    case.insert("res/mts/acceptance/bits/unused_hwio-GS.gb", 1);
     case.insert("res/mts/acceptance/boot_div-S.gb", 0);
     case.insert("res/mts/acceptance/boot_div-dmg0.gb", 0);
     case.insert("res/mts/acceptance/boot_div-dmgABCmgb.gb", 0);

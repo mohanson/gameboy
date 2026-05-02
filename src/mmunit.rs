@@ -176,6 +176,7 @@ impl Memory for Mmunit {
             0xff04..=0xff07 => self.timer.lb(a),
             0xff0f => self.intf.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
+            0xff4c..=0xff7f if self.term == Term::DMG => 0xff,
             0xff4d => {
                 let a = if self.speed == Speed::Double { 0x80 } else { 0x00 };
                 let b = if self.shift { 0x01 } else { 0x00 };
@@ -187,7 +188,7 @@ impl Memory for Mmunit {
             0xff70 => self.wram_bank as u8,
             0xff80..=0xfffe => self.hram[a as usize - 0xff80],
             0xffff => self.intf.borrow().lb(0xffff),
-            _ => 0x00,
+            _ => 0xff,
         }
     }
 
@@ -217,6 +218,7 @@ impl Memory for Mmunit {
                     self.sb(0xfe00 + i, b);
                 }
             }
+            0xff4c..=0xff7f if self.term == Term::DMG => {}
             0xff4d => self.shift = (v & 0x01) == 0x01,
             0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.sb(a, v),
             0xff51..=0xff55 => self.hdma.sb(a, v),
