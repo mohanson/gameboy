@@ -46,7 +46,7 @@ impl Timer {
             term,
             intr,
             sdiv: match term {
-                Term::DMG => 0xabff,
+                Term::DMG => 0xabd4,
                 Term::CGB => rng::u16(),
             },
             tima: 0,
