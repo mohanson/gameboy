@@ -8,7 +8,7 @@ use crate::convention::{Memory, Term};
 //
 // See: http://gbdev.gg8.se/wiki/articles/Serial_Data_Transfer_(Link_Cable)
 pub struct Serial {
-    term: Term,
+    pub term: Term,
     // Before a transfer, it holds the next byte that will go out.
     // During a transfer, it has a blend of the outgoing and incoming bytes. Each cycle, the leftmost bit is shifted
     // out (and over the wire) and the incoming bit is shifted in from the other side:

@@ -560,6 +560,13 @@ impl Cpu {
     // Execute the instruction pointed by the program counter (PC) and return the number of cycles it took.
     fn exec_opcode(&mut self) -> u32 {
         let mut opcode = self.fetch_b();
+        // Apply pending IME enable from a previous EI instruction (1-instruction delay).
+        // This must happen before fetching the opcode so that a consecutive EI does not
+        // overwrite the pending flag before it fires.
+        if self.imp == 1 {
+            self.ime = 1;
+            self.imp = 0;
+        }
         // HALT bug: opcode is fetched without incrementing PC, so the same byte is re-read as the first operand,
         // duplicating the instruction byte.
         if self.bug == 1 {
@@ -1520,10 +1527,6 @@ impl Cpu {
                 self.reg.pc = 0x38;
             }
         };
-        if self.imp == 1 {
-            self.ime = 1;
-            self.imp = 0;
-        }
         if self.imp == 2 {
             self.imp = 1;
         }
