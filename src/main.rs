@@ -229,9 +229,9 @@ fn mode_minifb(argu: &Argument) {
         ];
         for (rk, vk) in &keys {
             if window.is_key_down(*rk) {
-                mbrd.mmu.borrow_mut().joypad.keydown(vk.clone());
+                mbrd.mmu.borrow_mut().joypad.key_down(vk.clone());
             } else {
-                mbrd.mmu.borrow_mut().joypad.keyup(vk.clone());
+                mbrd.mmu.borrow_mut().joypad.key_free(vk.clone());
             }
         }
     }

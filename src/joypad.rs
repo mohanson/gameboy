@@ -40,17 +40,17 @@ pub struct Joypad {
 
 impl Joypad {
     pub fn power_up(intf: Rc<RefCell<Interrupt>>) -> Self {
-        Self { intf, matrix: 0xff, select: 0x00 }
+        Self { intf, matrix: 0xff, select: 0xcf }
     }
 }
 
 impl Joypad {
-    pub fn keydown(&mut self, key: JoypadKey) {
+    pub fn key_down(&mut self, key: JoypadKey) {
         self.matrix &= !(key as u8);
         self.intf.borrow_mut().raise(InterruptFlag::Joypad);
     }
 
-    pub fn keyup(&mut self, key: JoypadKey) {
+    pub fn key_free(&mut self, key: JoypadKey) {
         self.matrix |= key as u8;
     }
 }
@@ -64,11 +64,11 @@ impl Memory for Joypad {
         if (self.select & 0b0010_0000) == 0x00 {
             return self.select | (self.matrix >> 4);
         }
-        self.select
+        self.select | 0x0f
     }
 
     fn sb(&mut self, a: u16, v: u8) {
         assert_eq!(a, 0xff00);
-        self.select = v;
+        self.select = (self.select & 0x0f) | (v & 0xf0);
     }
 }
