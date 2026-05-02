@@ -101,7 +101,7 @@ impl Memory for Timer {
             0xff04 => self.sdiv.shr(8) as u8,
             0xff05 => self.tima,
             0xff06 => self.tma,
-            0xff07 => self.tac,
+            0xff07 => 0xf8 | self.tac,
             _ => unreachable!(),
         }
     }
@@ -127,7 +127,7 @@ impl Memory for Timer {
                 }
             }
             0xff07 => {
-                self.tac = v | 0xf8;
+                self.tac = v;
                 self.edge();
             }
             _ => unreachable!(),
