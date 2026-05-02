@@ -1574,7 +1574,12 @@ impl Cpu {
 
 impl Cpu {
     pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        Self { reg: Register::power_up(term), mem, ime: 0, imp: 0, low: 0, bug: 0 }
+        let mut reg = Register::power_up(term);
+        let chk = mem.borrow().lb(0x014d);
+        if term == Term::DMG && chk != 0x00 {
+            reg.f = 0xb0;
+        }
+        Self { reg, mem, ime: 0, imp: 0, low: 0, bug: 0 }
     }
 
     pub fn step(&mut self) -> u32 {

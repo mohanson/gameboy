@@ -28,11 +28,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/boot_hwio-S.gb", 9);
     case.insert("res/mts/acceptance/boot_hwio-dmg0.gb", 9);
     // case.insert("res/mts/acceptance/boot_hwio-dmgABCmgb.gb", 0);
-    // case.insert("res/mts/acceptance/boot_regs-dmg0.gb", 0);
-    // case.insert("res/mts/acceptance/boot_regs-dmgABC.gb", 0);
-    // case.insert("res/mts/acceptance/boot_regs-mgb.gb", 0);
-    // case.insert("res/mts/acceptance/boot_regs-sgb.gb", 0);
-    // case.insert("res/mts/acceptance/boot_regs-sgb2.gb", 0);
+    case.insert("res/mts/acceptance/boot_regs-dmg0.gb", 9);
+    case.insert("res/mts/acceptance/boot_regs-dmgABC.gb", 1);
+    case.insert("res/mts/acceptance/boot_regs-mgb.gb", 9);
+    case.insert("res/mts/acceptance/boot_regs-sgb.gb", 9);
+    case.insert("res/mts/acceptance/boot_regs-sgb2.gb", 9);
     // case.insert("res/mts/acceptance/call_cc_timing.gb", 0);
     // case.insert("res/mts/acceptance/call_cc_timing2.gb", 0);
     // case.insert("res/mts/acceptance/call_timing.gb", 0);
