@@ -347,6 +347,7 @@ impl Memory for Mbc2 {
                     self.rom_bank = v as usize;
                 }
             }
+            0x4000..=0x7fff => {}
             0xa000..=0xa1ff => {
                 if !self.ram_open {
                     return;
