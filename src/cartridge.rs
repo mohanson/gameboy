@@ -202,11 +202,7 @@ impl Memory for Mbc1 {
             }
             0x4000..=0x7fff => {
                 let rom_bank = self.rom_bank.max(1);
-                let rom_bank = match self.mbc_mode {
-                    0x00 => rom_bank | self.ram_bank << 5,
-                    0x01 => rom_bank,
-                    _ => unreachable!(),
-                };
+                let rom_bank = rom_bank | self.ram_bank << 5;
                 let rom_bank = rom_bank % self.rom_maxm;
                 let bank_off = a as usize & 0x3fff;
                 self.rom[rom_bank * 0x4000 + bank_off]
