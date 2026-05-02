@@ -77,15 +77,15 @@ const ROM_BANK_NUMBER: LazyLock<HashMap<u8, usize>> = LazyLock::new(|| {
     m.insert(0x54, 96);
     m
 });
-const RAM_BANK_LENGTH: usize = 1024;
+const RAM_BANK_LENGTH: usize = 1024 * 8;
 const RAM_BANK_NUMBER: LazyLock<HashMap<u8, usize>> = LazyLock::new(|| {
     let mut m = HashMap::new();
     m.insert(0x00, 0);
     m.insert(0x01, 0);
-    m.insert(0x02, 8);
-    m.insert(0x03, 32);
-    m.insert(0x04, 128);
-    m.insert(0x05, 64);
+    m.insert(0x02, 1);
+    m.insert(0x03, 4);
+    m.insert(0x04, 16);
+    m.insert(0x05, 8);
     m
 });
 

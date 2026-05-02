@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/emulator-only/mbc1/bits_ramg.gb", 1);
     // case.insert("res/mts/emulator-only/mbc1/multicart_rom_8Mb.gb", 0);
     case.insert("res/mts/emulator-only/mbc1/ram_256kb.gb", 1);
-    // case.insert("res/mts/emulator-only/mbc1/ram_64kb.gb", 0);
+    case.insert("res/mts/emulator-only/mbc1/ram_64kb.gb", 1);
     // case.insert("res/mts/emulator-only/mbc1/rom_16Mb.gb", 0);
     case.insert("res/mts/emulator-only/mbc1/rom_1Mb.gb", 1);
     case.insert("res/mts/emulator-only/mbc1/rom_2Mb.gb", 1);
