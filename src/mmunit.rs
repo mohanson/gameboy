@@ -50,7 +50,7 @@ impl Mmunit {
             apu: Apu::power_up(48000),
             gpu: Gpu::power_up(term, intf.clone()),
             joypad: Joypad::power_up(intf.clone()),
-            serial: Serial::power_up(),
+            serial: Serial::power_up(term),
             shift: false,
             speed: Speed::Normal,
             term,
@@ -61,9 +61,6 @@ impl Mmunit {
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
         };
-        r.sb(0xff05, 0x00);
-        r.sb(0xff06, 0x00);
-        r.sb(0xff07, 0x00);
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
         r.sb(0xff12, 0xf3);

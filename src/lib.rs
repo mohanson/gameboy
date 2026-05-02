@@ -9,5 +9,6 @@ pub mod joypad;
 pub mod mmunit;
 pub mod motherboard;
 pub mod register;
+pub mod rng;
 pub mod serial;
 pub mod timer;

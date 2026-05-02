@@ -1,4 +1,4 @@
-use crate::convention::Memory;
+use crate::convention::{Memory, Term};
 
 // Communication between two Gameboys happens one byte at a time. One Gameboy acts as the master, uses its internal
 // clock, and thus controls when the exchange happens. The other one uses an external clock (i.e., the one inside the
@@ -19,8 +19,14 @@ pub struct Serial {
 }
 
 impl Serial {
-    pub fn power_up() -> Self {
-        Self { data: 0x00, control: 0x00 }
+    pub fn power_up(term: Term) -> Self {
+        Self {
+            data: 0x00,
+            control: match term {
+                Term::DMG => 0x7e,
+                Term::CGB => 0x7f,
+            },
+        }
     }
 }
 

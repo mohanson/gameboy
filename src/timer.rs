@@ -6,6 +6,7 @@
 // See: http://gbdev.gg8.se/wiki/articles/Timer_and_Divider_Registers
 use super::convention::{Memory, Term};
 use super::interrupt::{Interrupt, InterruptFlag};
+use super::rng;
 use std::cell::RefCell;
 use std::ops::Shr;
 use std::rc::Rc;
@@ -41,7 +42,19 @@ pub struct Timer {
 
 impl Timer {
     pub fn power_up(term: Term, intr: Rc<RefCell<Interrupt>>) -> Self {
-        Timer { term, intr, sdiv: 0, tima: 0, tma: 0, tac: 0, signal: 0, delays: 0 }
+        Timer {
+            term,
+            intr,
+            sdiv: match term {
+                Term::DMG => 0xabff,
+                Term::CGB => rng::u16(),
+            },
+            tima: 0,
+            tma: 0,
+            tac: 0xf8,
+            signal: 0,
+            delays: 0,
+        }
     }
 
     pub fn edge(&mut self) {
