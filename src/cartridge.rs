@@ -297,6 +297,7 @@ impl Stable for Mbc1 {
 pub struct Mbc2 {
     rom: Vec<u8>,
     rom_bank: usize,
+    rom_maxm: usize,
     ram: Vec<u8>,
     ram_open: bool,
     sav_path: PathBuf,
@@ -304,7 +305,8 @@ pub struct Mbc2 {
 
 impl Mbc2 {
     pub fn power_up(rom: Vec<u8>, ram: Vec<u8>, sav: impl AsRef<Path>) -> Self {
-        Self { rom, rom_bank: 0x01, ram, ram_open: false, sav_path: PathBuf::from(sav.as_ref()) }
+        let rom_maxm = *ROM_BANK_NUMBER.get(&rom[0x0148]).unwrap();
+        Self { rom, rom_bank: 0x01, rom_maxm, ram, ram_open: false, sav_path: PathBuf::from(sav.as_ref()) }
     }
 }
 
@@ -314,7 +316,7 @@ impl Memory for Mbc2 {
             0x0000..=0x3fff => self.rom[a as usize],
             0x4000..=0x7fff => {
                 let rom_bank = self.rom_bank.max(1);
-                let rom_bank = rom_bank % 16;
+                let rom_bank = rom_bank % self.rom_maxm;
                 let bank_off = a as usize & 0x3fff;
                 self.rom[rom_bank * 0x4000 + bank_off]
             }
@@ -322,13 +324,13 @@ impl Memory for Mbc2 {
                 if !self.ram_open {
                     return 0xff;
                 }
-                self.ram[a as usize & 0x01ff]
+                0xf0 | self.ram[a as usize & 0x01ff]
             }
             0xa200..=0xbfff => {
                 if !self.ram_open {
                     return 0xff;
                 }
-                self.ram[a as usize & 0x01ff]
+                0xf0 | self.ram[a as usize & 0x01ff]
             }
             _ => unreachable!(),
         }
@@ -338,13 +340,10 @@ impl Memory for Mbc2 {
         // Only the lower 4 bits of the "bytes" in this memory area are used.
         let v = v & 0x0f;
         match a {
-            0x0000..=0x1fff => {
+            0x0000..=0x3fff => {
                 if a & 0x0100 == 0 {
                     self.ram_open = v == 0x0a;
-                }
-            }
-            0x2000..=0x3fff => {
-                if a & 0x0100 != 0 {
+                } else {
                     self.rom_bank = v as usize;
                 }
             }
