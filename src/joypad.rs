@@ -59,10 +59,10 @@ impl Memory for Joypad {
     fn lb(&self, a: u16) -> u8 {
         assert_eq!(a, 0xff00);
         if (self.select & 0b0001_0000) == 0x00 {
-            return self.select | (self.matrix & 0x0f);
+            return (self.select & 0xf0) | (self.matrix & 0x0f);
         }
         if (self.select & 0b0010_0000) == 0x00 {
-            return self.select | (self.matrix >> 4);
+            return (self.select & 0xf0) | (self.matrix >> 0x4);
         }
         self.select | 0x0f
     }
