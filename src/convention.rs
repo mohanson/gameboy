@@ -4,6 +4,15 @@ pub enum Term {
     CGB, // GameBoy Color
 }
 
+impl std::fmt::Display for Term {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Term::DMG => write!(f, "DMG"),
+            Term::CGB => write!(f, "CGB"),
+        }
+    }
+}
+
 // General Memory Map
 // 0000-3FFF   16KB ROM Bank 00          (in cartridge, fixed at bank 00)
 // 4000-7FFF   16KB ROM Bank 01..NN      (in cartridge, switchable bank number)

@@ -20,6 +20,7 @@ struct Argument {
 fn main() {
     rog::reg("gameboy");
     rog::reg("gameboy::cartridge");
+    rog::reg("gameboy::mmunit");
     let mut argu = Argument { audio: false, mode: String::from("minifb"), rom: String::from(""), scale: 2, speed: 1 };
     {
         let mut ap = argparse::ArgumentParser::new();

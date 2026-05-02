@@ -44,6 +44,7 @@ impl Mmunit {
             0x80 => Term::CGB,
             _ => unreachable!(),
         };
+        rog::debugln!("GameBoy term is {}", term);
         let intf = Rc::new(RefCell::new(Interrupt::power_up()));
         let mut r = Self {
             cartridge: cart,
