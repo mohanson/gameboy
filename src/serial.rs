@@ -8,6 +8,7 @@ use crate::convention::{Memory, Term};
 //
 // See: http://gbdev.gg8.se/wiki/articles/Serial_Data_Transfer_(Link_Cable)
 pub struct Serial {
+    term: Term,
     // Before a transfer, it holds the next byte that will go out.
     // During a transfer, it has a blend of the outgoing and incoming bytes. Each cycle, the leftmost bit is shifted
     // out (and over the wire) and the incoming bit is shifted in from the other side:
@@ -15,14 +16,15 @@ pub struct Serial {
     // Bit 7 - Transfer Start Flag (0=No transfer is in progress or requested, 1=Transfer in progress, or requested)
     // Bit 1 - Clock Speed (0=Normal, 1=Fast) ** CGB Mode Only **
     // Bit 0 - Shift Clock (0=External Clock, 1=Internal Clock)
-    pub control: u8,
+    pub ctrl: u8,
 }
 
 impl Serial {
     pub fn power_up(term: Term) -> Self {
         Self {
+            term,
             data: 0x00,
-            control: match term {
+            ctrl: match term {
                 Term::DMG => 0x7e,
                 Term::CGB => 0x7f,
             },
@@ -34,7 +36,10 @@ impl Memory for Serial {
     fn lb(&self, a: u16) -> u8 {
         match a {
             0xff01 => self.data,
-            0xff02 => self.control,
+            0xff02 => match self.term {
+                Term::DMG => 0x7e | self.ctrl,
+                Term::CGB => 0x7c | self.ctrl,
+            },
             _ => unreachable!(),
         }
     }
@@ -42,7 +47,7 @@ impl Memory for Serial {
     fn sb(&mut self, a: u16, v: u8) {
         match a {
             0xff01 => self.data = v,
-            0xff02 => self.control = v,
+            0xff02 => self.ctrl = v,
             _ => unreachable!(),
         };
     }

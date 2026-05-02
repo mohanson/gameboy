@@ -60,11 +60,11 @@ fn mode_blargg_serial_output(argu: &Argument) {
     let mut buff = String::new();
     loop {
         mbrd.next();
-        if mbrd.mmu.borrow().serial.control == 0x81 {
+        if mbrd.mmu.borrow().serial.ctrl == 0x81 {
             print!("{}", char::from(mbrd.mmu.borrow().serial.data));
             buff.push(char::from(mbrd.mmu.borrow().serial.data));
             // Clear the transfer start flag to indicate that the transfer is complete.
-            mbrd.mmu.borrow_mut().serial.control = 0x01;
+            mbrd.mmu.borrow_mut().serial.ctrl = 0x01;
             std::io::stdout().flush().unwrap();
             if buff.contains("Passed") {
                 print!("\n");
