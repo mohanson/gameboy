@@ -213,10 +213,10 @@ impl Memory for Mbc1 {
             }
             0xa000..=0xbfff => {
                 if !self.ram_open {
-                    return 0x00;
+                    return 0xff;
                 }
                 if !self.ram_maxm == usize::MAX {
-                    return 0x00;
+                    return 0xff;
                 }
                 let ram_bank = match self.mbc_mode {
                     0x00 => 0x00,
@@ -324,13 +324,13 @@ impl Memory for Mbc2 {
             }
             0xa000..=0xa1ff => {
                 if !self.ram_open {
-                    return 0x00;
+                    return 0xff;
                 }
                 self.ram[a as usize & 0x01ff]
             }
             0xa200..=0xbfff => {
                 if !self.ram_open {
-                    return 0x00;
+                    return 0xff;
                 }
                 self.ram[a as usize & 0x01ff]
             }
@@ -535,7 +535,7 @@ impl Memory for Mbc3 {
             }
             0xa000..=0xbfff => {
                 if !self.ram_open {
-                    return 0x00;
+                    return 0xff;
                 }
                 if self.ram_bank <= 0x07 {
                     let ram_bank = self.ram_bank % self.ram_maxm;
@@ -634,7 +634,7 @@ impl Memory for Mbc5 {
             }
             0xa000..=0xbfff => {
                 if !self.ram_open {
-                    return 0x00;
+                    return 0xff;
                 }
                 let ram_bank = self.ram_bank % self.ram_maxm;
                 let bank_off = a as usize & 0x1fff;
