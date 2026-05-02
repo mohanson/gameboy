@@ -36,7 +36,7 @@ impl Interrupt {
 impl Memory for Interrupt {
     fn lb(&self, a: u16) -> u8 {
         match a {
-            0xff0f => self.intf,
+            0xff0f => self.intf | 0xe0,
             0xffff => self.inte,
             _ => unreachable!(),
         }
@@ -44,8 +44,7 @@ impl Memory for Interrupt {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            // Bits 5-7 are always 1, these are unused bits and default to high when read from the DMG.
-            0xff0f => self.intf = v | 0xe0,
+            0xff0f => self.intf = v,
             0xffff => self.inte = v,
             _ => unreachable!(),
         }
