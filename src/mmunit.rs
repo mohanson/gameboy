@@ -13,20 +13,12 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub enum Speed {
-    Normal = 0x01,
-    Double = 0x02,
-}
-
 pub struct Mmunit {
     pub cartridge: Cartridge,
     pub apu: Apu,
     pub gpu: Gpu,
     pub joypad: Joypad,
     pub serial: Serial,
-    pub shift: bool,
-    pub speed: Speed,
     pub term: Term,
     pub timer: Timer,
     intf: Rc<RefCell<Interrupt>>,
@@ -52,8 +44,6 @@ impl Mmunit {
             gpu: Gpu::power_up(term, intf.clone()),
             joypad: Joypad::power_up(intf.clone()),
             serial: Serial::power_up(term),
-            shift: false,
-            speed: Speed::Normal,
             term,
             timer: Timer::power_up(term, intf.clone()),
             intf: intf.clone(),
@@ -96,25 +86,12 @@ impl Mmunit {
 
 impl Mmunit {
     pub fn next(&mut self, cycles: u32) -> u32 {
-        let cpu_divider = self.speed as u32;
         let vram_cycles = self.run_dma();
-        let gpu_cycles = cycles / cpu_divider + vram_cycles;
-        let cpu_cycles = cycles + vram_cycles * cpu_divider;
-        self.timer.tick(cpu_cycles);
+        let gpu_cycles = cycles + vram_cycles;
+        self.timer.tick(gpu_cycles);
         self.gpu.next(gpu_cycles);
         self.apu.next(gpu_cycles);
         gpu_cycles
-    }
-
-    pub fn switch_speed(&mut self) {
-        if self.shift {
-            if self.speed == Speed::Double {
-                self.speed = Speed::Normal;
-            } else {
-                self.speed = Speed::Double;
-            }
-        }
-        self.shift = false;
     }
 
     fn run_dma(&mut self) -> u32 {
@@ -177,11 +154,6 @@ impl Memory for Mmunit {
             0xff0f => self.intf.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff4c..=0xff7f if self.term == Term::DMG => 0xff,
-            0xff4d => {
-                let a = if self.speed == Speed::Double { 0x80 } else { 0x00 };
-                let b = if self.shift { 0x01 } else { 0x00 };
-                a | b
-            }
             0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.lb(a),
             0xff51..=0xff55 => self.hdma.lb(a),
             0xff68..=0xff6b => self.gpu.lb(a),
@@ -219,7 +191,6 @@ impl Memory for Mmunit {
                 }
             }
             0xff4c..=0xff7f if self.term == Term::DMG => {}
-            0xff4d => self.shift = (v & 0x01) == 0x01,
             0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.sb(a, v),
             0xff51..=0xff55 => self.hdma.sb(a, v),
             0xff68..=0xff6b => self.gpu.sb(a, v),

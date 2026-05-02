@@ -1,4 +1,3 @@
-use super::convention::Memory;
 use super::cpu::Rtc;
 use super::mmunit::Mmunit;
 use std::cell::RefCell;
@@ -18,9 +17,6 @@ impl MotherBoard {
     }
 
     pub fn next(&mut self) -> u32 {
-        if self.mmu.borrow().lb(self.cpu.cpu.reg.pc) == 0x10 {
-            self.mmu.borrow_mut().switch_speed();
-        }
         let cycles = self.cpu.step();
         self.mmu.borrow_mut().next(cycles);
         cycles
