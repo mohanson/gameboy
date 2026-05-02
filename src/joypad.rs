@@ -33,21 +33,21 @@ pub enum JoypadKey {
 }
 
 pub struct Joypad {
-    intf: Rc<RefCell<Interrupt>>,
+    intr: Rc<RefCell<Interrupt>>,
     matrix: u8,
     select: u8,
 }
 
 impl Joypad {
-    pub fn power_up(intf: Rc<RefCell<Interrupt>>) -> Self {
-        Self { intf, matrix: 0xff, select: 0xcf }
+    pub fn power_up(intr: Rc<RefCell<Interrupt>>) -> Self {
+        Self { intr, matrix: 0xff, select: 0xcf }
     }
 }
 
 impl Joypad {
     pub fn key_down(&mut self, key: JoypadKey) {
         self.matrix &= !(key as u8);
-        self.intf.borrow_mut().raise(InterruptFlag::Joypad);
+        self.intr.borrow_mut().raise(InterruptFlag::Joypad);
     }
 
     pub fn key_free(&mut self, key: JoypadKey) {
