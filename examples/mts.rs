@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // case.insert("res/mts/acceptance/call_cc_timing2.gb", 0);
     // case.insert("res/mts/acceptance/call_timing.gb", 0);
     // case.insert("res/mts/acceptance/call_timing2.gb", 0);
-    // case.insert("res/mts/acceptance/di_timing-GS.gb", 0);
+    case.insert("res/mts/acceptance/di_timing-GS.gb", 1);
     case.insert("res/mts/acceptance/div_timing.gb", 1);
     case.insert("res/mts/acceptance/ei_sequence.gb", 1);
     case.insert("res/mts/acceptance/ei_timing.gb", 1);
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // case.insert("res/mts/acceptance/oam_dma_timing.gb", 0);
     // case.insert("res/mts/acceptance/pop_timing.gb", 0);
     // case.insert("res/mts/acceptance/ppu/hblank_ly_scx_timing-GS.gb", 0);
-    // case.insert("res/mts/acceptance/ppu/intr_1_2_timing-GS.gb", 0);
+    case.insert("res/mts/acceptance/ppu/intr_1_2_timing-GS.gb", 1);
     // case.insert("res/mts/acceptance/ppu/intr_2_0_timing.gb", 0);
     // case.insert("res/mts/acceptance/ppu/intr_2_mode0_timing.gb", 0);
     // case.insert("res/mts/acceptance/ppu/intr_2_mode0_timing_sprites.gb", 0);
