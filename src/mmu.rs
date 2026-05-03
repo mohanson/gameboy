@@ -144,10 +144,9 @@ impl Memory for Mmu {
             0xa000..=0xbfff => self.cartridge.lb(a),
             0xc000..=0xcfff => self.wram[a as usize - 0xc000],
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
-            0xe000..=0xefff => self.wram[a as usize - 0xe000],
-            0xf000..=0xfdff => self.wram[a as usize - 0xf000 + 0x1000 * self.wram_bank],
+            0xe000..=0xfdff => self.lb(a - 0x2000),
             0xfe00..=0xfe9f => self.gpu.lb(a),
-            0xfea0..=0xfeff => 0x00,
+            0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
             0xff04..=0xff07 => self.timer.lb(a),
@@ -171,13 +170,13 @@ impl Memory for Mmu {
             0xa000..=0xbfff => self.cartridge.sb(a, v),
             0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
-            0xe000..=0xefff => self.wram[a as usize - 0xe000] = v,
-            0xf000..=0xfdff => self.wram[a as usize - 0xf000 + 0x1000 * self.wram_bank] = v,
+            0xe000..=0xfdff => self.sb(a - 0x2000, v),
             0xfe00..=0xfe9f => self.gpu.sb(a, v),
             0xfea0..=0xfeff => {}
             0xff00 => self.joypad.sb(a, v),
             0xff01..=0xff02 => self.serial.sb(a, v),
             0xff04..=0xff07 => self.timer.sb(a, v),
+            0xff0f => self.intf.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff46 => {
                 // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
@@ -194,7 +193,6 @@ impl Memory for Mmu {
             0xff40..=0xff45 | 0xff47..=0xff4b | 0xff4f => self.gpu.sb(a, v),
             0xff51..=0xff55 => self.hdma.sb(a, v),
             0xff68..=0xff6b => self.gpu.sb(a, v),
-            0xff0f => self.intf.borrow_mut().sb(0xff0f, v),
             0xff70 => {
                 self.wram_bank = match v & 0x7 {
                     0 => 1,
