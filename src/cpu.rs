@@ -4,12 +4,6 @@ use super::register::Flag::{C, H, N, Z};
 use super::register::Register;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::thread;
-use std::time;
-
-pub const CLOCK_FREQUENCY: u32 = 4_194_304;
-pub const STEP_TIME: u32 = 16;
-pub const STEP_CYCLES: u32 = (STEP_TIME as f64 / (1000_f64 / CLOCK_FREQUENCY as f64)) as u32;
 
 // Nintendo documents describe the CPU & instructions speed in machine cycles while this document describes them in
 // clock cycles. Here is the translation:
@@ -1591,40 +1585,5 @@ impl Cpu {
             return 4 * OP_CYCLES[0];
         }
         4 * self.exec_opcode()
-    }
-}
-
-// Real time cpu provided to simulate real hardware speed.
-pub struct Rtc {
-    pub cpu: Cpu,
-    pub spd: u32,
-    c: u32,
-    z: time::Instant,
-}
-
-impl Rtc {
-    pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
-        let cpu = Cpu::power_up(term, mem);
-        Self { cpu, spd: 1, c: 0, z: time::Instant::now() }
-    }
-
-    // Function next simulates real hardware execution speed, by limiting the frequency of the function cpu.step().
-    pub fn step(&mut self) -> u32 {
-        if self.c > STEP_CYCLES {
-            self.c -= STEP_CYCLES;
-            let now = time::Instant::now();
-            let d = now.duration_since(self.z);
-            let s = u64::from((STEP_TIME / self.spd).saturating_sub(d.as_millis() as u32));
-            rog::debugln!("CPU: sleep {} millis", s);
-            thread::sleep(time::Duration::from_millis(s));
-            self.z = self.z.checked_add(time::Duration::from_millis(u64::from(STEP_TIME / self.spd))).unwrap();
-            // If now is after the just updated target frame time, reset to avoid drift.
-            if now.checked_duration_since(self.z).is_some() {
-                self.z = now;
-            }
-        }
-        let cycles = self.cpu.step();
-        self.c += cycles;
-        cycles
     }
 }

@@ -13,6 +13,10 @@ impl std::fmt::Display for Term {
     }
 }
 
+pub const CLOCK_FREQUENCY: u32 = 4_194_304;
+pub const STEP_TIME: u32 = 16;
+pub const STEP_CYCLES: u32 = (STEP_TIME as f64 / (1000_f64 / CLOCK_FREQUENCY as f64)) as u32;
+
 // General Memory Map
 // 0000-3FFF   16KB ROM Bank 00          (in cartridge, fixed at bank 00)
 // 4000-7FFF   16KB ROM Bank 01..NN      (in cartridge, switchable bank number)

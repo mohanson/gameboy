@@ -3,8 +3,7 @@
 use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
-use gameboy::convention::{Memory, Stable};
-use gameboy::cpu;
+use gameboy::convention::{Memory, STEP_CYCLES, Stable};
 use gameboy::gameboy::GameBoy;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use std::io::Write;
@@ -56,7 +55,7 @@ fn main() {
 
 fn mode_blargg_serial_output(argu: &Argument) {
     let mut mbrd = GameBoy::power_up(&argu.rom);
-    mbrd.cpu.spd = argu.speed;
+    mbrd.spd = argu.speed;
     let mut buff = String::new();
     loop {
         mbrd.step();
@@ -80,7 +79,7 @@ fn mode_blargg_serial_output(argu: &Argument) {
 
 fn mode_blargg_memory_output(argu: &Argument) {
     let mut mbrd = GameBoy::power_up(&argu.rom);
-    mbrd.cpu.spd = argu.speed;
+    mbrd.spd = argu.speed;
     loop {
         mbrd.step();
         let a = [mbrd.mmu.borrow().lb(0xa001), mbrd.mmu.borrow().lb(0xa002), mbrd.mmu.borrow().lb(0xa003)];
@@ -113,7 +112,7 @@ fn mode_blargg_memory_output(argu: &Argument) {
 
 fn mode_minifb(argu: &Argument) {
     let mut mbrd = GameBoy::power_up(&argu.rom);
-    mbrd.cpu.spd = argu.speed;
+    mbrd.spd = argu.speed;
     let rom_name = mbrd.mmu.borrow().cartridge.title.clone();
 
     let mut option = minifb::WindowOptions::default();
@@ -209,10 +208,10 @@ fn mode_minifb(argu: &Argument) {
             window.update_with_buffer(window_buffer.as_slice(), SCREEN_W, SCREEN_H).unwrap();
         }
 
-        if cycles < cpu::STEP_CYCLES {
+        if cycles < STEP_CYCLES {
             continue;
         }
-        cycles -= cpu::STEP_CYCLES;
+        cycles -= STEP_CYCLES;
 
         // Handling keyboard events
         if window.is_key_down(minifb::Key::Escape) {
@@ -242,12 +241,12 @@ fn mode_minifb(argu: &Argument) {
 
 fn mode_mts(argu: &Argument) {
     let mut mbrd = GameBoy::power_up(&argu.rom);
-    mbrd.cpu.spd = argu.speed;
+    mbrd.spd = argu.speed;
     let passed = [0x03, 0x05, 0x08, 0x0d, 0x15, 0x22];
     let failed = [0x42, 0x42, 0x42, 0x42, 0x42, 0x42];
     loop {
         mbrd.step();
-        let reg = &mbrd.cpu.cpu.reg;
+        let reg = &mbrd.cpu.reg;
         let sig = [reg.b, reg.c, reg.d, reg.e, reg.h, reg.l];
         if sig != passed && sig != failed {
             continue;

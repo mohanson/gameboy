@@ -1,5 +1,4 @@
-use super::convention::Memory;
-use super::cpu;
+use super::convention::{CLOCK_FREQUENCY, Memory};
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -753,7 +752,7 @@ impl Apu {
         Self {
             buffer: Arc::new(Mutex::new(Vec::new())),
             reg: Register::power_up(Channel::Mixer),
-            timer: Clock::power_up(cpu::CLOCK_FREQUENCY / 512),
+            timer: Clock::power_up(CLOCK_FREQUENCY / 512),
             fs: FrameSequencer::power_up(),
             channel1: ChannelSquare::power_up(blipbuf1, Channel::Square1),
             channel2: ChannelSquare::power_up(blipbuf2, Channel::Square2),
@@ -973,7 +972,7 @@ impl Memory for Apu {
 
 fn create_blipbuf(sample_rate: u32) -> BlipBuf {
     let mut blipbuf = BlipBuf::new(sample_rate);
-    blipbuf.set_rates(f64::from(cpu::CLOCK_FREQUENCY), f64::from(sample_rate));
+    blipbuf.set_rates(f64::from(CLOCK_FREQUENCY), f64::from(sample_rate));
     blipbuf
 }
 
@@ -988,6 +987,6 @@ fn period(reg: Rc<RefCell<Register>>) -> u32 {
             };
             d << reg.borrow().get_clock_shift()
         }
-        Channel::Mixer => cpu::CLOCK_FREQUENCY / 512,
+        Channel::Mixer => CLOCK_FREQUENCY / 512,
     }
 }
