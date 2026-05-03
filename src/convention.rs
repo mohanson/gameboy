@@ -38,16 +38,25 @@ pub trait Memory {
     fn sb(&mut self, a: u16, v: u8);
 
     fn lh(&self, a: u16) -> u16 {
-        u16::from(self.lb(a)) | (u16::from(self.lb(a + 1)) << 8)
+        u16::from(self.lb(a)) | (u16::from(self.lb(a.wrapping_add(1))) << 8)
     }
 
     fn sh(&mut self, a: u16, v: u16) {
-        self.sb(a, (v & 0xFF) as u8);
-        self.sb(a + 1, (v >> 8) as u8)
+        self.sb(a, v as u8);
+        self.sb(a.wrapping_add(1), (v >> 8) as u8)
     }
 }
 
 // Stable is a trait for components that can save their state to disk, so that the game can be resumed later.
 pub trait Stable: Memory {
     fn save(&self);
+}
+
+pub fn hi(n: u16) -> u8 {
+    let n = n >> 8;
+    n as u8
+}
+
+pub fn lo(n: u16) -> u8 {
+    n as u8
 }

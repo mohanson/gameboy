@@ -1,5 +1,5 @@
 // The chip behind the NINTENDO GAME BOY: The sharp LR35902.
-use super::convention::{Memory, Term};
+use super::convention::{Memory, Term, hi, lo};
 use super::register::Flag::{C, H, N, Z};
 use super::register::Register;
 use std::cell::RefCell;
@@ -528,24 +528,24 @@ pub struct Cpu {
 impl Cpu {
     fn fetch_b(&mut self) -> u8 {
         let v = self.mem.borrow().lb(self.reg.pc);
-        self.reg.pc += 1;
+        self.reg.pc = self.reg.pc.wrapping_add(1);
         v
     }
 
     fn fetch_h(&mut self) -> u16 {
         let v = self.mem.borrow().lh(self.reg.pc);
-        self.reg.pc += 2;
+        self.reg.pc = self.reg.pc.wrapping_add(2);
         v
     }
 
     fn stack_add(&mut self, v: u16) {
-        self.reg.sp -= 2;
+        self.reg.sp = self.reg.sp.wrapping_sub(2);
         self.mem.borrow_mut().sh(self.reg.sp, v);
     }
 
     fn stack_pop(&mut self) -> u16 {
         let r = self.mem.borrow().lh(self.reg.sp);
-        self.reg.sp += 2;
+        self.reg.sp = self.reg.sp.wrapping_add(2);
         r
     }
 }
@@ -1551,10 +1551,22 @@ impl Cpu {
         self.ime = 0;
 
         // Consume an interrupter, the rest is written back to the register.
+        self.reg.sp = self.reg.sp.wrapping_sub(1);
+        // Push high byte of pc first. If sp-1 = 0xffff (ie register), this write may modify ie.
+        self.mem.borrow_mut().sb(self.reg.sp, hi(self.reg.pc));
+        let intf = self.mem.borrow().lb(0xff0f);
+        let inte = self.mem.borrow().lb(0xffff);
+        let ivec = intf & inte & 0x1f;
+        self.reg.sp = self.reg.sp.wrapping_sub(1);
+        self.mem.borrow_mut().sb(self.reg.sp, lo(self.reg.pc));
+        // No interrupt pending after the high-byte push, jump to 0x0000.
+        if ivec == 0x00 {
+            self.reg.pc = 0x0000;
+            return 5;
+        }
         let isig = ivec.trailing_zeros();
         let intf = intf & !(1 << isig);
         self.mem.borrow_mut().sb(0xff0f, intf);
-        self.stack_add(self.reg.pc);
         // Set the PC to correspond interrupt process program:
         // V-Blank: 0x40
         //     LCD: 0x48
@@ -1562,7 +1574,7 @@ impl Cpu {
         //  Serial: 0x58
         //  JOYPAD: 0x60
         self.reg.pc = 0x0040 | ((isig as u16) << 3);
-        5
+        return 5;
     }
 }
 

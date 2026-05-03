@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/halt_ime1_timing2-GS.gb", 1);
     case.insert("res/mts/acceptance/if_ie_registers.gb", 1);
     case.insert("res/mts/acceptance/instr/daa.gb", 1);
-    // case.insert("res/mts/acceptance/interrupts/ie_push.gb", 0);
+    case.insert("res/mts/acceptance/interrupts/ie_push.gb", 1);
     case.insert("res/mts/acceptance/intr_timing.gb", 1);
     // case.insert("res/mts/acceptance/jp_cc_timing.gb", 0);
     // case.insert("res/mts/acceptance/jp_timing.gb", 0);
