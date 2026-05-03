@@ -495,6 +495,12 @@ impl Gpu {
         }
     }
 
+    pub fn check_and_reset_gpu_updated(&mut self) -> bool {
+        let result = self.v_blank;
+        self.v_blank = false;
+        result
+    }
+
     fn draw_bg(&mut self) {
         let show_window = self.lcdc.bit5() && self.wy <= self.ly;
         let tile_base = if self.lcdc.bit4() { 0x8000 } else { 0x8800 };

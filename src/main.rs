@@ -5,8 +5,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
 use gameboy::convention::{Memory, Stable};
 use gameboy::cpu;
+use gameboy::gameboy::GameBoy;
 use gameboy::gpu::{SCREEN_H, SCREEN_W};
-use gameboy::motherboard::MotherBoard;
 use std::io::Write;
 
 struct Argument {
@@ -55,11 +55,11 @@ fn main() {
 }
 
 fn mode_blargg_serial_output(argu: &Argument) {
-    let mut mbrd = MotherBoard::power_up(&argu.rom);
+    let mut mbrd = GameBoy::power_up(&argu.rom);
     mbrd.cpu.spd = argu.speed;
     let mut buff = String::new();
     loop {
-        mbrd.next();
+        mbrd.step();
         if mbrd.mmu.borrow().serial.ctrl == 0x81 {
             print!("{}", char::from(mbrd.mmu.borrow().serial.data));
             buff.push(char::from(mbrd.mmu.borrow().serial.data));
@@ -79,10 +79,10 @@ fn mode_blargg_serial_output(argu: &Argument) {
 }
 
 fn mode_blargg_memory_output(argu: &Argument) {
-    let mut mbrd = MotherBoard::power_up(&argu.rom);
+    let mut mbrd = GameBoy::power_up(&argu.rom);
     mbrd.cpu.spd = argu.speed;
     loop {
-        mbrd.next();
+        mbrd.step();
         let a = [mbrd.mmu.borrow().lb(0xa001), mbrd.mmu.borrow().lb(0xa002), mbrd.mmu.borrow().lb(0xa003)];
         let b = [0xde, 0xb0, 0x61];
         if a == b {
@@ -90,14 +90,14 @@ fn mode_blargg_memory_output(argu: &Argument) {
         }
     }
     loop {
-        mbrd.next();
+        mbrd.step();
         if mbrd.mmu.borrow().lb(0xa000) == 0x80 {
             break;
         }
     }
     let mut i: usize = 0;
     loop {
-        mbrd.next();
+        mbrd.step();
         let ch = mbrd.mmu.borrow().lb(0xa004 + i as u16);
         if ch != 0 {
             print!("{}", char::from(ch));
@@ -112,7 +112,7 @@ fn mode_blargg_memory_output(argu: &Argument) {
 }
 
 fn mode_minifb(argu: &Argument) {
-    let mut mbrd = MotherBoard::power_up(&argu.rom);
+    let mut mbrd = GameBoy::power_up(&argu.rom);
     mbrd.cpu.spd = argu.speed;
     let rom_name = mbrd.mmu.borrow().cartridge.title.clone();
 
@@ -190,10 +190,10 @@ fn mode_minifb(argu: &Argument) {
         }
 
         // Execute an instruction
-        cycles += mbrd.next();
+        cycles += mbrd.step();
 
         // Update the window
-        if mbrd.check_and_reset_gpu_updated() {
+        if mbrd.mmu.borrow_mut().gpu.check_and_reset_gpu_updated() {
             let mut i: usize = 0;
             for l in mbrd.mmu.borrow().gpu.data.iter() {
                 for w in l.iter() {
@@ -241,12 +241,12 @@ fn mode_minifb(argu: &Argument) {
 }
 
 fn mode_mts(argu: &Argument) {
-    let mut mbrd = MotherBoard::power_up(&argu.rom);
+    let mut mbrd = GameBoy::power_up(&argu.rom);
     mbrd.cpu.spd = argu.speed;
     let passed = [0x03, 0x05, 0x08, 0x0d, 0x15, 0x22];
     let failed = [0x42, 0x42, 0x42, 0x42, 0x42, 0x42];
     loop {
-        mbrd.next();
+        mbrd.step();
         let reg = &mbrd.cpu.cpu.reg;
         let sig = [reg.b, reg.c, reg.d, reg.e, reg.h, reg.l];
         if sig != passed && sig != failed {
