@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-pub struct Mmunit {
+pub struct Mmu {
     pub cartridge: Cartridge,
     pub apu: Apu,
     pub gpu: Gpu,
@@ -28,7 +28,7 @@ pub struct Mmunit {
     wram_bank: usize,
 }
 
-impl Mmunit {
+impl Mmu {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let cart = Cartridge::power_up(path);
         let term = match cart.lb(0x0143) & 0x80 {
@@ -84,7 +84,7 @@ impl Mmunit {
     }
 }
 
-impl Mmunit {
+impl Mmu {
     pub fn next(&mut self, cycles: u32) -> u32 {
         let vram_cycles = self.run_dma();
         let gpu_cycles = cycles + vram_cycles;
@@ -136,7 +136,7 @@ impl Mmunit {
     }
 }
 
-impl Memory for Mmunit {
+impl Memory for Mmu {
     fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x7fff => self.cartridge.lb(a),

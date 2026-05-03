@@ -5,7 +5,7 @@ pub mod cpu;
 pub mod gpu;
 pub mod interrupt;
 pub mod joypad;
-pub mod mmunit;
+pub mod mmu;
 pub mod motherboard;
 pub mod register;
 pub mod rng;
