@@ -326,7 +326,7 @@ pub struct Gpu {
     // Bit4   Palette number  **Non CGB Mode Only** (0=OBP0, 1=OBP1)
     // Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
     // Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
-    oam: [u8; 0xa0],
+    pub oam: [u8; 0xa0],
 
     prio: [(bool, usize); SCREEN_W],
     // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots, or

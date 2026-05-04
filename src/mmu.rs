@@ -27,6 +27,14 @@ pub struct Mmu {
     pub timer: Timer,
     pub wram: [u8; 0x8000],
     pub wram_bank: usize,
+    // OAM DMA state
+    // oam_dma_reg: last byte written to $FF46 (always returned on reads)
+    pub oam_dma_reg: u8,
+    // oam_dma_countdown: T-cycles remaining.
+    //   0             = no DMA
+    //   1..=640       = active phase (OAM bus blocked, returns 0xFF)
+    //   641..=652     = 3-M-cycle startup delay (OAM still accessible)
+    pub oam_dma_countdown: u32,
 }
 
 impl Mmu {
@@ -52,6 +60,8 @@ impl Mmu {
             timer: Timer::power_up(term, intr.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
+            oam_dma_reg: 0xff,
+            oam_dma_countdown: 0,
         };
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
@@ -92,6 +102,7 @@ impl Mmu {
 impl Mmu {
     pub fn next(&mut self, cycles: u32) -> u32 {
         let cycles = cycles + self.run_dma();
+        self.advance_oam_dma(cycles);
         self.timer.tick(cycles);
         self.gpu.next(cycles);
         self.apu.next(cycles);
@@ -108,7 +119,10 @@ impl Memory for Mmu {
             0xc000..=0xcfff => self.wram[a as usize - 0xc000],
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
             0xe000..=0xfdff => self.lb(a - 0x2000),
-            0xfe00..=0xfe9f => self.gpu.lb(a),
+            0xfe00..=0xfe9f => {
+                // During active OAM DMA phase the OAM bus is occupied; CPU sees 0xFF.
+                if self.oam_dma_countdown > 0 && self.oam_dma_countdown <= 640 { 0xff } else { self.gpu.lb(a) }
+            }
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
@@ -116,7 +130,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => 0xff,
+            0xff46 => self.oam_dma_reg,
             0xff47..=0xff4b => self.gpu.lb(a),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => 0xff,
@@ -150,7 +164,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => self.dma_transer(v),
+            0xff46 => self.start_oam_dma(v),
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => {}
@@ -170,15 +184,69 @@ impl Memory for Mmu {
 }
 
 impl Mmu {
-    fn dma_transer(&mut self, v: u8) {
-        // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
-        // table).
-        // See: http://gbdev.gg8.se/wiki/articles/Video_Display#FF46_-_DMA_-_DMA_Transfer_and_Start_Address_.28R.2FW.29
-        assert!(v <= 0xf1);
-        let base = u16::from(v) << 8;
-        for i in 0..0xa0 {
-            let b = self.lb(base + i);
-            self.sb(0xfe00 + i, b);
+    fn start_oam_dma(&mut self, v: u8) {
+        // Writing to $FF46 stores the source page and controls the DMA countdown.
+        //
+        // Timing (DMG):
+        //   Fresh start (no DMA running, countdown == 0):
+        //     - 3 M-cycle startup delay (12 T-cycles): OAM bus still accessible
+        //     - 160 M-cycle active phase (640 T-cycles): OAM reads return 0xFF
+        //     - Total countdown = 652
+        //   Restart during startup delay (countdown 641..=652):
+        //     - Keep existing countdown unchanged; OAM delay window continues normally.
+        //   Restart during active phase (countdown 1..=640):
+        //     - Reset countdown to 652 (full delay+active); the new 160-byte transfer runs,
+        //       keeping OAM blocked without interruption. The 12T startup delay simply
+        //       compensates for mmu.next(cycles) that runs after the write instruction.
+        self.oam_dma_reg = v;
+        if self.oam_dma_countdown == 0 || self.oam_dma_countdown <= 640 {
+            // Fresh start or restart during active phase: full countdown.
+            self.oam_dma_countdown = 652;
+        }
+        // Restart during delay phase (641..=652): do nothing.
+    }
+
+    /// Read a byte for the DMA controller itself, bypassing the CPU-visible OAM block.
+    fn dma_lb(&self, a: u16) -> u8 {
+        match a {
+            0x0000..=0x7fff => self.cartridge.lb(a),
+            0x8000..=0x9fff => self.gpu.lb(a),
+            0xa000..=0xbfff => self.cartridge.lb(a),
+            0xc000..=0xcfff => self.wram[a as usize - 0xc000],
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
+            // Echo RAM: on DMG the DMA controller extends echo mapping through $FFFF,
+            // so $E000-$FFFF maps back to $C000-$DFFF (via -$2000).
+            0xe000..=0xffff => self.dma_lb(a - 0x2000),
+        }
+    }
+
+    fn advance_oam_dma(&mut self, cycles: u32) {
+        if self.oam_dma_countdown == 0 {
+            return;
+        }
+        let prev = self.oam_dma_countdown;
+        self.oam_dma_countdown = self.oam_dma_countdown.saturating_sub(cycles);
+        let new = self.oam_dma_countdown;
+
+        // Active phase spans countdown values 640 down to 1.
+        // Byte i is transferred during the M-cycle when countdown is in (640-4i, 640-4(i-1)].
+        // i.e. byte 0 when countdown goes 640->636, byte 1 when 636->632, ...
+        // We copy all bytes whose M-cycle window falls within the range consumed this call.
+        let active_top: u32 = 640;
+        // Clamp to active phase
+        let start = prev.min(active_top); // highest countdown in active phase before this call
+        let end = new; // new countdown after this call
+        if start > end {
+            // Bytes to copy: index i where active_top - 4*(i+1) < start and active_top - 4*i >= end
+            // i.e. 4*i < active_top - end  and  4*(i+1) > active_top - start
+            // => i < (active_top - end) / 4  and  i >= (active_top - start) / 4
+            let i_start = (active_top.saturating_sub(start) + 3) / 4; // round up
+            let i_end = (active_top.saturating_sub(end) + 3) / 4; // exclusive upper
+            let src_page = (self.oam_dma_reg as u16) << 8;
+            for i in i_start..i_end.min(160) {
+                let b = self.dma_lb(src_page | i as u16);
+                self.gpu.oam[i as usize] = b;
+            }
         }
     }
 
