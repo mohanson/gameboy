@@ -1,5 +1,6 @@
 use super::convention::{STEP_CYCLES, STEP_TIME};
 use super::cpu::Cpu;
+use super::dma::Dma;
 use super::mmu::Mmu;
 use std::cell::RefCell;
 use std::path::Path;
@@ -10,6 +11,7 @@ use std::time;
 pub struct GameBoy {
     pub mmu: Rc<RefCell<Mmu>>,
     pub cpu: Cpu,
+    pub dma: Dma,
     pub spd: u32,
     c: u32,
     z: time::Instant,
@@ -19,7 +21,11 @@ impl GameBoy {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let mmu = Rc::new(RefCell::new(Mmu::power_up(path)));
         let cpu = Cpu::power_up(mmu.borrow().term, mmu.clone());
-        Self { mmu, cpu, spd: 1, c: 0, z: time::Instant::now() }
+        let mut dma = Dma::power_up(mmu.clone());
+        dma.o.cnt = mmu.borrow().dma.o.cnt.clone();
+        dma.o.reg = mmu.borrow().dma.o.reg.clone();
+        dma.o.sig = mmu.borrow().dma.o.sig.clone();
+        Self { mmu, cpu, dma, spd: 1, c: 0, z: time::Instant::now() }
     }
 
     pub fn step(&mut self) -> u32 {
@@ -36,6 +42,7 @@ impl GameBoy {
             }
         }
         let cycles = self.cpu.step();
+        self.dma.o.tick(cycles);
         let cycles = self.mmu.borrow_mut().next(cycles);
         self.c += cycles;
         cycles

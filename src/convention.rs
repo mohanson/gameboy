@@ -47,6 +47,24 @@ pub trait Memory {
     }
 }
 
+// Hollow is a dummy memory that always reads 0xff and ignores writes. It can be used as a placeholder for components
+// that are not yet implemented, or for testing purposes.
+pub struct Hollow {}
+
+impl Hollow {
+    pub fn power_up() -> Self {
+        Self {}
+    }
+}
+
+impl Memory for Hollow {
+    fn lb(&self, _: u16) -> u8 {
+        0xff
+    }
+
+    fn sb(&mut self, _: u16, _: u8) {}
+}
+
 // Stable is a trait for components that can save their state to disk, so that the game can be resumed later.
 pub trait Stable: Memory {
     fn save(&self);

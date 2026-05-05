@@ -1,0 +1,21 @@
+name: develop
+
+on:
+  pull_request:
+    types:
+      - opened
+  push:
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup
+        run: |
+          sudo apt install libasound2-dev
+      - name: Build
+        run: |
+          cargo run --example blargg
+          cargo run --example mts

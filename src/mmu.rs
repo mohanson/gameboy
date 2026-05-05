@@ -3,7 +3,8 @@
 // to physical addresses.
 use super::apu::Apu;
 use super::cartridge::Cartridge;
-use super::convention::{Memory, Term};
+use super::convention::{Hollow, Memory, Term};
+use super::dma::Dma;
 use super::gpu::{Gpu, Hdma, HdmaMode};
 use super::interrupt::Interrupt;
 use super::joypad::Joypad;
@@ -17,6 +18,7 @@ use std::rc::Rc;
 pub struct Mmu {
     pub apu: Apu,
     pub cartridge: Cartridge,
+    pub dma: Dma,
     pub gpu: Gpu,
     pub hdma: Hdma,
     pub hram: [u8; 0x7f],
@@ -42,6 +44,7 @@ impl Mmu {
         let mut r = Self {
             apu: Apu::power_up(48000),
             cartridge: cart,
+            dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
             gpu: Gpu::power_up(term, intr.clone()),
             hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
@@ -97,6 +100,19 @@ impl Mmu {
         self.apu.next(cycles);
         cycles
     }
+
+    pub fn lb_odma(&self, a: u16) -> u8 {
+        match a {
+            0xfe00..=0xfe9f => {
+                let cnt = self.dma.o.cnt.borrow().clone();
+                if cnt > 0 && cnt <= 640 {
+                    return 0xff;
+                }
+                self.gpu.lb(a)
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Memory for Mmu {
@@ -108,7 +124,7 @@ impl Memory for Mmu {
             0xc000..=0xcfff => self.wram[a as usize - 0xc000],
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
             0xe000..=0xfdff => self.lb(a - 0x2000),
-            0xfe00..=0xfe9f => self.gpu.lb(a),
+            0xfe00..=0xfe9f => self.lb_odma(a),
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
@@ -116,7 +132,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => 0xff,
+            0xff46 => self.dma.o.lb(a),
             0xff47..=0xff4b => self.gpu.lb(a),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => 0xff,
@@ -150,7 +166,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => self.dma_transer(v),
+            0xff46 => self.dma.o.sb(a, v),
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => {}
@@ -170,18 +186,6 @@ impl Memory for Mmu {
 }
 
 impl Mmu {
-    fn dma_transer(&mut self, v: u8) {
-        // Writing to this register launches a DMA transfer from ROM or RAM to OAM memory (sprite attribute
-        // table).
-        // See: http://gbdev.gg8.se/wiki/articles/Video_Display#FF46_-_DMA_-_DMA_Transfer_and_Start_Address_.28R.2FW.29
-        assert!(v <= 0xf1);
-        let base = u16::from(v) << 8;
-        for i in 0..0xa0 {
-            let b = self.lb(base + i);
-            self.sb(0xfe00 + i, b);
-        }
-    }
-
     fn run_dma(&mut self) -> u32 {
         if !self.hdma.active {
             return 0;
