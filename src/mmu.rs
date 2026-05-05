@@ -103,6 +103,14 @@ impl Mmu {
         self.apu.next(cycles);
         cycles
     }
+
+    pub fn lb_odma(&self, a: u16) -> u8 {
+        let cnt = self.dma.o.cnt.borrow().clone();
+        if cnt > 0 && cnt <= 640 {
+            return 0xff;
+        }
+        self.gpu.lb(a)
+    }
 }
 
 impl Memory for Mmu {
@@ -114,10 +122,7 @@ impl Memory for Mmu {
             0xc000..=0xcfff => self.wram[a as usize - 0xc000],
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
             0xe000..=0xfdff => self.lb(a - 0x2000),
-            0xfe00..=0xfe9f => {
-                // During active OAM DMA phase the OAM bus is occupied; CPU sees 0xFF.
-                if self.dma.o.block() { 0xff } else { self.gpu.lb(a) }
-            }
+            0xfe00..=0xfe9f => self.lb_odma(a),
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
@@ -125,7 +130,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => *self.dma.o.reg.borrow(),
+            0xff46 => self.dma.o.lb(a),
             0xff47..=0xff4b => self.gpu.lb(a),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => 0xff,
@@ -159,10 +164,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => {
-                self.dma.o.reg.replace(v);
-                self.dma.o.sig.replace(0x01);
-            }
+            0xff46 => self.dma.o.sb(a, v),
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => {}
