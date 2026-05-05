@@ -17,8 +17,14 @@ pub struct OamDma {
 }
 
 impl OamDma {
-    pub fn power_up(trigger: Signal, trigger_val: Rc<RefCell<u8>>, oam_blocked: Rc<RefCell<bool>>) -> Self {
-        Self { reg: 0xff, countdown: 0, trigger, trigger_val, oam_blocked }
+    pub fn power_up() -> Self {
+        Self {
+            reg: 0xff,
+            countdown: 0,
+            trigger: Signal::power_up(),
+            trigger_val: Rc::new(RefCell::new(0xff)),
+            oam_blocked: Rc::new(RefCell::new(false)),
+        }
     }
 
     /// Returns cloned handles for `Mmu` to hold.
