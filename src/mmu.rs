@@ -105,11 +105,16 @@ impl Mmu {
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
-        let cnt = self.dma.o.cnt.borrow().clone();
-        if cnt > 0 && cnt <= 640 {
-            return 0xff;
+        match a {
+            0xfe00..=0xfe9f => {
+                let cnt = self.dma.o.cnt.borrow().clone();
+                if cnt > 0 && cnt <= 640 {
+                    return 0xff;
+                }
+                self.gpu.lb(a)
+            }
+            _ => unreachable!(),
         }
-        self.gpu.lb(a)
     }
 }
 
