@@ -116,7 +116,7 @@ impl Memory for Mmu {
             0xe000..=0xfdff => self.lb(a - 0x2000),
             0xfe00..=0xfe9f => {
                 // During active OAM DMA phase the OAM bus is occupied; CPU sees 0xFF.
-                if *self.dma.o.blk.borrow() != 0x00 { 0xff } else { self.gpu.lb(a) }
+                if self.dma.o.block() { 0xff } else { self.gpu.lb(a) }
             }
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),

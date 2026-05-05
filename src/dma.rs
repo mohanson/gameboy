@@ -13,8 +13,7 @@ impl Dma {
 }
 
 pub struct O {
-    pub blk: Rc<RefCell<u8>>,
-    pub cnt: u32,
+    pub cnt: Rc<RefCell<u32>>,
     pub mem: Rc<RefCell<dyn Memory>>,
     pub reg: Rc<RefCell<u8>>,
     pub sig: Rc<RefCell<u8>>,
@@ -38,40 +37,39 @@ impl Memory for O {
 impl O {
     pub fn power_up(mem: Rc<RefCell<dyn Memory>>) -> Self {
         Self {
-            blk: Rc::new(RefCell::new(0x00)),
-            cnt: 0,
+            cnt: Rc::new(RefCell::new(0x00)),
             mem,
             reg: Rc::new(RefCell::new(0xff)),
             sig: Rc::new(RefCell::new(0x00)),
         }
     }
 
+    pub fn block(&self) -> bool {
+        let cnt = self.cnt.borrow().clone();
+        cnt > 0 && cnt <= 640
+    }
+
     pub fn tick(&mut self, cycles: u32) {
         if *self.sig.borrow() != 0x00 {
             self.sig.replace(0x00);
-            if self.cnt <= 640 {
-                self.cnt = 652;
+            if *self.cnt.borrow() <= 640 {
+                self.cnt.replace(652);
             }
         }
-        if self.cnt == 0 {
-            self.blk.replace(0x00);
+        if *self.cnt.borrow() == 0 {
             return;
         }
+        let old = self.cnt.borrow().clone();
+        let new = old.saturating_sub(cycles);
+        self.cnt.replace(new);
 
-        let old = self.cnt;
-        self.cnt = self.cnt.saturating_sub(cycles);
-        let new = self.cnt;
-
-        self.blk.replace(if new > 0 && new <= 640 { 0x01 } else { 0x00 });
-
-        let top: u32 = 640;
-        let sta = old.min(top);
+        let ori = old.min(640);
         let end = new;
-        if sta <= end {
+        if ori <= end {
             return;
         }
-        let src = (top.saturating_sub(sta) + 3) / 4;
-        let dst = (top.saturating_sub(end) + 3) / 4;
+        let src = (640u32.saturating_sub(ori) + 3) / 4;
+        let dst = (640u32.saturating_sub(end) + 3) / 4;
         let src_page = (*self.reg.borrow() as u16) << 8;
         for i in src..dst.min(160) {
             let b = self.lb(src_page | i as u16);

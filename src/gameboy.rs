@@ -20,11 +20,11 @@ pub struct GameBoy {
 impl GameBoy {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let mmu = Rc::new(RefCell::new(Mmu::power_up(path)));
+        let cpu = Cpu::power_up(mmu.borrow().term, mmu.clone());
         let mut dma = Dma::power_up(mmu.clone());
-        dma.o.blk = mmu.borrow().dma.o.blk.clone();
+        dma.o.cnt = mmu.borrow().dma.o.cnt.clone();
         dma.o.reg = mmu.borrow().dma.o.reg.clone();
         dma.o.sig = mmu.borrow().dma.o.sig.clone();
-        let cpu = Cpu::power_up(mmu.borrow().term, mmu.clone());
         Self { mmu, cpu, dma, spd: 1, c: 0, z: time::Instant::now() }
     }
 
