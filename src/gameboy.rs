@@ -1,6 +1,6 @@
 use super::convention::{STEP_CYCLES, STEP_TIME};
 use super::cpu::Cpu;
-use super::dma::OamDma;
+use super::dma::Dma;
 use super::mmu::Mmu;
 use std::cell::RefCell;
 use std::path::Path;
@@ -11,7 +11,7 @@ use std::time;
 pub struct GameBoy {
     pub mmu: Rc<RefCell<Mmu>>,
     pub cpu: Cpu,
-    pub oam_dma: OamDma,
+    pub dma: Dma,
     pub spd: u32,
     c: u32,
     z: time::Instant,
@@ -20,13 +20,12 @@ pub struct GameBoy {
 impl GameBoy {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let mmu = Rc::new(RefCell::new(Mmu::power_up(path)));
-        let mut oam_dma = OamDma::power_up(mmu.clone());
-        oam_dma.trigger = mmu.borrow().oam_dma.trigger.clone();
-        oam_dma.trigger_val = mmu.borrow().oam_dma.trigger_val.clone();
-        oam_dma.oam_blocked = mmu.borrow().oam_dma.oam_blocked.clone();
-
+        let mut dma = Dma::power_up(mmu.clone());
+        dma.o.blk = mmu.borrow().dma.o.blk.clone();
+        dma.o.reg = mmu.borrow().dma.o.reg.clone();
+        dma.o.sig = mmu.borrow().dma.o.sig.clone();
         let cpu = Cpu::power_up(mmu.borrow().term, mmu.clone());
-        Self { mmu, cpu, oam_dma, spd: 1, c: 0, z: time::Instant::now() }
+        Self { mmu, cpu, dma, spd: 1, c: 0, z: time::Instant::now() }
     }
 
     pub fn step(&mut self) -> u32 {
@@ -43,7 +42,7 @@ impl GameBoy {
             }
         }
         let cycles = self.cpu.step();
-        self.oam_dma.advance(cycles);
+        self.dma.o.tick(cycles);
         let cycles = self.mmu.borrow_mut().next(cycles);
         self.c += cycles;
         cycles

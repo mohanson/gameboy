@@ -1,12 +1,10 @@
-use crate::convention::Hollow;
-
 // A memory management unit (MMU), sometimes called paged memory management unit (PMMU), is a computer hardware unit
 // having all memory references passed through itself, primarily performing the translation of virtual memory addresses
 // to physical addresses.
 use super::apu::Apu;
 use super::cartridge::Cartridge;
-use super::convention::{Memory, Term};
-use super::dma::OamDma;
+use super::convention::{Hollow, Memory, Term};
+use super::dma::Dma;
 use super::gpu::{Gpu, Hdma, HdmaMode};
 use super::interrupt::Interrupt;
 use super::joypad::Joypad;
@@ -33,7 +31,7 @@ pub struct Mmu {
     // OAM DMA signal handles (owned by OamDma in gameboy.rs)
     // trigger fires when $FF46 is written; trigger_val carries the source-page byte.
     // oam_blocked is kept in sync by OamDma and read here for $FE00-$FE9F bus masking.
-    pub oam_dma: OamDma,
+    pub dma: Dma,
 }
 
 impl Mmu {
@@ -59,7 +57,7 @@ impl Mmu {
             timer: Timer::power_up(term, intr.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
-            oam_dma: OamDma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
+            dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
         };
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
@@ -118,7 +116,7 @@ impl Memory for Mmu {
             0xe000..=0xfdff => self.lb(a - 0x2000),
             0xfe00..=0xfe9f => {
                 // During active OAM DMA phase the OAM bus is occupied; CPU sees 0xFF.
-                if *self.oam_dma.oam_blocked.borrow() { 0xff } else { self.gpu.lb(a) }
+                if *self.dma.o.blk.borrow() != 0x00 { 0xff } else { self.gpu.lb(a) }
             }
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),
@@ -127,7 +125,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => *self.oam_dma.trigger_val.borrow(),
+            0xff46 => *self.dma.o.reg.borrow(),
             0xff47..=0xff4b => self.gpu.lb(a),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => 0xff,
@@ -162,8 +160,8 @@ impl Memory for Mmu {
             0xff10..=0xff3f => self.apu.sb(a, v),
             0xff40..=0xff45 => self.gpu.sb(a, v),
             0xff46 => {
-                *self.oam_dma.trigger_val.borrow_mut() = v;
-                self.oam_dma.trigger.set();
+                self.dma.o.reg.replace(v);
+                self.dma.o.sig.replace(0x01);
             }
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.term {
