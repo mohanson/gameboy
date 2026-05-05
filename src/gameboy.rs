@@ -20,7 +20,7 @@ pub struct GameBoy {
 impl GameBoy {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let mmu = Rc::new(RefCell::new(Mmu::power_up(path)));
-        let mut oam_dma = OamDma::power_up();
+        let mut oam_dma = OamDma::power_up(mmu.clone());
         oam_dma.trigger = mmu.borrow().oam_dma.trigger.clone();
         oam_dma.trigger_val = mmu.borrow().oam_dma.trigger_val.clone();
         oam_dma.oam_blocked = mmu.borrow().oam_dma.oam_blocked.clone();
@@ -43,7 +43,7 @@ impl GameBoy {
             }
         }
         let cycles = self.cpu.step();
-        self.oam_dma.advance(cycles, &mut self.mmu.borrow_mut());
+        self.oam_dma.advance(cycles);
         let cycles = self.mmu.borrow_mut().next(cycles);
         self.c += cycles;
         cycles

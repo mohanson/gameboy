@@ -1,9 +1,10 @@
 use super::convention::Signal;
-use super::mmu::Mmu;
+use crate::convention::Memory;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct OamDma {
+    pub mem: Rc<RefCell<dyn Memory>>,
     /// Last value written to $FF46.
     pub reg: u8,
     /// Remaining T-cycles (0 = idle).
@@ -17,13 +18,27 @@ pub struct OamDma {
 }
 
 impl OamDma {
-    pub fn power_up() -> Self {
+    pub fn power_up(mem: Rc<RefCell<dyn Memory>>) -> Self {
         Self {
+            mem,
             reg: 0xff,
             countdown: 0,
             trigger: Signal::power_up(),
             trigger_val: Rc::new(RefCell::new(0xff)),
             oam_blocked: Rc::new(RefCell::new(false)),
+        }
+    }
+
+    pub fn dma_lb(&self, a: u16) -> u8 {
+        match a {
+            0x0000..=0x7fff => self.mem.borrow().lb(a),
+            0x8000..=0x9fff => self.mem.borrow().lb(a),
+            0xa000..=0xbfff => self.mem.borrow().lb(a),
+            0xc000..=0xcfff => self.mem.borrow().lb(a),
+            0xd000..=0xdfff => self.mem.borrow().lb(a),
+            // Echo RAM: on DMG the DMA controller extends echo mapping through $FFFF,
+            // so $E000-$FFFF maps back to $C000-$DFFF (via -$2000).
+            0xe000..=0xffff => self.dma_lb(a - 0x2000),
         }
     }
 
@@ -46,7 +61,7 @@ impl OamDma {
     /// and writing them directly into OAM.
     ///
     /// Call once per step, after `mmu.next()`.
-    pub fn advance(&mut self, cycles: u32, mmu: &mut Mmu) {
+    pub fn advance(&mut self, cycles: u32) {
         // Consume any $FF46 write that occurred during the last CPU step.
         if self.trigger.get() {
             let v = *self.trigger_val.borrow();
@@ -76,8 +91,8 @@ impl OamDma {
             let i_end = (active_top.saturating_sub(end) + 3) / 4;
             let src_page = (self.reg as u16) << 8;
             for i in i_start..i_end.min(160) {
-                let b = mmu.dma_lb(src_page | i as u16);
-                mmu.gpu.oam[i as usize] = b;
+                let b = self.dma_lb(src_page | i as u16);
+                self.mem.borrow_mut().sb(0xfe00 + i as u16, b);
             }
         }
     }

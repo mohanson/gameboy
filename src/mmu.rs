@@ -1,3 +1,5 @@
+use crate::convention::Hollow;
+
 // A memory management unit (MMU), sometimes called paged memory management unit (PMMU), is a computer hardware unit
 // having all memory references passed through itself, primarily performing the translation of virtual memory addresses
 // to physical addresses.
@@ -57,7 +59,7 @@ impl Mmu {
             timer: Timer::power_up(term, intr.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
-            oam_dma: OamDma::power_up(),
+            oam_dma: OamDma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
         };
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
@@ -182,20 +184,6 @@ impl Memory for Mmu {
 }
 
 impl Mmu {
-    /// Read a byte for the OAM DMA controller, bypassing the CPU-visible OAM block.
-    pub fn dma_lb(&self, a: u16) -> u8 {
-        match a {
-            0x0000..=0x7fff => self.cartridge.lb(a),
-            0x8000..=0x9fff => self.gpu.lb(a),
-            0xa000..=0xbfff => self.cartridge.lb(a),
-            0xc000..=0xcfff => self.wram[a as usize - 0xc000],
-            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
-            // Echo RAM: on DMG the DMA controller extends echo mapping through $FFFF,
-            // so $E000-$FFFF maps back to $C000-$DFFF (via -$2000).
-            0xe000..=0xffff => self.dma_lb(a - 0x2000),
-        }
-    }
-
     fn run_dma(&mut self) -> u32 {
         if !self.hdma.active {
             return 0;
