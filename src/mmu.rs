@@ -18,6 +18,7 @@ use std::rc::Rc;
 pub struct Mmu {
     pub apu: Apu,
     pub cartridge: Cartridge,
+    pub dma: Dma,
     pub gpu: Gpu,
     pub hdma: Hdma,
     pub hram: [u8; 0x7f],
@@ -28,10 +29,6 @@ pub struct Mmu {
     pub timer: Timer,
     pub wram: [u8; 0x8000],
     pub wram_bank: usize,
-    // OAM DMA signal handles (owned by OamDma in gameboy.rs)
-    // trigger fires when $FF46 is written; trigger_val carries the source-page byte.
-    // oam_blocked is kept in sync by OamDma and read here for $FE00-$FE9F bus masking.
-    pub dma: Dma,
 }
 
 impl Mmu {
@@ -47,6 +44,7 @@ impl Mmu {
         let mut r = Self {
             apu: Apu::power_up(48000),
             cartridge: cart,
+            dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
             gpu: Gpu::power_up(term, intr.clone()),
             hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
@@ -57,7 +55,6 @@ impl Mmu {
             timer: Timer::power_up(term, intr.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
-            dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
         };
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
