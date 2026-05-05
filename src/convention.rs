@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Term {
     DMG, // Original GameBoy (GameBoy Classic)
@@ -47,9 +50,49 @@ pub trait Memory {
     }
 }
 
+// Hollow is a dummy memory that always reads 0xff and ignores writes. It can be used as a placeholder for components
+// that are not yet implemented, or for testing purposes.
+pub struct Hollow {}
+
+impl Hollow {
+    pub fn power_up() -> Self {
+        Self {}
+    }
+}
+
+impl Memory for Hollow {
+    fn lb(&self, _: u16) -> u8 {
+        0xff
+    }
+
+    fn sb(&mut self, _: u16, _: u8) {}
+}
+
 // Stable is a trait for components that can save their state to disk, so that the game can be resumed later.
 pub trait Stable: Memory {
     fn save(&self);
+}
+
+// Convention module for shared types and utilities.
+#[derive(Clone)]
+pub struct Signal {
+    b: Rc<RefCell<u8>>,
+}
+
+impl Signal {
+    pub fn power_up() -> Self {
+        Self { b: Rc::new(RefCell::new(0)) }
+    }
+
+    pub fn get(&self) -> bool {
+        let r = *self.b.borrow() != 0;
+        *self.b.borrow_mut() = 0;
+        r
+    }
+
+    pub fn set(&self) {
+        *self.b.borrow_mut() = 1;
+    }
 }
 
 pub fn hi(n: u16) -> u8 {
