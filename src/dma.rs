@@ -43,11 +43,29 @@ impl O {
     }
 
     pub fn tick(&mut self, cycles: u32) {
+        let old = self.cnt.borrow().clone();
+        self.advance_counter(cycles);
+        let new = self.cnt.borrow().clone();
+        self.do_copies(old, new);
+    }
+    /// Advance only the DMA counter (no byte copies). Called per M-cycle from mmu::advance_clock
+    /// so that lb_odma sees cycle-accurate DMA active/inactive state within an instruction.
+    pub fn advance_counter(&mut self, cycles: u32) {
         if *self.sig.borrow() != 0x00 {
             self.sig.replace(0x00);
-            if *self.cnt.borrow() <= 640 {
-                self.cnt.replace(652);
+            let cnt = *self.cnt.borrow();
+            if cnt == 0 {
+                // Fresh DMA start: 1 M-cycle startup delay before OAM becomes inaccessible.
+                // cnt=648 → after this M-cycle's 4T: cnt=644 (> 640, not active yet).
+                // One further M-cycle later cnt=640, DMA becomes active.
+                self.cnt.replace(648);
+            } else if cnt < 640 {
+                // Restart while DMA is actively blocking OAM (cnt in 1..639).
+                // Reload full 640T period; same startup model as fresh (cnt=648 → 644 after tick).
+                self.cnt.replace(648);
             }
+            // cnt == 640: first active cycle; a write here does not reset the counter.
+            // cnt > 640: startup phase from a prior write; ignore the new write.
         }
         if *self.cnt.borrow() == 0 {
             return;
@@ -55,9 +73,16 @@ impl O {
         let old = self.cnt.borrow().clone();
         let new = old.saturating_sub(cycles);
         self.cnt.replace(new);
+    }
 
-        let ori = old.min(640);
-        let end = new;
+    /// Perform OAM byte copies for the counter range [old_cnt, new_cnt].
+    /// Called once per instruction from gameboy::step after cpu.step() completes.
+    pub fn do_copies(&mut self, old_cnt: u32, new_cnt: u32) {
+        if old_cnt == 0 {
+            return;
+        }
+        let ori = old_cnt.min(640);
+        let end = new_cnt;
         if ori <= end {
             return;
         }

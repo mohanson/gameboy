@@ -111,6 +111,7 @@ impl Mmu {
         self.timer.tick(cycles);
         self.gpu.next(cycles);
         self.apu.next(cycles);
+        self.dma.o.advance_counter(cycles);
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
