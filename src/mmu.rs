@@ -108,12 +108,9 @@ impl Mmu {
     }
 
     fn advance_clock(&mut self, cycles: u32) {
+        self.timer.tick(cycles);
         self.gpu.next(cycles);
         self.apu.next(cycles);
-    }
-
-    pub fn tick_timer(&mut self, cycles: u32) {
-        self.timer.tick(cycles);
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {

@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/oam_dma_restart.gb", 1);
     case.insert("res/mts/acceptance/oam_dma_start.gb", 1);
     case.insert("res/mts/acceptance/oam_dma_timing.gb", 1);
-    // case.insert("res/mts/acceptance/pop_timing.gb", 0);
+    case.insert("res/mts/acceptance/pop_timing.gb", 1);
     // case.insert("res/mts/acceptance/ppu/hblank_ly_scx_timing-GS.gb", 0);
     case.insert("res/mts/acceptance/ppu/intr_1_2_timing-GS.gb", 1);
     // case.insert("res/mts/acceptance/ppu/intr_2_0_timing.gb", 0);

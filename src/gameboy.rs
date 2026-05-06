@@ -43,7 +43,6 @@ impl GameBoy {
         }
         let cycles = self.cpu.step();
         self.dma.o.tick(cycles);
-        self.mmu.borrow_mut().tick_timer(cycles);
         let hdma_cycles = self.mmu.borrow_mut().next();
         self.c += cycles + hdma_cycles;
         cycles + hdma_cycles
