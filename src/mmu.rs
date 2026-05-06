@@ -175,7 +175,14 @@ impl Memory for Mmu {
             0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
             0xe000..=0xfdff => self.sb(a - 0x2000, v),
-            0xfe00..=0xfe9f => self.gpu.sb(a, v),
+            0xfe00..=0xfe9f => {
+                // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
+                let cnt = *self.dma.o.cnt.borrow();
+                if cnt > 0 && cnt <= 640 {
+                    return;
+                }
+                self.gpu.sb(a, v);
+            }
             0xfea0..=0xfeff => {}
             0xff00 => self.joypad.sb(a, v),
             0xff01..=0xff02 => self.serial.sb(a, v),
@@ -198,6 +205,14 @@ impl Memory for Mmu {
             0xff80..=0xfffe => self.hram[a as usize - 0xff80] = v,
             0xffff => self.intr.borrow_mut().sb(0xffff, v),
             _ => {}
+        }
+    }
+
+    fn dma_sb(&mut self, a: u16, v: u8) {
+        match a {
+            // DMA writes to OAM bypass the CPU-write-blocking guard.
+            0xfe00..=0xfe9f => self.gpu.sb(a, v),
+            _ => self.sb(a, v),
         }
     }
 }
