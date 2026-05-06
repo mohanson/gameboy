@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/reti_intr_timing.gb", 1);
     case.insert("res/mts/acceptance/reti_timing.gb", 1);
     case.insert("res/mts/acceptance/rst_timing.gb", 1);
-    // case.insert("res/mts/acceptance/serial/boot_sclk_align-dmgABCmgb.gb", 0);
+    case.insert("res/mts/acceptance/serial/boot_sclk_align-dmgABCmgb.gb", 1);
     case.insert("res/mts/acceptance/timer/div_write.gb", 1);
     case.insert("res/mts/acceptance/timer/rapid_toggle.gb", 1);
     case.insert("res/mts/acceptance/timer/tim00.gb", 1);
