@@ -56,6 +56,7 @@ impl Mmu {
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
         };
+        r.sb(0xff26, 0xf1); // Must be first: enables APU power so subsequent channel writes are not blocked.
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
         r.sb(0xff12, 0xf3);
@@ -64,7 +65,7 @@ impl Mmu {
         r.sb(0xff16, 0x3f);
         r.sb(0xff17, 0x00);
         r.sb(0xff18, 0xff);
-        r.sb(0xff19, 0xbf);
+        r.sb(0xff19, 0x3f); // No trigger (bit 7 = 0): Channel 2 is inactive post-boot.
         r.sb(0xff1a, 0x7f);
         r.sb(0xff1b, 0xff);
         r.sb(0xff1c, 0x9f);
@@ -73,10 +74,9 @@ impl Mmu {
         r.sb(0xff20, 0xff);
         r.sb(0xff21, 0x00);
         r.sb(0xff22, 0x00);
-        r.sb(0xff23, 0xbf);
+        r.sb(0xff23, 0x3f); // No trigger (bit 7 = 0): Channel 4 is inactive post-boot.
         r.sb(0xff24, 0x77);
         r.sb(0xff25, 0xf3);
-        r.sb(0xff26, 0xf1);
         r.sb(0xff40, 0x91);
         r.sb(0xff41, 0x85);
         r.sb(0xff42, 0x00);
