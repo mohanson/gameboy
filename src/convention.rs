@@ -45,6 +45,9 @@ pub trait Memory {
         self.sb(a, v as u8);
         self.sb(a.wrapping_add(1), (v >> 8) as u8)
     }
+
+    /// Advance subsystem clocks by `cycles` T-cycles. Called after each M-cycle bus access.
+    fn tick(&mut self, _cycles: u32) {}
 }
 
 // Hollow is a dummy memory that always reads 0xff and ignores writes. It can be used as a placeholder for components

@@ -424,7 +424,7 @@ impl Gpu {
         if !self.lcdc.bit7() {
             return;
         }
-        self.h_blank = false;
+        // h_blank is NOT reset here; it is reset by Mmu::next() after HDMA has checked it.
 
         // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots,
         // or 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456

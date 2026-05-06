@@ -93,12 +93,27 @@ impl Mmu {
 }
 
 impl Mmu {
-    pub fn next(&mut self, cycles: u32) -> u32 {
-        let cycles = cycles + self.run_dma();
-        self.timer.tick(cycles);
+    /// Called once per CPU instruction after all per-M-cycle ticks have already advanced
+    /// timer/GPU/APU. Runs HDMA and resets the h_blank edge signal.
+    pub fn next(&mut self) -> u32 {
+        let hdma_cycles = self.run_dma();
+        self.gpu.h_blank = false;
+        if hdma_cycles > 0 {
+            self.timer.tick(hdma_cycles);
+            self.gpu.next(hdma_cycles);
+            self.apu.next(hdma_cycles);
+            self.gpu.h_blank = false;
+        }
+        hdma_cycles
+    }
+
+    fn advance_clock(&mut self, cycles: u32) {
         self.gpu.next(cycles);
         self.apu.next(cycles);
-        cycles
+    }
+
+    pub fn tick_timer(&mut self, cycles: u32) {
+        self.timer.tick(cycles);
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
@@ -116,6 +131,10 @@ impl Mmu {
 }
 
 impl Memory for Mmu {
+    fn tick(&mut self, cycles: u32) {
+        self.advance_clock(cycles);
+    }
+
     fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x7fff => self.cartridge.lb(a),
