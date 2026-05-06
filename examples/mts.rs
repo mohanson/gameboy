@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/boot_regs-mgb.gb", 9);
     case.insert("res/mts/acceptance/boot_regs-sgb.gb", 9);
     case.insert("res/mts/acceptance/boot_regs-sgb2.gb", 9);
-    // case.insert("res/mts/acceptance/call_cc_timing.gb", 0);
+    case.insert("res/mts/acceptance/call_cc_timing.gb", 1);
     // case.insert("res/mts/acceptance/call_cc_timing2.gb", 0);
     case.insert("res/mts/acceptance/call_timing.gb", 1);
     // case.insert("res/mts/acceptance/call_timing2.gb", 0);
@@ -49,8 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/instr/daa.gb", 1);
     case.insert("res/mts/acceptance/interrupts/ie_push.gb", 1);
     case.insert("res/mts/acceptance/intr_timing.gb", 1);
-    // case.insert("res/mts/acceptance/jp_cc_timing.gb", 0);
-    // case.insert("res/mts/acceptance/jp_timing.gb", 0);
+    case.insert("res/mts/acceptance/jp_cc_timing.gb", 1);
+    case.insert("res/mts/acceptance/jp_timing.gb", 1);
     case.insert("res/mts/acceptance/ld_hl_sp_e_timing.gb", 1);
     case.insert("res/mts/acceptance/oam_dma/basic.gb", 1);
     case.insert("res/mts/acceptance/oam_dma/reg_read.gb", 1);
@@ -73,10 +73,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // case.insert("res/mts/acceptance/ppu/vblank_stat_intr-GS.gb", 0);
     // case.insert("res/mts/acceptance/push_timing.gb", 0);
     case.insert("res/mts/acceptance/rapid_di_ei.gb", 1);
-    // case.insert("res/mts/acceptance/ret_cc_timing.gb", 0);
-    // case.insert("res/mts/acceptance/ret_timing.gb", 0);
+    case.insert("res/mts/acceptance/ret_cc_timing.gb", 1);
+    case.insert("res/mts/acceptance/ret_timing.gb", 1);
     case.insert("res/mts/acceptance/reti_intr_timing.gb", 1);
-    // case.insert("res/mts/acceptance/reti_timing.gb", 0);
+    case.insert("res/mts/acceptance/reti_timing.gb", 1);
     // case.insert("res/mts/acceptance/rst_timing.gb", 0);
     // case.insert("res/mts/acceptance/serial/boot_sclk_align-dmgABCmgb.gb", 0);
     case.insert("res/mts/acceptance/timer/div_write.gb", 1);
