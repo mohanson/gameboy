@@ -344,6 +344,12 @@ pub struct Gpu {
     // start of each new scanline (dots=0) and when LYC is written, matching
     // real DMG hardware timing where STAT bit 2 lags LY by one M-cycle.
     stat_lyc_match: bool,
+    // Tracks the STAT IRQ signal level (the OR of all enabled STAT interrupt sources).
+    // The LCD interrupt (IF bit 1) is only raised on a 0→1 RISING EDGE of this signal.
+    // This implements the "STAT IRQ blocking" behaviour: if one source (e.g. LYC=LY)
+    // keeps the signal HIGH through mode 3, the mode-0 transition does NOT generate
+    // a second interrupt because the signal never goes LOW in between.
+    stat_irq: bool,
 }
 
 impl Gpu {
@@ -378,6 +384,7 @@ impl Gpu {
             sprite_penalty: 0,
             lcdon_first_line: false,
             stat_lyc_match: false,
+            stat_irq: false,
         }
     }
 
@@ -406,6 +413,30 @@ impl Gpu {
             0x02 => GrayShades::Dark,
             _ => GrayShades::Black,
         }
+    }
+
+    // Compute the STAT IRQ signal level: HIGH if any enabled interrupt source is active.
+    // The signal is LOW during mode 3 (no STAT interrupt source) unless LYC=LY keeps it high.
+    // When LCD is disabled the signal is always LOW.
+    fn stat_irq_level(&self) -> bool {
+        if !self.lcdc.bit7() {
+            return false;
+        }
+        (self.stat.enable_m0_interrupt && self.stat.mode == 0)
+            || (self.stat.enable_m1_interrupt && self.stat.mode == 1)
+            || (self.stat.enable_m2_interrupt && self.stat.mode == 2)
+            || (self.stat.enable_ly_interrupt && self.stat_lyc_match)
+    }
+
+    // Recompute the STAT IRQ signal and raise an LCD interrupt on a 0→1 rising edge.
+    // Must be called after any change that could affect the signal:
+    //   mode transitions, stat_lyc_match changes, STAT enable-bit writes, LCDC writes.
+    fn stat_irq_update(&mut self) {
+        let new_level = self.stat_irq_level();
+        if new_level && !self.stat_irq {
+            self.intf.borrow_mut().raise(InterruptFlag::LCD);
+        }
+        self.stat_irq = new_level;
     }
 
     // Grey scale.
@@ -469,9 +500,9 @@ impl Gpu {
                 // when the new scanline starts (dots=0), matching DMG hardware behaviour.
                 self.ly = (self.ly + 1) % 154;
                 self.stat_lyc_match = false;
-                if self.stat.enable_ly_interrupt && self.ly == self.lc {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
-                }
+                // Update the STAT IRQ signal — the LYC=LY source just went inactive.
+                // The new LY's LYC coincidence is re-evaluated at mode-2 start (dots=0).
+                self.stat_irq_update();
                 // Skip mode transitions; they fire on the next tick when dots=0
                 continue;
             }
@@ -483,9 +514,7 @@ impl Gpu {
                 self.stat_lyc_match = self.ly == self.lc;
                 self.v_blank = true;
                 self.intf.borrow_mut().raise(InterruptFlag::VBlank);
-                if self.stat.enable_m1_interrupt {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
-                }
+                self.stat_irq_update();
             } else if self.dots < 80 {
                 if self.lcdon_first_line {
                     // Line 0 after LCD enable: stay in Mode 0, skip Mode 2 entirely.
@@ -499,21 +528,20 @@ impl Gpu {
                 // Compute sprite timing penalty for this scanline's mode3 window
                 let t_pen = self.compute_sprite_penalty();
                 self.sprite_penalty = (t_pen / 4) * 4;
-                if self.stat.enable_m2_interrupt {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
-                }
+                self.stat_irq_update();
             } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 + self.sprite_penalty {
                 self.lcdon_first_line = false;
                 self.stat.mode = 3;
+                // Mode 3 has no STAT interrupt source; the signal may fall to LOW here
+                // unless LYC=LY keeps it high.  Update to track any falling edge.
+                self.stat_irq_update();
             } else {
                 if self.stat.mode == 0 {
                     continue;
                 }
                 self.stat.mode = 0;
                 self.h_blank = true;
-                if self.stat.enable_m0_interrupt {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
-                }
+                self.stat_irq_update();
                 // Render scanline
                 if self.term == Term::CGB || self.lcdc.bit0() {
                     self.draw_bg();
@@ -865,11 +893,14 @@ impl Memory for Gpu {
                     // Clean screen.
                     self.data = [[[0xffu8; 3]; SCREEN_W]; SCREEN_H];
                     self.v_blank = true;
+                    // LCD disabled: signal goes LOW unconditionally.
+                    self.stat_irq_update();
                 } else if !was_on {
                     // LCD just enabled: line 0 starts in Mode 0, not Mode 2.
                     // Evaluate LYC=LY coincidence for the initial display state.
                     self.lcdon_first_line = true;
                     self.stat_lyc_match = self.ly == self.lc;
+                    self.stat_irq_update();
                 }
             }
             0xff41 => {
@@ -877,6 +908,8 @@ impl Memory for Gpu {
                 self.stat.enable_m2_interrupt = v & 0x20 != 0x00;
                 self.stat.enable_m1_interrupt = v & 0x10 != 0x00;
                 self.stat.enable_m0_interrupt = v & 0x08 != 0x00;
+                // Enabling a source that is currently active generates a rising edge.
+                self.stat_irq_update();
             }
             0xff42 => self.sy = v,
             0xff43 => self.sx = v,
@@ -885,6 +918,7 @@ impl Memory for Gpu {
                 self.lc = v;
                 // Re-evaluate LYC=LY coincidence immediately when LYC is written.
                 self.stat_lyc_match = self.ly == self.lc;
+                self.stat_irq_update();
             }
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,
