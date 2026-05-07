@@ -473,7 +473,7 @@ impl Gpu {
                 if self.stat.enable_m2_interrupt {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
-            } else if self.dots <= (80 + 172) {
+            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) {
                 self.stat.mode = 3;
             } else {
                 if self.stat.mode == 0 {
