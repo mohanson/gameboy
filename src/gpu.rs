@@ -336,6 +336,14 @@ pub struct Gpu {
     // Extra dots to add to the mode3 threshold due to sprites on the current scanline.
     // Computed when mode2 fires; represents floor(T_penalty/4)*4 extra dots before mode0.
     sprite_penalty: u32,
+    // Set when LCDC bit 7 transitions 0->1. Line 0 after LCD enable starts in Mode 0
+    // (not Mode 2) and jumps directly to Mode 3 at dot 80.
+    lcdon_first_line: bool,
+    // Latched LYC=LY coincidence bit for STAT register bit 2.
+    // This is cleared at dot 452 (when LY increments) and re-evaluated at the
+    // start of each new scanline (dots=0) and when LYC is written, matching
+    // real DMG hardware timing where STAT bit 2 lags LY by one M-cycle.
+    stat_lyc_match: bool,
 }
 
 impl Gpu {
@@ -368,6 +376,8 @@ impl Gpu {
             prio: [(true, 0); SCREEN_W],
             dots: 0,
             sprite_penalty: 0,
+            lcdon_first_line: false,
+            stat_lyc_match: false,
         }
     }
 
@@ -454,8 +464,11 @@ impl Gpu {
             let d = self.dots;
             self.dots %= 456;
             if d == 452 {
-                // LY increments 4T before the end of the scanline
+                // LY increments 4T before the end of the scanline.
+                // The STAT LYC=LY bit is cleared immediately: it will be re-evaluated
+                // when the new scanline starts (dots=0), matching DMG hardware behaviour.
                 self.ly = (self.ly + 1) % 154;
+                self.stat_lyc_match = false;
                 if self.stat.enable_ly_interrupt && self.ly == self.lc {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
@@ -467,16 +480,22 @@ impl Gpu {
                     continue;
                 }
                 self.stat.mode = 1;
+                self.stat_lyc_match = self.ly == self.lc;
                 self.v_blank = true;
                 self.intf.borrow_mut().raise(InterruptFlag::VBlank);
                 if self.stat.enable_m1_interrupt {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
             } else if self.dots < 80 {
+                if self.lcdon_first_line {
+                    // Line 0 after LCD enable: stay in Mode 0, skip Mode 2 entirely.
+                    continue;
+                }
                 if self.stat.mode == 2 {
                     continue;
                 }
                 self.stat.mode = 2;
+                self.stat_lyc_match = self.ly == self.lc;
                 // Compute sprite timing penalty for this scanline's mode3 window
                 let t_pen = self.compute_sprite_penalty();
                 self.sprite_penalty = (t_pen / 4) * 4;
@@ -484,6 +503,7 @@ impl Gpu {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
             } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 + self.sprite_penalty {
+                self.lcdon_first_line = false;
                 self.stat.mode = 3;
             } else {
                 if self.stat.mode == 0 {
@@ -740,10 +760,26 @@ impl Gpu {
 impl Memory for Gpu {
     fn lb(&self, a: u16) -> u8 {
         match a {
-            0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000],
+            0x8000..=0x9fff => {
+                // VRAM is locked during mode 3, and also during the 4T pre-mode-3 period
+                // (mode 2, dots >= 76) where the bus is already claimed by the GPU,
+                // matching real DMG hardware bus timing.
+                let vram_locked = self.stat.mode == 3
+                    || (self.stat.mode == 2 && self.dots >= 76);
+                if vram_locked {
+                    0xff
+                } else {
+                    self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000]
+                }
+            }
             0xfe00..=0xfe9f => {
-                // OAM is locked (returns 0xFF) during mode 2 (OAM scan) and mode 3 (pixel transfer)
-                if self.stat.mode == 2 || self.stat.mode == 3 {
+                // OAM is locked (returns 0xFF) during mode 2 (OAM scan) and mode 3 (pixel transfer).
+                // It is also locked from dot 452 onward (LY increment / OAM scan preparation),
+                // even though STAT still reports mode 0 at that dot.
+                let oam_locked = self.stat.mode == 2
+                    || self.stat.mode == 3
+                    || (self.stat.mode == 0 && self.dots >= 452);
+                if oam_locked {
                     0xff
                 } else {
                     self.oam[a as usize - 0xfe00]
@@ -755,7 +791,7 @@ impl Memory for Gpu {
                 let bit5 = if self.stat.enable_m2_interrupt { 0x20 } else { 0x00 };
                 let bit4 = if self.stat.enable_m1_interrupt { 0x10 } else { 0x00 };
                 let bit3 = if self.stat.enable_m0_interrupt { 0x08 } else { 0x00 };
-                let bit2 = if self.ly == self.lc { 0x04 } else { 0x00 };
+                let bit2 = if self.stat_lyc_match { 0x04 } else { 0x00 };
                 // Bit 7 is unused and always reads as 1
                 0x80 | bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
@@ -811,6 +847,7 @@ impl Memory for Gpu {
                 }
             }
             0xff40 => {
+                let was_on = self.lcdc.bit7();
                 self.lcdc.data = v;
                 if !self.lcdc.bit7() {
                     self.dots = 0;
@@ -819,6 +856,11 @@ impl Memory for Gpu {
                     // Clean screen.
                     self.data = [[[0xffu8; 3]; SCREEN_W]; SCREEN_H];
                     self.v_blank = true;
+                } else if !was_on {
+                    // LCD just enabled: line 0 starts in Mode 0, not Mode 2.
+                    // Evaluate LYC=LY coincidence for the initial display state.
+                    self.lcdon_first_line = true;
+                    self.stat_lyc_match = self.ly == self.lc;
                 }
             }
             0xff41 => {
@@ -830,7 +872,11 @@ impl Memory for Gpu {
             0xff42 => self.sy = v,
             0xff43 => self.sx = v,
             0xff44 => {}
-            0xff45 => self.lc = v,
+            0xff45 => {
+                self.lc = v;
+                // Re-evaluate LYC=LY coincidence immediately when LYC is written.
+                self.stat_lyc_match = self.ly == self.lc;
+            }
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,
             0xff49 => self.op1 = v,
