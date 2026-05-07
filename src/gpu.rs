@@ -522,6 +522,13 @@ impl Gpu {
                 self.stat_lyc_match = self.ly == self.lc;
                 self.v_blank = true;
                 self.intf.borrow_mut().raise(InterruptFlag::VBlank);
+                // DMG quirk: at line 144, a Mode 2 OAM pulse is generated simultaneously
+                // with Mode 1 (VBlank) entry.  If the M2 interrupt is enabled and the
+                // STAT signal was LOW, fire a rising edge now (before stat_irq_update
+                // sets the persistent level based on Mode 1 / LYC).
+                if self.stat.enable_m2_interrupt && !self.stat_irq {
+                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
+                }
                 self.stat_irq_update();
             } else if self.dots < 80 {
                 if self.lcdon_first_line {
