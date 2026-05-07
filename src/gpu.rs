@@ -431,7 +431,15 @@ impl Gpu {
     // Recompute the STAT IRQ signal and raise an LCD interrupt on a 0→1 rising edge.
     // Must be called after any change that could affect the signal:
     //   mode transitions, stat_lyc_match changes, STAT enable-bit writes, LCDC writes.
+    // When LCD is OFF this is a no-op: stat_irq is "frozen" at the level it had when
+    // the LCD was last on.  This ensures that re-enabling the LCD only fires an interrupt
+    // if the comparison result actually changes (0→1), not just because the off-state
+    // appeared as level=0 and any match looks like a rising edge.
     fn stat_irq_update(&mut self) {
+        if !self.lcdc.bit7() {
+            // Freeze: don't touch stat_irq while LCD is off.
+            return;
+        }
         let new_level = self.stat_irq_level();
         if new_level && !self.stat_irq {
             self.intf.borrow_mut().raise(InterruptFlag::LCD);
@@ -916,9 +924,13 @@ impl Memory for Gpu {
             0xff44 => {}
             0xff45 => {
                 self.lc = v;
-                // Re-evaluate LYC=LY coincidence immediately when LYC is written.
-                self.stat_lyc_match = self.ly == self.lc;
-                self.stat_irq_update();
+                // The comparison clock only runs while the LCD is on.
+                // Writing LYC while LCD is off must not change stat_lyc_match
+                // (STAT bit 2 is frozen during LCD-off).
+                if self.lcdc.bit7() {
+                    self.stat_lyc_match = self.ly == self.lc;
+                    self.stat_irq_update();
+                }
             }
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,

@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/ppu/lcdon_timing-GS.gb", 1);
     case.insert("res/mts/acceptance/ppu/lcdon_write_timing-GS.gb", 1);
     case.insert("res/mts/acceptance/ppu/stat_irq_blocking.gb", 1);
-    // case.insert("res/mts/acceptance/ppu/stat_lyc_onoff.gb", 0);
+    case.insert("res/mts/acceptance/ppu/stat_lyc_onoff.gb", 1);
     // case.insert("res/mts/acceptance/ppu/vblank_stat_intr-GS.gb", 0);
     case.insert("res/mts/acceptance/push_timing.gb", 1);
     case.insert("res/mts/acceptance/rapid_di_ei.gb", 1);
