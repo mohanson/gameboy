@@ -26,6 +26,8 @@ pub struct Serial {
     sdiv: u16,
     // Bits remaining in the current transfer (0 = idle).
     bits: u8,
+    // The byte being transmitted (captured when the transfer starts, before shifting corrupts data).
+    pub tx_byte: u8,
 }
 
 impl Serial {
@@ -44,6 +46,7 @@ impl Serial {
                 Term::CGB => 0x0000,
             },
             bits: 0,
+            tx_byte: 0,
         }
     }
 
@@ -95,6 +98,7 @@ impl Memory for Serial {
                 self.ctrl = v;
                 // Start a transfer: internal clock (bit 0 = 1) and Transfer Start (bit 7 = 1).
                 if v & 0x81 == 0x81 {
+                    self.tx_byte = self.data;
                     self.bits = 8;
                 }
             }

@@ -60,8 +60,9 @@ fn mode_blargg_serial_output(argu: &Argument) {
     loop {
         mbrd.step();
         if mbrd.mmu.borrow().serial.ctrl == 0x81 {
-            print!("{}", char::from(mbrd.mmu.borrow().serial.data));
-            buff.push(char::from(mbrd.mmu.borrow().serial.data));
+            let tx = mbrd.mmu.borrow().serial.tx_byte;
+            print!("{}", char::from(tx));
+            buff.push(char::from(tx));
             // Clear the transfer start flag to indicate that the transfer is complete.
             mbrd.mmu.borrow_mut().serial.ctrl = 0x01;
             std::io::stdout().flush().unwrap();
