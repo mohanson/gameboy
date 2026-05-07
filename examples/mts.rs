@@ -120,18 +120,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/emulator-only/mbc5/rom_512kb.gb", 1);
     case.insert("res/mts/emulator-only/mbc5/rom_64Mb.gb", 1);
     case.insert("res/mts/emulator-only/mbc5/rom_8Mb.gb", 1);
-    // case.insert("res/mts/madness/mgb_oam_dma_halt_sprites.gb", 0);
-    // case.insert("res/mts/manual-only/sprite_priority.gb", 0);
-    // case.insert("res/mts/misc/bits/unused_hwio-C.gb", 0);
-    // case.insert("res/mts/misc/boot_div-A.gb", 0);
-    // case.insert("res/mts/misc/boot_div-cgb0.gb", 0);
-    // case.insert("res/mts/misc/boot_div-cgbABCDE.gb", 0);
-    // case.insert("res/mts/misc/boot_hwio-C.gb", 0);
-    // case.insert("res/mts/misc/boot_regs-A.gb", 0);
-    // case.insert("res/mts/misc/boot_regs-cgb.gb", 0);
-    // case.insert("res/mts/misc/ppu/vblank_stat_intr-C.gb", 0);
-    // case.insert("res/mts/utils/bootrom_dumper.gb", 0);
-    case.insert("res/mts/utils/dump_boot_hwio.gb", 1);
+    case.insert("res/mts/madness/mgb_oam_dma_halt_sprites.gb", 9);
+    case.insert("res/mts/manual-only/sprite_priority.gb", 9);
+    case.insert("res/mts/misc/bits/unused_hwio-C.gb", 9);
+    case.insert("res/mts/misc/boot_div-A.gb", 9);
+    case.insert("res/mts/misc/boot_div-cgb0.gb", 9);
+    case.insert("res/mts/misc/boot_div-cgbABCDE.gb", 9);
+    case.insert("res/mts/misc/boot_hwio-C.gb", 9);
+    case.insert("res/mts/misc/boot_regs-A.gb", 9);
+    case.insert("res/mts/misc/boot_regs-cgb.gb", 9);
+    case.insert("res/mts/misc/ppu/vblank_stat_intr-C.gb", 9);
+    case.insert("res/mts/utils/bootrom_dumper.gb", 9);
+    case.insert("res/mts/utils/dump_boot_hwio.gb", 9);
 
     for (k, v) in case {
         match v {
