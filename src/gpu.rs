@@ -741,7 +741,14 @@ impl Memory for Gpu {
     fn lb(&self, a: u16) -> u8 {
         match a {
             0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000],
-            0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00],
+            0xfe00..=0xfe9f => {
+                // OAM is locked (returns 0xFF) during mode 2 (OAM scan) and mode 3 (pixel transfer)
+                if self.stat.mode == 2 || self.stat.mode == 3 {
+                    0xff
+                } else {
+                    self.oam[a as usize - 0xfe00]
+                }
+            }
             0xff40 => self.lcdc.data,
             0xff41 => {
                 let bit6 = if self.stat.enable_ly_interrupt { 0x40 } else { 0x00 };
@@ -797,7 +804,12 @@ impl Memory for Gpu {
     fn sb(&mut self, a: u16, v: u8) {
         match a {
             0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v,
-            0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00] = v,
+            0xfe00..=0xfe9f => {
+                // OAM writes are ignored during mode 2 (OAM scan) and mode 3 (pixel transfer)
+                if self.stat.mode != 2 && self.stat.mode != 3 {
+                    self.oam[a as usize - 0xfe00] = v;
+                }
+            }
             0xff40 => {
                 self.lcdc.data = v;
                 if !self.lcdc.bit7() {
