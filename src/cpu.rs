@@ -1,5 +1,6 @@
 // The chip behind the NINTENDO GAME BOY: The sharp LR35902.
 use super::convention::{Memory, Term, hi, lo};
+use super::mmu::Mmu;
 use super::register::Flag::{C, H, N, Z};
 use super::register::Register;
 use std::cell::RefCell;
@@ -467,7 +468,7 @@ impl Alu {
 
 pub struct Cpu {
     pub reg: Register,
-    pub mem: Rc<RefCell<dyn Memory>>,
+    pub mem: Rc<RefCell<Mmu>>,
     // Interrupt master enable flag, which controls whether the CPU will respond to interrupts.
     pub ime: u8,
     pub imp: u8,
@@ -1642,7 +1643,7 @@ impl Cpu {
 }
 
 impl Cpu {
-    pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
+    pub fn power_up(term: Term, mem: Rc<RefCell<Mmu>>) -> Self {
         let mut reg = Register::power_up(term);
         let chk = mem.borrow().lb(0x014d);
         if term == Term::DMG && chk != 0x00 {
