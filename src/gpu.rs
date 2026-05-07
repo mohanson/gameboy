@@ -839,10 +839,19 @@ impl Memory for Gpu {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v,
+            0x8000..=0x9fff => {
+                // VRAM writes are ignored during mode 3 (pixel transfer).
+                if self.stat.mode != 3 {
+                    self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v;
+                }
+            }
             0xfe00..=0xfe9f => {
-                // OAM writes are ignored during mode 2 (OAM scan) and mode 3 (pixel transfer)
-                if self.stat.mode != 2 && self.stat.mode != 3 {
+                // OAM writes are ignored during mode 3 (pixel transfer) and during mode 2
+                // (OAM scan) while dots < 76. The last 4T of mode 2 (dots 76-79) the OAM
+                // scan is already complete and the CPU can write to OAM again.
+                let oam_write_blocked = self.stat.mode == 3
+                    || (self.stat.mode == 2 && self.dots < 76);
+                if !oam_write_blocked {
                     self.oam[a as usize - 0xfe00] = v;
                 }
             }
