@@ -65,10 +65,9 @@ impl Timer {
             Term::DMG => bitval & enable,
             Term::CGB => bitval,
         };
-        let detect = if self.term == Term::DMG {
-            self.signal == 1 && signal == 0
-        } else {
-            self.signal == 1 && bitval == 0 && enable == 1
+        let detect = match self.term {
+            Term::DMG => self.signal == 1 && signal == 0,
+            Term::CGB => self.signal == 1 && bitval == 0 && enable == 1,
         };
         if detect {
             let (addon, b) = self.tima.overflowing_add(1);
