@@ -46,9 +46,6 @@ pub trait Memory {
         self.sb(a.wrapping_add(1), (v >> 8) as u8)
     }
 
-    /// Advance subsystem clocks by `cycles` T-cycles. Called after each M-cycle bus access.
-    fn tick(&mut self, _cycles: u32) {}
-
     /// Write a byte as a DMA transfer, bypassing any DMA-active bus-conflict checks.
     /// The default implementation falls through to `sb`; `Mmu` overrides this to write
     /// directly to the GPU's OAM without the CPU-write-blocking guard.

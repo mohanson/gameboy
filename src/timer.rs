@@ -70,9 +70,8 @@ impl Timer {
             Term::CGB => self.signal == 1 && bitval == 0 && enable == 1,
         };
         if detect {
-            let (addon, b) = self.tima.overflowing_add(1);
-            self.tima = addon;
-            if b {
+            self.tima = self.tima.wrapping_add(1);
+            if self.tima == 0 {
                 self.delays = 8;
             }
         }

@@ -807,26 +807,16 @@ impl Memory for Gpu {
                 // VRAM is locked during mode 3, and also during the 4T pre-mode-3 period
                 // (mode 2, dots >= 76) where the bus is already claimed by the GPU,
                 // matching real DMG hardware bus timing.
-                let vram_locked = self.stat.mode == 3
-                    || (self.stat.mode == 2 && self.dots >= 76);
-                if vram_locked {
-                    0xff
-                } else {
-                    self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000]
-                }
+                let vram_locked = self.stat.mode == 3 || (self.stat.mode == 2 && self.dots >= 76);
+                if vram_locked { 0xff } else { self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] }
             }
             0xfe00..=0xfe9f => {
                 // OAM is locked (returns 0xFF) during mode 2 (OAM scan) and mode 3 (pixel transfer).
                 // It is also locked from dot 452 onward (LY increment / OAM scan preparation),
                 // even though STAT still reports mode 0 at that dot.
-                let oam_locked = self.stat.mode == 2
-                    || self.stat.mode == 3
-                    || (self.stat.mode == 0 && self.dots >= 452);
-                if oam_locked {
-                    0xff
-                } else {
-                    self.oam[a as usize - 0xfe00]
-                }
+                let oam_locked =
+                    self.stat.mode == 2 || self.stat.mode == 3 || (self.stat.mode == 0 && self.dots >= 452);
+                if oam_locked { 0xff } else { self.oam[a as usize - 0xfe00] }
             }
             0xff40 => self.lcdc.data,
             0xff41 => {
@@ -892,8 +882,7 @@ impl Memory for Gpu {
                 // OAM writes are ignored during mode 3 (pixel transfer) and during mode 2
                 // (OAM scan) while dots < 76. The last 4T of mode 2 (dots 76-79) the OAM
                 // scan is already complete and the CPU can write to OAM again.
-                let oam_write_blocked = self.stat.mode == 3
-                    || (self.stat.mode == 2 && self.dots < 76);
+                let oam_write_blocked = self.stat.mode == 3 || (self.stat.mode == 2 && self.dots < 76);
                 if !oam_write_blocked {
                     self.oam[a as usize - 0xfe00] = v;
                 }

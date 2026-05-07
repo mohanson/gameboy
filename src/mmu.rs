@@ -130,10 +130,6 @@ impl Mmu {
 }
 
 impl Memory for Mmu {
-    fn tick(&mut self, cycles: u32) {
-        self.advance_clock(cycles);
-    }
-
     fn lb(&self, a: u16) -> u8 {
         match a {
             0x0000..=0x7fff => self.cartridge.lb(a),
@@ -224,6 +220,10 @@ impl Memory for Mmu {
 }
 
 impl Mmu {
+    pub fn tick(&mut self, cycles: u32) {
+        self.advance_clock(cycles);
+    }
+
     fn run_dma(&mut self) -> u32 {
         if !self.hdma.active {
             return 0;
