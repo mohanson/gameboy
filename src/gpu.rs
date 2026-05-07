@@ -333,6 +333,9 @@ pub struct Gpu {
     // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
     // Scanlines 144 through 153 are mode 1.
     dots: u32,
+    // Extra dots to add to the mode3 threshold due to sprites on the current scanline.
+    // Computed when mode2 fires; represents floor(T_penalty/4)*4 extra dots before mode0.
+    sprite_penalty: u32,
 }
 
 impl Gpu {
@@ -364,6 +367,7 @@ impl Gpu {
             oam: [0x00; 0xa0],
             prio: [(true, 0); SCREEN_W],
             dots: 0,
+            sprite_penalty: 0,
         }
     }
 
@@ -473,10 +477,13 @@ impl Gpu {
                     continue;
                 }
                 self.stat.mode = 2;
+                // Compute sprite timing penalty for this scanline's mode3 window
+                let t_pen = self.compute_sprite_penalty();
+                self.sprite_penalty = (t_pen / 4) * 4;
                 if self.stat.enable_m2_interrupt {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
-            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 {
+            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 + self.sprite_penalty {
                 self.stat.mode = 3;
             } else {
                 if self.stat.mode == 0 {
@@ -502,6 +509,55 @@ impl Gpu {
         let result = self.v_blank;
         self.v_blank = false;
         result
+    }
+
+    // Compute the sprite timing penalty (in T-cycles) for the current scanline.
+    // Each sprite on the scanline with OAM_X < 168 adds:
+    //   - 6T (tile fetch cost)
+    //   - max(0, 5 - min(5, (oam_x + scx) % 8)) T (alignment cost, once per unique X value)
+    // Only the first 10 sprites per scanline are counted (DMG hardware limit).
+    // The effective extra dots = (T_penalty / 4) * 4 (rounded down to 4T boundary).
+    fn compute_sprite_penalty(&self) -> u32 {
+        if !self.lcdc.bit1() {
+            return 0;
+        }
+        let sprite_size: i32 = if self.lcdc.bit2() { 16 } else { 8 };
+        let ly = self.ly as i32;
+        let mut penalty = 0u32;
+        let mut seen_x = [false; 256];
+        let mut count = 0u32;
+
+        for i in 0..40usize {
+            let oam_y = self.oam[i * 4] as i32;
+            let oam_x = self.oam[i * 4 + 1];
+
+            let sprite_top = oam_y - 16;
+            let sprite_bottom = sprite_top + sprite_size - 1;
+            if ly < sprite_top || ly > sprite_bottom {
+                continue;
+            }
+
+            // Sprites at OAM_X >= 168 are off-screen right and don't affect mode3 timing
+            if oam_x >= 168 {
+                continue;
+            }
+
+            count += 1;
+            if count > 10 {
+                break;
+            }
+
+            penalty += 6;
+
+            if !seen_x[oam_x as usize] {
+                seen_x[oam_x as usize] = true;
+                let fine = ((oam_x as u32) + (self.sx as u32)) % 8;
+                if fine < 5 {
+                    penalty += 5 - fine;
+                }
+            }
+        }
+        penalty
     }
 
     fn draw_bg(&mut self) {
