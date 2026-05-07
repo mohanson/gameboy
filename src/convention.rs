@@ -68,11 +68,15 @@ impl Hollow {
 }
 
 impl Memory for Hollow {
-    fn lb(&self, _: u16) -> u8 {
+    fn lb(&self, a: u16) -> u8 {
+        let _ = a;
         0xff
     }
 
-    fn sb(&mut self, _: u16, _: u8) {}
+    fn sb(&mut self, a: u16, v: u8) {
+        let _ = a;
+        let _ = v;
+    }
 }
 
 // Stable is a trait for components that can save their state to disk, so that the game can be resumed later.
