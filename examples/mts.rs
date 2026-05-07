@@ -61,10 +61,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/mts/acceptance/pop_timing.gb", 1);
     case.insert("res/mts/acceptance/ppu/hblank_ly_scx_timing-GS.gb", 1);
     case.insert("res/mts/acceptance/ppu/intr_1_2_timing-GS.gb", 1);
-    // case.insert("res/mts/acceptance/ppu/intr_2_0_timing.gb", 0);
-    // case.insert("res/mts/acceptance/ppu/intr_2_mode0_timing.gb", 0);
+    case.insert("res/mts/acceptance/ppu/intr_2_0_timing.gb", 1);
+    case.insert("res/mts/acceptance/ppu/intr_2_mode0_timing.gb", 1);
     // case.insert("res/mts/acceptance/ppu/intr_2_mode0_timing_sprites.gb", 0);
-    // case.insert("res/mts/acceptance/ppu/intr_2_mode3_timing.gb", 0);
+    case.insert("res/mts/acceptance/ppu/intr_2_mode3_timing.gb", 1);
     // case.insert("res/mts/acceptance/ppu/intr_2_oam_ok_timing.gb", 0);
     // case.insert("res/mts/acceptance/ppu/lcdon_timing-GS.gb", 0);
     // case.insert("res/mts/acceptance/ppu/lcdon_write_timing-GS.gb", 0);

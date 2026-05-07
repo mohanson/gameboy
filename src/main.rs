@@ -248,11 +248,11 @@ fn mode_mts(argu: &Argument) {
     loop {
         mbrd.step();
         let reg = &mbrd.cpu.reg;
+        let pc = reg.pc;
         let sig = [reg.b, reg.c, reg.d, reg.e, reg.h, reg.l];
         if sig != passed && sig != failed {
             continue;
         }
-        let pc = reg.pc;
         if mbrd.mmu.borrow().lb(pc) != 0x18 || mbrd.mmu.borrow().lb(pc.wrapping_add(1)) != 0xfe {
             continue;
         }

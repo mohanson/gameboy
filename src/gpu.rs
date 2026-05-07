@@ -449,11 +449,14 @@ impl Gpu {
             }
             let d = self.dots;
             self.dots %= 456;
-            if d != self.dots {
+            if d == 452 {
+                // LY increments 4T before the end of the scanline
                 self.ly = (self.ly + 1) % 154;
                 if self.stat.enable_ly_interrupt && self.ly == self.lc {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
+                // Skip mode transitions; they fire on the next tick when dots=0
+                continue;
             }
             if self.ly >= 144 {
                 if self.stat.mode == 1 {
@@ -465,7 +468,7 @@ impl Gpu {
                 if self.stat.enable_m1_interrupt {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
-            } else if self.dots <= 80 {
+            } else if self.dots < 80 {
                 if self.stat.mode == 2 {
                     continue;
                 }
@@ -473,7 +476,7 @@ impl Gpu {
                 if self.stat.enable_m2_interrupt {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
-            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) {
+            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 {
                 self.stat.mode = 3;
             } else {
                 if self.stat.mode == 0 {
