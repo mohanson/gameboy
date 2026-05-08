@@ -1143,6 +1143,14 @@ impl Memory for Apu {
                     self.reg.nrx2 = 0x00;
                     self.reg.nrx3 = 0x00;
                     self.reg.nrx4 = 0x00;
+                    // On CGB, length counters are also cleared when APU powers off.
+                    // On DMG (monochrome), length counters survive power-off (Pan Docs NR52 footnote 1).
+                    if self.term == Term::CGB {
+                        self.channel1.lc.n = 0;
+                        self.channel2.lc.n = 0;
+                        self.channel3.lc.n = 0;
+                        self.channel4.lc.n = 0;
+                    }
                 }
                 // Power-on: synchronize the frame-sequencer timer with the DIV
                 // counter so that the first FS tick happens at the next falling
