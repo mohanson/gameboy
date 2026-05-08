@@ -42,7 +42,7 @@ impl Mmu {
         rog::debugln!("GameBoy term is {}", term);
         let intr = Rc::new(RefCell::new(Interrupt::power_up()));
         let mut r = Self {
-            apu: Apu::power_up(48000),
+            apu: Apu::power_up(48000, term),
             cartridge: cart,
             dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
             gpu: Gpu::power_up(term, intr.clone()),

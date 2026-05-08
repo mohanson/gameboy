@@ -142,7 +142,7 @@ fn mode_minifb(argu: &Argument) {
         let config: cpal::StreamConfig = config.into();
         rog::debugln!("Stream config: {:?}", config);
 
-        let apu = Apu::power_up(config.sample_rate.0);
+        let apu = Apu::power_up(config.sample_rate.0, mbrd.mmu.borrow().term);
         let apu_data = apu.buffer.clone();
         mbrd.mmu.borrow_mut().apu = apu;
 

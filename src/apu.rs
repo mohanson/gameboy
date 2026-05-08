@@ -1,4 +1,4 @@
-use super::convention::{CLOCK_FREQUENCY, Memory};
+use super::convention::{CLOCK_FREQUENCY, Memory, Term};
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -859,10 +859,14 @@ pub struct Apu {
     // When the APU is powered on while sdiv bit 12 is high, the hardware skips
     // the very first DIV-APU event (SameBoy "APU glitch").
     skip_next_fs_tick: bool,
+    // DMG vs CGB: on DMG, NR11/NR21/NR31/NR41 are writable when APU is off
+    // (length counters can be loaded), and lc.n is preserved through power-on.
+    // On CGB, all channel writes are blocked when APU is off.
+    term: Term,
 }
 
 impl Apu {
-    pub fn power_up(sample_rate: u32) -> Self {
+    pub fn power_up(sample_rate: u32, term: Term) -> Self {
         let blipbuf1 = create_blipbuf(sample_rate);
         let blipbuf2 = create_blipbuf(sample_rate);
         let blipbuf3 = create_blipbuf(sample_rate);
@@ -879,6 +883,7 @@ impl Apu {
             sample_rate,
             sdiv_cache: 0,
             skip_next_fs_tick: false,
+            term,
         }
     }
 
@@ -1057,6 +1062,39 @@ impl Memory for Apu {
 
     fn sb(&mut self, a: u16, v: u8) {
         if a != 0xff26 && !self.reg.get_power() {
+            // On DMG, NR11/NR21/NR31/NR41 (length counter registers) are
+            // writable even when the APU is powered off.  This allows games
+            // to pre-load length counters before enabling the APU.
+            // On CGB all channel writes are blocked when APU is off.
+            if self.term == Term::DMG {
+                match a {
+                    // NR11 / NR21: update lc.n; store only lower 6 bits
+                    // (duty-cycle field in bits 7-6 is NOT written when off)
+                    0xff11 => {
+                        self.channel1.reg.borrow_mut().nrx1 = v & 0x3f;
+                        self.channel1.lc.n = self.channel1.reg.borrow().get_length_load();
+                        return;
+                    }
+                    0xff16 => {
+                        self.channel2.reg.borrow_mut().nrx1 = v & 0x3f;
+                        self.channel2.lc.n = self.channel2.reg.borrow().get_length_load();
+                        return;
+                    }
+                    // NR31: full value stored, update lc.n
+                    0xff1b => {
+                        self.channel3.reg.borrow_mut().nrx1 = v;
+                        self.channel3.lc.n = self.channel3.reg.borrow().get_length_load();
+                        return;
+                    }
+                    // NR41: update lc.n
+                    0xff20 => {
+                        self.channel4.reg.borrow_mut().nrx1 = v;
+                        self.channel4.lc.n = self.channel4.reg.borrow().get_length_load();
+                        return;
+                    }
+                    _ => {}
+                }
+            }
             return;
         }
         // For NRx4 writes, pass the extra_clock flag based on the current FS step.
