@@ -493,34 +493,34 @@ impl Memory for ChannelSquare {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
+            0xff12 | 0xff17 => {
+                self.reg.borrow_mut().nrx2 = v;
+                // DAC off (starting volume=0 and not adding) → immediately disable channel.
+                if v & 0xf8 == 0x00 {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff13 | 0xff18 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
             0xff14 | 0xff19 => {
-                self.reg.borrow_mut().nrx4 = v;
+                // Bit 7 is write-only (trigger strobe). Preserve the internal channel-enable
+                // flag in bit 7: writing bit 7 as 0 must NOT clear the enabled state.
+                let old = self.reg.borrow().nrx4;
+                self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
                 self.timer.period = period(self.reg.clone());
-                // Trigger Event
-                //
-                // Writing a value to NRx4 with bit 7 set causes the following things to occur:
-                //
-                //   - Channel is enabled (see length counter).
-                //   - If length counter is zero, it is set to 64 (256 for wave channel).
-                //   - Frequency timer is reloaded with period.
-                //   - Volume envelope timer is reloaded with period.
-                //   - Channel volume is reloaded from NRx2.
-                //   - Noise channel's LFSR bits are all set to 1.
-                //   - Wave channel's position is set to 0 but sample buffer is NOT refilled.
-                //   - Square 1's sweep does several things (see frequency sweep).
-                //
-                // Note that if the channel's DAC is off, after the above actions occur the channel will be immediately
-                // disabled again.
-                if self.reg.borrow().get_trigger() {
+                if v & 0x80 != 0x00 {
+                    // Trigger event: enable channel and reload units.
+                    self.reg.borrow_mut().nrx4 |= 0x80;
                     self.lc.reload();
                     self.ve.reload();
                     if self.reg.borrow().channel == Channel::Square1 {
                         self.fs.reload();
+                    }
+                    // If DAC is off, disable channel immediately after trigger.
+                    if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
+                        self.reg.borrow_mut().set_trigger(false);
                     }
                 }
             }
@@ -606,7 +606,13 @@ impl Memory for ChannelWave {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            0xff1a => self.reg.borrow_mut().nrx0 = v,
+            0xff1a => {
+                self.reg.borrow_mut().nrx0 = v;
+                // DAC off (bit 7 = 0) → immediately disable channel.
+                if v & 0x80 == 0x00 {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff1b => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
@@ -617,11 +623,17 @@ impl Memory for ChannelWave {
                 self.timer.period = period(self.reg.clone());
             }
             0xff1e => {
-                self.reg.borrow_mut().nrx4 = v;
+                let old = self.reg.borrow().nrx4;
+                self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
                 self.timer.period = period(self.reg.clone());
-                if self.reg.borrow().get_trigger() {
+                if v & 0x80 != 0x00 {
+                    self.reg.borrow_mut().nrx4 |= 0x80;
                     self.lc.reload();
                     self.waveidx = 0x00;
+                    // If DAC is off, disable channel immediately after trigger.
+                    if !self.reg.borrow().get_dac_power() {
+                        self.reg.borrow_mut().set_trigger(false);
+                    }
                 }
             }
             0xff30..=0xff3f => self.waveram[a as usize - 0xff30] = v,
@@ -713,17 +725,29 @@ impl Memory for ChannelNoise {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xff21 => self.reg.borrow_mut().nrx2 = v,
+            0xff21 => {
+                self.reg.borrow_mut().nrx2 = v;
+                // DAC off → immediately disable channel.
+                if v & 0xf8 == 0x00 {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff22 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
             0xff23 => {
-                self.reg.borrow_mut().nrx4 = v;
-                if self.reg.borrow().get_trigger() {
+                let old = self.reg.borrow().nrx4;
+                self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
+                if v & 0x80 != 0x00 {
+                    self.reg.borrow_mut().nrx4 |= 0x80;
                     self.lc.reload();
                     self.ve.reload();
                     self.lfsr.reload();
+                    // If DAC is off, disable channel immediately after trigger.
+                    if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
+                        self.reg.borrow_mut().set_trigger(false);
+                    }
                 }
             }
             _ => unreachable!(),
