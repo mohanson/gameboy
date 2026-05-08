@@ -190,7 +190,10 @@ impl Memory for Mmu {
                 self.timer.sb(a, v);
             }
             0xff0f => self.intr.borrow_mut().sb(0xff0f, v),
-            0xff10..=0xff3f => self.apu.sb(a, v),
+            0xff10..=0xff3f => {
+                self.apu.sdiv_cache = self.timer.get_sdiv();
+                self.apu.sb(a, v);
+            }
             0xff40..=0xff45 => self.gpu.sb(a, v),
             0xff46 => self.dma.o.sb(a, v),
             0xff47..=0xff4b => self.gpu.sb(a, v),

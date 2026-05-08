@@ -852,6 +852,13 @@ pub struct Apu {
     channel3: ChannelWave,
     channel4: ChannelNoise,
     sample_rate: u32,
+    // DIV-APU synchronization: updated from mmu before every APU register write
+    // so the NR52 power-on handler can phase-align the frame sequencer to the
+    // hardware DIV counter.
+    pub sdiv_cache: u16,
+    // When the APU is powered on while sdiv bit 12 is high, the hardware skips
+    // the very first DIV-APU event (SameBoy "APU glitch").
+    skip_next_fs_tick: bool,
 }
 
 impl Apu {
@@ -870,6 +877,8 @@ impl Apu {
             channel3: ChannelWave::power_up(blipbuf3),
             channel4: ChannelNoise::power_up(blipbuf4),
             sample_rate,
+            sdiv_cache: 0,
+            skip_next_fs_tick: false,
         }
     }
 
@@ -893,12 +902,20 @@ impl Apu {
         if !self.reg.get_power() {
             // The frame sequencer (DIV-APU) keeps running even when the APU is powered off.
             for _ in 0..ticks {
+                if self.skip_next_fs_tick {
+                    self.skip_next_fs_tick = false;
+                    continue;
+                }
                 self.fs.next();
             }
             return;
         }
 
         for _ in 0..ticks {
+            if self.skip_next_fs_tick {
+                self.skip_next_fs_tick = false;
+                continue;
+            }
             self.channel1.next(self.timer.period);
             self.channel2.next(self.timer.period);
             self.channel3.next(self.timer.period);
@@ -1058,6 +1075,7 @@ impl Memory for Apu {
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
             0xff26 => {
+                let was_off = !self.reg.get_power();
                 self.reg.nrx2 = v;
                 // Powering APU off should write 0 to all regs
                 // Powering APU off shouldn't affect wave, that wave RAM is unchanged
@@ -1087,6 +1105,18 @@ impl Memory for Apu {
                     self.reg.nrx2 = 0x00;
                     self.reg.nrx3 = 0x00;
                     self.reg.nrx4 = 0x00;
+                }
+                // Power-on: synchronize the frame-sequencer timer with the DIV
+                // counter so that the first FS tick happens at the next falling
+                // edge of sdiv bit 12.  Hardware glitch: if bit 12 was already
+                // high when the APU powered on, the first DIV-APU event is
+                // skipped (SameBoy reference behaviour).
+                if was_off && self.reg.get_power() {
+                    self.fs.step = 7; // next fs.next() returns 0 (= first length clock)
+                    self.timer.n = u32::from(self.sdiv_cache) % 8192;
+                    if self.sdiv_cache & 0x1000 != 0 {
+                        self.skip_next_fs_tick = true;
+                    }
                 }
             }
             0xff27..=0xff2f => {}

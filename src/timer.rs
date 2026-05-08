@@ -57,6 +57,10 @@ impl Timer {
         }
     }
 
+    pub fn get_sdiv(&self) -> u16 {
+        self.sdiv
+    }
+
     pub fn edge(&mut self) {
         let bitpos = [9, 3, 5, 7][self.tac as usize & 0x03];
         let bitval = ((self.sdiv >> bitpos) & 1) as u8;
