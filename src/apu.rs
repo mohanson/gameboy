@@ -472,6 +472,47 @@ impl ChannelSquare {
             self.idx = (self.idx + 1) % 8;
         }
     }
+
+    // NRx4 write with optional extra length clock.
+    // extra_clock=true when the frame sequencer just fired an even step (0,2,4,6), i.e. we
+    // are in the "first half" of the length period.  In that case, enabling the length
+    // counter (bit6 0→1) produces one extra decrement, and a trigger when length was
+    // already zero causes the reloaded max to be decremented by one.
+    fn sb_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let old = self.reg.borrow().nrx4;
+        let old_enable = old & 0x40 != 0;
+        let new_enable = v & 0x40 != 0;
+        let trigger = v & 0x80 != 0;
+
+        self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
+        self.timer.period = period(self.reg.clone());
+
+        // Extra length clock when enable goes 0→1 in first half of length period.
+        if extra_clock && !old_enable && new_enable && self.lc.n != 0 {
+            self.lc.n -= 1;
+            if self.lc.n == 0 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+
+        if trigger {
+            let len_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().nrx4 |= 0x80;
+            self.lc.reload();
+            self.ve.reload();
+            if self.reg.borrow().channel == Channel::Square1 {
+                self.fs.reload();
+            }
+            // If enable bit is set in this write and length was 0 (after possible extra
+            // enable clock), the reloaded max should be decremented by one.
+            if extra_clock && new_enable && len_was_zero && self.lc.n != 0 {
+                self.lc.n -= 1;
+            }
+            if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+    }
 }
 
 impl Memory for ChannelSquare {
@@ -504,26 +545,7 @@ impl Memory for ChannelSquare {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff14 | 0xff19 => {
-                // Bit 7 is write-only (trigger strobe). Preserve the internal channel-enable
-                // flag in bit 7: writing bit 7 as 0 must NOT clear the enabled state.
-                let old = self.reg.borrow().nrx4;
-                self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
-                self.timer.period = period(self.reg.clone());
-                if v & 0x80 != 0x00 {
-                    // Trigger event: enable channel and reload units.
-                    self.reg.borrow_mut().nrx4 |= 0x80;
-                    self.lc.reload();
-                    self.ve.reload();
-                    if self.reg.borrow().channel == Channel::Square1 {
-                        self.fs.reload();
-                    }
-                    // If DAC is off, disable channel immediately after trigger.
-                    if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
-                        self.reg.borrow_mut().set_trigger(false);
-                    }
-                }
-            }
+            0xff14 | 0xff19 => self.sb_nrx4(v, false),
             _ => unreachable!(),
         }
     }
@@ -589,6 +611,36 @@ impl ChannelWave {
             self.waveidx = (self.waveidx + 1) % 32;
         }
     }
+
+    fn sb_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let old = self.reg.borrow().nrx4;
+        let old_enable = old & 0x40 != 0;
+        let new_enable = v & 0x40 != 0;
+        let trigger = v & 0x80 != 0;
+
+        self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
+        self.timer.period = period(self.reg.clone());
+
+        if extra_clock && !old_enable && new_enable && self.lc.n != 0 {
+            self.lc.n -= 1;
+            if self.lc.n == 0 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+
+        if trigger {
+            let len_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().nrx4 |= 0x80;
+            self.lc.reload();
+            self.waveidx = 0x00;
+            if extra_clock && new_enable && len_was_zero && self.lc.n != 0 {
+                self.lc.n -= 1;
+            }
+            if !self.reg.borrow().get_dac_power() {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+    }
 }
 
 impl Memory for ChannelWave {
@@ -622,20 +674,7 @@ impl Memory for ChannelWave {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff1e => {
-                let old = self.reg.borrow().nrx4;
-                self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
-                self.timer.period = period(self.reg.clone());
-                if v & 0x80 != 0x00 {
-                    self.reg.borrow_mut().nrx4 |= 0x80;
-                    self.lc.reload();
-                    self.waveidx = 0x00;
-                    // If DAC is off, disable channel immediately after trigger.
-                    if !self.reg.borrow().get_dac_power() {
-                        self.reg.borrow_mut().set_trigger(false);
-                    }
-                }
-            }
+            0xff1e => self.sb_nrx4(v, false),
             0xff30..=0xff3f => self.waveram[a as usize - 0xff30] = v,
             _ => unreachable!(),
         }
@@ -704,6 +743,36 @@ impl ChannelNoise {
             self.blip.set(self.blip.from.wrapping_add(self.timer.period), ampl);
         }
     }
+
+    fn sb_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let old = self.reg.borrow().nrx4;
+        let old_enable = old & 0x40 != 0;
+        let new_enable = v & 0x40 != 0;
+        let trigger = v & 0x80 != 0;
+
+        self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
+
+        if extra_clock && !old_enable && new_enable && self.lc.n != 0 {
+            self.lc.n -= 1;
+            if self.lc.n == 0 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+
+        if trigger {
+            let len_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().nrx4 |= 0x80;
+            self.lc.reload();
+            self.ve.reload();
+            self.lfsr.reload();
+            if extra_clock && new_enable && len_was_zero && self.lc.n != 0 {
+                self.lc.n -= 1;
+            }
+            if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+    }
 }
 
 impl Memory for ChannelNoise {
@@ -736,20 +805,7 @@ impl Memory for ChannelNoise {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff23 => {
-                let old = self.reg.borrow().nrx4;
-                self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
-                if v & 0x80 != 0x00 {
-                    self.reg.borrow_mut().nrx4 |= 0x80;
-                    self.lc.reload();
-                    self.ve.reload();
-                    self.lfsr.reload();
-                    // If DAC is off, disable channel immediately after trigger.
-                    if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
-                        self.reg.borrow_mut().set_trigger(false);
-                    }
-                }
-            }
+            0xff23 => self.sb_nrx4(v, false),
             _ => unreachable!(),
         }
     }
@@ -800,11 +856,18 @@ impl Apu {
     }
 
     pub fn next(&mut self, cycles: u32) {
+        // Count ticks first so the timer state is consumed regardless of power state.
+        let ticks = self.timer.next(cycles);
+
         if !self.reg.get_power() {
+            // The frame sequencer (DIV-APU) keeps running even when the APU is powered off.
+            for _ in 0..ticks {
+                self.fs.next();
+            }
             return;
         }
 
-        for _ in 0..self.timer.next(cycles) {
+        for _ in 0..ticks {
             self.channel1.next(self.timer.period);
             self.channel2.next(self.timer.period);
             self.channel3.next(self.timer.period);
@@ -948,11 +1011,19 @@ impl Memory for Apu {
         if a != 0xff26 && !self.reg.get_power() {
             return;
         }
+        // For NRx4 writes, pass the extra_clock flag based on the current FS step.
+        // extra_clock is true when the FS just fired an even step (0,2,4,6) — the
+        // "first half" of the length period per the GB APU obscure behaviour spec.
+        let extra_clock = self.fs.step % 2 == 0;
         match a {
-            0xff10..=0xff14 => self.channel1.sb(a, v),
-            0xff15..=0xff19 => self.channel2.sb(a, v),
-            0xff1a..=0xff1e => self.channel3.sb(a, v),
-            0xff1f..=0xff23 => self.channel4.sb(a, v),
+            0xff10..=0xff13 => self.channel1.sb(a, v),
+            0xff14 => self.channel1.sb_nrx4(v, extra_clock),
+            0xff15..=0xff18 => self.channel2.sb(a, v),
+            0xff19 => self.channel2.sb_nrx4(v, extra_clock),
+            0xff1a..=0xff1d => self.channel3.sb(a, v),
+            0xff1e => self.channel3.sb_nrx4(v, extra_clock),
+            0xff1f..=0xff22 => self.channel4.sb(a, v),
+            0xff23 => self.channel4.sb_nrx4(v, extra_clock),
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
             0xff26 => {
