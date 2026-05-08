@@ -345,11 +345,15 @@ struct FrequencySweep {
     enable: bool,
     shadow: u16,
     newfeq: u16,
+    // Obscure behavior: tracks whether at least one frequency calculation using
+    // subtraction (negate) mode has been performed since the last trigger.  When
+    // the negate bit in NR10 is later cleared (1→0), CH1 is immediately disabled.
+    negated_since_trigger: bool,
 }
 
 impl FrequencySweep {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
-        Self { reg, timer: Clock::power_up(8), enable: false, shadow: 0x0000, newfeq: 0x0000 }
+        Self { reg, timer: Clock::power_up(8), enable: false, shadow: 0x0000, newfeq: 0x0000, negated_since_trigger: false }
     }
 
     fn reload(&mut self) {
@@ -358,6 +362,7 @@ impl FrequencySweep {
         // The volume envelope and sweep timers treat a period of 0 as 8.
         self.timer.period = if p == 0 { 8 } else { u32::from(p) };
         self.enable = p != 0x00 || self.reg.borrow().get_shift() != 0x00;
+        self.negated_since_trigger = false;
         if self.reg.borrow().get_shift() != 0x00 {
             self.frequency_calculation();
             self.overflow_check();
@@ -368,9 +373,20 @@ impl FrequencySweep {
         let offset = self.shadow >> self.reg.borrow().get_shift();
         if self.reg.borrow().get_negate() {
             self.newfeq = self.shadow.wrapping_sub(offset);
+            self.negated_since_trigger = true;
         } else {
             self.newfeq = self.shadow.wrapping_add(offset);
         }
+    }
+
+    // Called when NR10 is written.  Returns true if CH1 should be disabled due
+    // to the obscure "negate-disable" behavior (negate bit cleared after at
+    // least one subtraction sweep calculation since the last trigger).
+    fn sb_nr10(&mut self, v: u8) -> bool {
+        let old_negate = self.reg.borrow().get_negate();
+        self.reg.borrow_mut().nrx0 = v;
+        let new_negate = self.reg.borrow().get_negate();
+        old_negate && !new_negate && self.negated_since_trigger
     }
 
     fn overflow_check(&mut self) {
@@ -381,6 +397,15 @@ impl FrequencySweep {
 
     fn next(&mut self) {
         let did_tick = self.timer.next(1) != 0;
+        // On every timer fire, reload the period from the current NR10 register
+        // (treating 0 as 8).  This is the correct hardware behaviour: the sweep
+        // timer reloads from the register each time it expires, so writes to NR10
+        // between fires take effect on the next reload.
+        if did_tick {
+            let p = self.reg.borrow().get_sweep_period();
+            self.timer.period = if p == 0 { 8 } else { u32::from(p) };
+            self.timer.n = 0;
+        }
         if !self.enable || self.reg.borrow().get_sweep_period() == 0 {
             return;
         }
@@ -530,7 +555,12 @@ impl Memory for ChannelSquare {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            0xff10 | 0xff15 => self.reg.borrow_mut().nrx0 = v,
+            0xff10 => {
+                if self.fs.sb_nr10(v) {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
+            0xff15 => self.reg.borrow_mut().nrx0 = v,
             0xff11 | 0xff16 => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
