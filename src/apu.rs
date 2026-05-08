@@ -380,10 +380,11 @@ impl FrequencySweep {
     }
 
     fn next(&mut self) {
+        let did_tick = self.timer.next(1) != 0;
         if !self.enable || self.reg.borrow().get_sweep_period() == 0 {
             return;
         }
-        if self.timer.next(1) == 0x00 {
+        if !did_tick {
             return;
         }
         self.frequency_calculation();
