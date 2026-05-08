@@ -76,12 +76,14 @@ $ cargo run --example blargg
 | halt_bug       | ![img](./res/imgs/halt_bug.png)       |
 | instr_timing   | ![img](./res/imgs/instr_timing.png)   |
 | interrupt_time | ![img](./res/imgs/interrupt_time.png) |
+| mem_timing     | ![img](./res/imgs/mem_timing.png)     |
+| mem_timing-2   | ![img](./res/imgs/mem_timing-2.png)   |
 
 ```sh
 $ cargo run --example mts
 ```
 
-|                      Name                       |               Exit                |
+|                    Test Name                    |              Result               |
 | ----------------------------------------------- | --------------------------------- |
 | acceptance/add_sp_e_timing.gb                   | <font color=#008000>Passed</font> |
 | acceptance/bits/mem_oam.gb                      | <font color=#008000>Passed</font> |
