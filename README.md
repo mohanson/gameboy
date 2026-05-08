@@ -2,12 +2,12 @@
 
 Full-featured Cross-platform GameBoy emulator. **Forever boys!**
 
-![super_marioland.gif](./res/imgs/super_marioland.gif)
+![pokemon_crystal.gif](./res/imgs/pokemon_crystal.gif)
 
-You can start a game with the following command. The following example uses the built-in game "SUPER MARIOLAND":
+You can start a game with the following command. The following example uses the built-in game "POKEMON CRYSTAL":
 
 ```sh
-$ cargo run --release -- "./res/super_marioland.gb"
+$ cargo run --release -- ./res/pokemon_crystal.gbc
 ```
 
 The following options are supported:
