@@ -72,7 +72,9 @@ $ cargo run --example blargg
 
 |   Test Name    |                Result                 |
 | -------------- | ------------------------------------- |
+| cgb_sound      | ![img](./res/imgs/cgb_sound.png)      |
 | cpu_instrs     | ![img](./res/imgs/cpu_instrs.png)     |
+| dmg_sound      | ![img](./res/imgs/dmg_sound.png)      |
 | halt_bug       | ![img](./res/imgs/halt_bug.png)       |
 | instr_timing   | ![img](./res/imgs/instr_timing.png)   |
 | interrupt_time | ![img](./res/imgs/interrupt_time.png) |
