@@ -17,8 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     case.insert("res/gb-test-roms/instr_timing/instr_timing.gb", 1);
     case.insert("res/gb-test-roms/halt_bug.gb", 3);
     case.insert("res/gb-test-roms/interrupt_time/interrupt_time.gb", 3);
-    case.insert("res/gb-test-roms/mem_timing/mem_timing.gb", 0);
-    case.insert("res/gb-test-roms/mem_timing-2/mem_timing.gb", 0);
+    case.insert("res/gb-test-roms/mem_timing/mem_timing.gb", 1);
+    case.insert("res/gb-test-roms/mem_timing-2/mem_timing.gb", 2);
     case.insert("res/gb-test-roms/oam_bug/oam_bug.gb", 0);
     for (k, v) in case {
         match v {
