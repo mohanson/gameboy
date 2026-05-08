@@ -604,10 +604,19 @@ struct ChannelWave {
     blip: Blip,
     waveram: [u8; 16],
     waveidx: usize,
+    #[allow(dead_code)]
+    term: Term,
+    // DMG wave-RAM corruption timing state.
+    // trigger_sdiv: sdiv at the last first-trigger (was_active=false).
+    trigger_sdiv: u16,
+    // p1_half: (2048 - freq) at first trigger = P1 period in 2MHz cycles.
+    p1_half: u32,
+    // d1_2mhz: 2MHz cycles elapsed from first trigger to last NR33 write (while active).
+    d1_2mhz: u32,
 }
 
 impl ChannelWave {
-    fn power_up(blip: BlipBuf) -> ChannelWave {
+    fn power_up(blip: BlipBuf, term: Term) -> ChannelWave {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         ChannelWave {
             reg: reg.clone(),
@@ -616,6 +625,10 @@ impl ChannelWave {
             blip: Blip::power_up(blip),
             waveram: [0x00; 16],
             waveidx: 0x00,
+            term,
+            trigger_sdiv: 0,
+            p1_half: 0,
+            d1_2mhz: 0,
         }
     }
 
@@ -643,7 +656,19 @@ impl ChannelWave {
         }
     }
 
-    fn sb_nrx4(&mut self, v: u8, extra_clock: bool) {
+    // Apply DMG wave-RAM corruption that occurs when CH3 is re-triggered while playing.
+    // `byte_offset` is the wave-RAM byte index read by the hardware at the trigger moment,
+    // matching SameBoy's `((current_sample_index + 1) >> 1) & 0xF` formula.
+    fn apply_dmg_wave_corruption(&mut self, byte_offset: usize) {
+        if byte_offset < 4 {
+            self.waveram[0] = self.waveram[byte_offset];
+        } else {
+            let aligned = byte_offset & !3;
+            self.waveram.copy_within(aligned..aligned + 4, 0);
+        }
+    }
+
+    fn sb_nrx4(&mut self, v: u8, extra_clock: bool, dmg_corruption_offset: Option<usize>) {
         let old = self.reg.borrow().nrx4;
         let old_enable = old & 0x40 != 0;
         let new_enable = v & 0x40 != 0;
@@ -660,9 +685,19 @@ impl ChannelWave {
         }
 
         if trigger {
+            // DMG obscure behavior: triggering CH3 while it is active corrupts wave RAM.
+            // The corruption offset (byte index) is pre-computed by the Apu-level caller
+            // using the SameBoy-accurate sample_countdown==0 timing model.
+            if let Some(offset) = dmg_corruption_offset {
+                self.apply_dmg_wave_corruption(offset);
+            }
+
             let len_was_zero = self.lc.n == 0;
             self.reg.borrow_mut().nrx4 |= 0x80;
             self.lc.reload();
+            // Per spec, triggering CH3 reloads the period divider (resets the internal
+            // countdown to zero so the first nibble fires after a full period).
+            self.timer.n = 0;
             self.waveidx = 0x00;
             if extra_clock && new_enable && len_was_zero && self.lc.n != 0 {
                 self.lc.n -= 1;
@@ -705,7 +740,7 @@ impl Memory for ChannelWave {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff1e => self.sb_nrx4(v, false),
+            0xff1e => self.sb_nrx4(v, false, None),
             0xff30..=0xff3f => self.waveram[a as usize - 0xff30] = v,
             _ => unreachable!(),
         }
@@ -878,7 +913,7 @@ impl Apu {
             fs: FrameSequencer::power_up(),
             channel1: ChannelSquare::power_up(blipbuf1, Channel::Square1),
             channel2: ChannelSquare::power_up(blipbuf2, Channel::Square2),
-            channel3: ChannelWave::power_up(blipbuf3),
+            channel3: ChannelWave::power_up(blipbuf3, term),
             channel4: ChannelNoise::power_up(blipbuf4),
             sample_rate,
             sdiv_cache: 0,
@@ -1106,8 +1141,58 @@ impl Memory for Apu {
             0xff14 => self.channel1.sb_nrx4(v, extra_clock),
             0xff15..=0xff18 => self.channel2.sb(a, v),
             0xff19 => self.channel2.sb_nrx4(v, extra_clock),
-            0xff1a..=0xff1d => self.channel3.sb(a, v),
-            0xff1e => self.channel3.sb_nrx4(v, extra_clock),
+            0xff1a..=0xff1c => self.channel3.sb(a, v),
+            0xff1d => {
+                // On DMG: record d1_2mhz (2MHz cycles from first trigger to this NR33 write)
+                // for use in the SameBoy-accurate wave corruption model.
+                if self.term == Term::DMG {
+                    let is_active = self.channel3.reg.borrow().get_trigger()
+                        && self.channel3.reg.borrow().get_dac_power();
+                    if is_active {
+                        let elapsed_t = self.sdiv_cache.wrapping_sub(self.channel3.trigger_sdiv) as u32;
+                        self.channel3.d1_2mhz = elapsed_t / 2;
+                    }
+                }
+                self.channel3.sb(a, v);
+            }
+            0xff1e => {
+                let sdiv = self.sdiv_cache;
+                let was_active = self.channel3.reg.borrow().get_trigger()
+                    && self.channel3.reg.borrow().get_dac_power();
+                // On DMG, compute whether corruption happens using the SameBoy model:
+                // corruption fires only when sample_countdown == 0 at the exact trigger moment.
+                // The SameBoy wave timer starts at (P1/2 + 2) in 2MHz cycles after trigger
+                // and resets to (P/2 - 1) after each fire (where P is the current period in T-cycles).
+                let dmg_corruption_offset = if v & 0x80 != 0 && was_active && self.term == Term::DMG {
+                    let elapsed_t = sdiv.wrapping_sub(self.channel3.trigger_sdiv) as u32;
+                    let elapsed_2mhz = elapsed_t / 2;
+                    let d1_2mhz = self.channel3.d1_2mhz;
+                    let d2_2mhz = elapsed_2mhz.saturating_sub(d1_2mhz);
+                    let p1_half = self.channel3.p1_half;
+                    // Current period in 2MHz cycles (P2/2 = 2048 - freq).
+                    // timer.period was already updated by any prior NR33 write.
+                    let p2_half = self.channel3.timer.period / 2;
+                    compute_wave_corruption_offset(p1_half, d1_2mhz, d2_2mhz, p2_half)
+                } else {
+                    None
+                };
+                // Record trigger state for next re-trigger.
+                if v & 0x80 != 0 {
+                    if !was_active {
+                        // First trigger: save p1_half from the current (pre-write) period.
+                        // timer.period was updated by the preceding NR33 write if any.
+                        self.channel3.trigger_sdiv = sdiv;
+                        self.channel3.p1_half = self.channel3.timer.period / 2;
+                        self.channel3.d1_2mhz = 0;
+                    } else {
+                        // Re-trigger: update trigger_sdiv so the NEXT re-trigger can use it.
+                        self.channel3.trigger_sdiv = sdiv;
+                        self.channel3.p1_half = self.channel3.timer.period / 2;
+                        self.channel3.d1_2mhz = 0;
+                    }
+                }
+                self.channel3.sb_nrx4(v, extra_clock, dmg_corruption_offset);
+            }
             0xff1f..=0xff22 => self.channel4.sb(a, v),
             0xff23 => self.channel4.sb_nrx4(v, extra_clock),
             0xff24 => self.reg.nrx0 = v,
@@ -1176,6 +1261,62 @@ fn create_blipbuf(sample_rate: u32) -> BlipBuf {
     let mut blipbuf = BlipBuf::new(sample_rate);
     blipbuf.set_rates(f64::from(CLOCK_FREQUENCY), f64::from(sample_rate));
     blipbuf
+}
+
+// Compute the DMG wave-RAM corruption byte offset using SameBoy's timing model.
+//
+// The wave channel's internal "sample_countdown" timer (2MHz cycles) starts at
+// (p1_half + 2) after the first trigger, where p1_half = P1 / 2 = (2048 - freq1).
+// It decrements each 2MHz cycle and resets to (P/2 - 1) on each fire.
+// Corruption fires only when sample_countdown == 0 at the exact moment of the
+// re-trigger write (i.e., the next fire is 1 × 2MHz cycle away).
+//
+// Returns Some(byte_offset) where byte_offset = ((csi + 1) >> 1) & 0xF,
+// or None if sample_countdown ≠ 0.
+fn compute_wave_corruption_offset(
+    p1_half: u32,    // P1/2 in 2MHz cycles = (2048 - freq_at_first_trigger)
+    d1_2mhz: u32,    // 2MHz cycles from first trigger to last NR33 write
+    d2_2mhz: u32,    // 2MHz cycles from NR33 write to this re-trigger
+    p2_half: u32,    // P2/2 in 2MHz cycles = (2048 - freq_now)
+) -> Option<usize> {
+    if p1_half == 0 || p2_half == 0 {
+        return None;
+    }
+    let c1 = p1_half - 1; // reset value for phase-1 (P1/2 - 1)
+    let c2 = p2_half - 1; // reset value for phase-2 (P2/2 - 1)
+
+    // Initial countdown after trigger: (P1/2 - 1) + 3 = P1/2 + 2
+    let mut sc: u32 = c1 + 3;
+    let mut csi: u32 = 0;
+
+    // Phase 1: d1_2mhz cycles at period P1
+    if sc >= d1_2mhz {
+        sc -= d1_2mhz;
+    } else {
+        let remaining = d1_2mhz - (sc + 1);
+        csi += 1;
+        let period1 = c1 + 1; // fires every period1 2MHz cycles
+        csi = csi.wrapping_add(remaining / period1) % 32;
+        sc = c1.saturating_sub(remaining % period1);
+    }
+
+    // Phase 2: d2_2mhz cycles at period P2
+    if sc >= d2_2mhz {
+        sc -= d2_2mhz;
+    } else {
+        let remaining = d2_2mhz - (sc + 1);
+        csi = (csi + 1) % 32;
+        let period2 = c2 + 1; // fires every period2 2MHz cycles
+        csi = csi.wrapping_add(remaining / period2) % 32;
+        sc = c2.saturating_sub(remaining % period2);
+    }
+
+    if sc == 0 {
+        let byte_offset = ((csi as usize + 1) >> 1) & 0xF;
+        Some(byte_offset)
+    } else {
+        None
+    }
 }
 
 fn period(reg: Rc<RefCell<Register>>) -> u32 {
