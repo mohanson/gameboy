@@ -1252,15 +1252,13 @@ impl Memory for Apu {
                 // Record trigger state for next re-trigger.
                 if v & 0x80 != 0 {
                     if !was_active {
-                        // First trigger: save p1_half from the current (pre-write) period.
-                        // timer.period was updated by the preceding NR33 write if any.
+                        // First trigger: record state. p1_half is updated below after
+                        // sb_nrx4 so it uses the NEW period including NR34 freq_high.
                         self.channel3.trigger_sdiv = sdiv;
-                        self.channel3.p1_half = self.channel3.timer.period / 2;
                         self.channel3.d1_2mhz = 0;
                     } else {
                         // Re-trigger: update trigger_sdiv so the NEXT re-trigger can use it.
                         self.channel3.trigger_sdiv = sdiv;
-                        self.channel3.p1_half = self.channel3.timer.period / 2;
                         self.channel3.d1_2mhz = 0;
                     }
                     // Record APU frame state so Apu::lb can compute the live wave position.
@@ -1268,6 +1266,12 @@ impl Memory for Apu {
                     self.channel3.trigger_frame = self.frame_count;
                 }
                 self.channel3.sb_nrx4(v, extra_clock, dmg_corruption_offset);
+                if v & 0x80 != 0 {
+                    // Record p1_half from the NEW period (now that NR34 freq_high bits
+                    // have been applied to timer.period by sb_nrx4). This ensures the
+                    // live waveidx computation uses the correct trigger period.
+                    self.channel3.p1_half = self.channel3.timer.period / 2;
+                }
             }
             0xff1f..=0xff22 => self.channel4.sb(a, v),
             0xff23 => self.channel4.sb_nrx4(v, extra_clock),
@@ -1331,11 +1335,37 @@ impl Memory for Apu {
                 // While CH3 is active, writes are redirected to the byte currently
                 // being accessed by the wave hardware (CGB: always; DMG: only in the
                 // 2-cycle window). Writes outside that window on DMG are ignored.
-                // We simplify by always redirecting when the channel is active.
                 let is_active = self.channel3.reg.borrow().get_trigger()
                     && self.channel3.reg.borrow().get_dac_power();
                 if is_active {
-                    self.channel3.waveram[self.channel3.waveidx / 2] = v;
+                    let wave_period = self.channel3.timer.period as u64;
+                    let trigger_period = self.channel3.p1_half as u64 * 2;
+                    let d = self.frame_count.wrapping_sub(self.channel3.trigger_frame) as u64;
+                    let elapsed = d * self.timer.period as u64
+                        + self.timer.n as u64
+                        - self.channel3.trigger_apu_n as u64;
+                    let t_first = trigger_period + 6;
+                    let fires = if elapsed < t_first {
+                        0u64
+                    } else {
+                        1 + (elapsed - t_first) / wave_period
+                    };
+                    let live_waveidx = (fires % 32) as usize;
+                    if self.term == Term::DMG {
+                        // DMG: write redirects to live position only within 2-cycle window
+                        if fires > 0 {
+                            let t_last = t_first + (fires - 1) * wave_period;
+                            let dist = elapsed - t_last;
+                            if dist < 2 {
+                                self.channel3.waveram[live_waveidx / 2] = v;
+                            }
+                            // else: write is ignored outside window
+                        }
+                        // fires == 0: no advance yet, write is ignored
+                    } else {
+                        // CGB: always write to the live current position
+                        self.channel3.waveram[live_waveidx / 2] = v;
+                    }
                 } else {
                     self.channel3.sb(a, v);
                 }

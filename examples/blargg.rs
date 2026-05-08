@@ -11,9 +11,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         exec("git clone --depth=1 https://github.com/retrio/gb-test-roms res/gb-test-roms");
     }
     let mut case = std::collections::BTreeMap::new();
-    case.insert("res/gb-test-roms/cgb_sound/cgb_sound.gb", 0);
+    case.insert("res/gb-test-roms/cgb_sound/cgb_sound.gb", 2);
     case.insert("res/gb-test-roms/cpu_instrs/cpu_instrs.gb", 1);
-    case.insert("res/gb-test-roms/dmg_sound/dmg_sound.gb", 0);
+    case.insert("res/gb-test-roms/dmg_sound/dmg_sound.gb", 2);
     case.insert("res/gb-test-roms/instr_timing/instr_timing.gb", 1);
     case.insert("res/gb-test-roms/halt_bug.gb", 3);
     case.insert("res/gb-test-roms/interrupt_time/interrupt_time.gb", 3);
