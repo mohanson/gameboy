@@ -613,6 +613,11 @@ struct ChannelWave {
     p1_half: u32,
     // d1_2mhz: 2MHz cycles elapsed from first trigger to last NR33 write (while active).
     d1_2mhz: u32,
+    // Live-waveidx tracking: record the APU frame counter and APU frame timer
+    // accumulator at the time of the last trigger so we can compute the real
+    // wave position for wave-RAM reads without advancing the audio state.
+    trigger_frame: u32,
+    trigger_apu_n: u32,
 }
 
 impl ChannelWave {
@@ -629,6 +634,8 @@ impl ChannelWave {
             trigger_sdiv: 0,
             p1_half: 0,
             d1_2mhz: 0,
+            trigger_frame: 0,
+            trigger_apu_n: 0,
         }
     }
 
@@ -898,6 +905,10 @@ pub struct Apu {
     // (length counters can be loaded), and lc.n is preserved through power-on.
     // On CGB, all channel writes are blocked when APU is off.
     term: Term,
+    // Monotonically-increasing counter incremented once per 8192-T-cycle APU frame.
+    // Used together with trigger_frame/trigger_apu_n in ChannelWave to compute the
+    // live wave position for wave-RAM reads without disturbing the audio state.
+    frame_count: u32,
 }
 
 impl Apu {
@@ -919,6 +930,7 @@ impl Apu {
             sdiv_cache: 0,
             skip_next_fs_tick: false,
             term,
+            frame_count: 0,
         }
     }
 
@@ -987,6 +999,7 @@ impl Apu {
             self.channel3.blip.from = self.channel3.blip.from.wrapping_sub(self.timer.period);
             self.channel4.blip.from = self.channel4.blip.from.wrapping_sub(self.timer.period);
             self.mix();
+            self.frame_count = self.frame_count.wrapping_add(1);
         }
     }
 
@@ -1089,14 +1102,74 @@ impl Memory for Apu {
                 a | b | c | d | e
             }
             0xff27..=0xff2f => 0x00,
-            0xff30..=0xff3f => self.channel3.lb(a),
+            0xff30..=0xff3f => {
+                // While CH3 is active, the CPU can only access the byte currently being
+                // read by the wave hardware (DMG: only in the 2-cycle window after a read;
+                // CGB: always). We redirect to the current-position byte for both models,
+                // which is correct for CGB and matches the window blargg DMG tests use.
+                //
+                // Since we batch-process the APU every 8192 T-cycles, waveidx is frozen
+                // between APU frames. We compute the "live" waveidx by counting extra fires
+                // from the time the wave channel was last processed (or triggered) using the
+                // APU frame-timer accumulator (self.timer.n).
+                let is_active = self.channel3.reg.borrow().get_trigger()
+                    && self.channel3.reg.borrow().get_dac_power();
+                if is_active {
+                    // Compute the "live" wave position by counting all fires since the last
+                    // trigger, regardless of how many APU frames have elapsed.
+                    //
+                    // elapsed = full APU frames * 8192  +  timer.n  -  trigger_apu_n
+                    //   (works for D=0 when timer.n >= trigger_apu_n, and D>=1 in general)
+                    //
+                    // SameBoy's initial countdown = (period/2 - 1) + 3 in 2MHz cycles, so
+                    // the first advance fires at (trigger_period + 6) T-cycles after trigger.
+                    // After the first fire, each subsequent advance uses the CURRENT timer
+                    // period (which may differ if NR33 was written between trigger and read).
+                    // p1_half = trigger_period / 2 (recorded at trigger time).
+                    let wave_period = self.channel3.timer.period as u64; // current (post-NR33) period
+                    let trigger_period = self.channel3.p1_half as u64 * 2; // period AT trigger
+                    let d = self.frame_count.wrapping_sub(self.channel3.trigger_frame) as u64;
+                    let elapsed = d * self.timer.period as u64
+                        + self.timer.n as u64
+                        - self.channel3.trigger_apu_n as u64;
+                    let t_first = trigger_period + 6; // first advance at trigger_period + 6 T-cycles
+                    let fires = if elapsed < t_first {
+                        0u64
+                    } else {
+                        1 + (elapsed - t_first) / wave_period
+                    };
+                    let live_waveidx = (fires % 32) as usize;
+                    // DMG: wave RAM is only readable in a ~2-T-cycle window right after a
+                    // wave advance.  Outside that window (or before the first advance),
+                    // the read returns 0xFF.
+                    if self.term == Term::DMG {
+                        if fires == 0 {
+                            0xff
+                        } else {
+                            let t_last = t_first + (fires - 1) * wave_period;
+                            let dist = elapsed - t_last;
+                            if dist < 2 {
+                                self.channel3.waveram[live_waveidx / 2]
+                            } else {
+                                0xff
+                            }
+                        }
+                    } else {
+                        self.channel3.waveram[live_waveidx / 2]
+                    }
+                } else {
+                    self.channel3.lb(a)
+                }
+            }
             _ => unreachable!(),
         };
         r | RD_MASK[a as usize - 0xff10]
     }
 
     fn sb(&mut self, a: u16, v: u8) {
-        if a != 0xff26 && !self.reg.get_power() {
+        // Wave RAM (0xFF30-0xFF3F) is always accessible regardless of APU power state.
+        // All other registers (except NR52 = 0xFF26) are blocked when APU is off.
+        if a != 0xff26 && !(0xff30..=0xff3f).contains(&a) && !self.reg.get_power() {
             // On DMG, NR11/NR21/NR31/NR41 (length counter registers) are
             // writable even when the APU is powered off.  This allows games
             // to pre-load length counters before enabling the APU.
@@ -1190,6 +1263,9 @@ impl Memory for Apu {
                         self.channel3.p1_half = self.channel3.timer.period / 2;
                         self.channel3.d1_2mhz = 0;
                     }
+                    // Record APU frame state so Apu::lb can compute the live wave position.
+                    self.channel3.trigger_apu_n = self.timer.n;
+                    self.channel3.trigger_frame = self.frame_count;
                 }
                 self.channel3.sb_nrx4(v, extra_clock, dmg_corruption_offset);
             }
@@ -1251,7 +1327,19 @@ impl Memory for Apu {
                 }
             }
             0xff27..=0xff2f => {}
-            0xff30..=0xff3f => self.channel3.sb(a, v),
+            0xff30..=0xff3f => {
+                // While CH3 is active, writes are redirected to the byte currently
+                // being accessed by the wave hardware (CGB: always; DMG: only in the
+                // 2-cycle window). Writes outside that window on DMG are ignored.
+                // We simplify by always redirecting when the channel is active.
+                let is_active = self.channel3.reg.borrow().get_trigger()
+                    && self.channel3.reg.borrow().get_dac_power();
+                if is_active {
+                    self.channel3.waveram[self.channel3.waveidx / 2] = v;
+                } else {
+                    self.channel3.sb(a, v);
+                }
+            }
             _ => unreachable!(),
         }
     }
