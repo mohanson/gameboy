@@ -80,6 +80,7 @@ $ cargo run --example blargg
 | interrupt_time | ![img](./res/imgs/interrupt_time.png) |
 | mem_timing     | ![img](./res/imgs/mem_timing.png)     |
 | mem_timing-2   | ![img](./res/imgs/mem_timing-2.png)   |
+| oam_bug        | ![img](./res/imgs/oam_bug.png)        |
 
 ```sh
 $ cargo run --example mts
