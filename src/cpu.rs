@@ -559,7 +559,9 @@ impl Cpu {
             0x03 => {
                 let old = self.reg.get_bc();
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.set_bc(old.wrapping_add(1));
             }
             0x04 => self.reg.b = Alu::inc(self, self.reg.b),
@@ -582,7 +584,9 @@ impl Cpu {
             0x0b => {
                 let old = self.reg.get_bc();
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.set_bc(old.wrapping_sub(1));
             }
             0x0c => self.reg.c = Alu::inc(self, self.reg.c),
@@ -594,6 +598,7 @@ impl Cpu {
             }
             0x10 => {
                 assert!(self.fetch_b() == 0x00);
+                self.mem.borrow_mut().try_switch_speed();
             }
             0x11 => {
                 let h = self.fetch_h();
@@ -603,7 +608,9 @@ impl Cpu {
             0x13 => {
                 let old = self.reg.get_de();
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.set_de(old.wrapping_add(1));
             }
             0x14 => self.reg.d = Alu::inc(self, self.reg.d),
@@ -626,7 +633,9 @@ impl Cpu {
             0x1b => {
                 let old = self.reg.get_de();
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.set_de(old.wrapping_sub(1));
             }
             0x1c => self.reg.e = Alu::inc(self, self.reg.e),
@@ -655,7 +664,9 @@ impl Cpu {
             0x23 => {
                 let old = self.reg.get_hl();
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.set_hl(old.wrapping_add(1));
             }
             0x24 => self.reg.h = Alu::inc(self, self.reg.h),
@@ -676,13 +687,17 @@ impl Cpu {
             0x2a => {
                 let h = self.reg.get_hl();
                 self.reg.a = self.mem_read(h);
-                if h >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_rdi_bug(); }
+                if h >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 self.reg.set_hl(h.wrapping_add(1));
             }
             0x2b => {
                 let old = self.reg.get_hl();
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.set_hl(old.wrapping_sub(1));
             }
             0x2c => self.reg.l = Alu::inc(self, self.reg.l),
@@ -705,7 +720,9 @@ impl Cpu {
             0x33 => {
                 let old = self.reg.sp;
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = old.wrapping_add(1);
             }
             0x34 => {
@@ -740,13 +757,17 @@ impl Cpu {
             0x3a => {
                 let h = self.reg.get_hl();
                 self.reg.a = self.mem_read(h);
-                if h >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_rdi_bug(); }
+                if h >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 self.reg.set_hl(h.wrapping_sub(1));
             }
             0x3b => {
                 let old = self.reg.sp;
                 self.internal();
-                if old >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = old.wrapping_sub(1);
             }
             0x3c => self.reg.a = Alu::inc(self, self.reg.a),
@@ -926,11 +947,15 @@ impl Cpu {
                 let sp0 = self.reg.sp;
                 let lo = self.mem_read(sp0) as u16;
                 self.reg.sp = sp0.wrapping_add(1);
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_rdi_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 let sp1 = self.reg.sp;
                 let hi = self.mem_read(sp1) as u16;
                 self.reg.sp = sp1.wrapping_add(1);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_read_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
                 self.reg.set_bc(lo | (hi << 8));
             }
             0xc2 => {
@@ -957,15 +982,21 @@ impl Cpu {
                 self.internal();
                 let val = self.reg.get_bc();
                 let sp0 = self.reg.sp;
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp0.wrapping_sub(1);
                 let sp1 = self.reg.sp;
                 self.mem_write(sp1, (val >> 8) as u8);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp1.wrapping_sub(1);
                 let sp2 = self.reg.sp;
                 self.mem_write(sp2, val as u8);
-                if sp2 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
             }
             0xc6 => {
                 let b = self.fetch_b();
@@ -1443,11 +1474,15 @@ impl Cpu {
                 let sp0 = self.reg.sp;
                 let lo = self.mem_read(sp0) as u16;
                 self.reg.sp = sp0.wrapping_add(1);
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_rdi_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 let sp1 = self.reg.sp;
                 let hi = self.mem_read(sp1) as u16;
                 self.reg.sp = sp1.wrapping_add(1);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_read_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
                 self.reg.set_de(lo | (hi << 8));
             }
             0xd2 => {
@@ -1471,15 +1506,21 @@ impl Cpu {
                 self.internal();
                 let val = self.reg.get_de();
                 let sp0 = self.reg.sp;
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp0.wrapping_sub(1);
                 let sp1 = self.reg.sp;
                 self.mem_write(sp1, (val >> 8) as u8);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp1.wrapping_sub(1);
                 let sp2 = self.reg.sp;
                 self.mem_write(sp2, val as u8);
-                if sp2 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
             }
             0xd6 => {
                 let b = self.fetch_b();
@@ -1536,11 +1577,15 @@ impl Cpu {
                 let sp0 = self.reg.sp;
                 let lo = self.mem_read(sp0) as u16;
                 self.reg.sp = sp0.wrapping_add(1);
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_rdi_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 let sp1 = self.reg.sp;
                 let hi = self.mem_read(sp1) as u16;
                 self.reg.sp = sp1.wrapping_add(1);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_read_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
                 self.reg.set_hl(lo | (hi << 8));
             }
             0xe2 => self.mem_write(0xff00 | u16::from(self.reg.c), self.reg.a),
@@ -1550,15 +1595,21 @@ impl Cpu {
                 self.internal();
                 let val = self.reg.get_hl();
                 let sp0 = self.reg.sp;
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp0.wrapping_sub(1);
                 let sp1 = self.reg.sp;
                 self.mem_write(sp1, (val >> 8) as u8);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp1.wrapping_sub(1);
                 let sp2 = self.reg.sp;
                 self.mem_write(sp2, val as u8);
-                if sp2 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
             }
             0xe6 => {
                 let b = self.fetch_b();
@@ -1599,11 +1650,15 @@ impl Cpu {
                 let sp0 = self.reg.sp;
                 let lo = self.mem_read(sp0) as u16;
                 self.reg.sp = sp0.wrapping_add(1);
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_rdi_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 let sp1 = self.reg.sp;
                 let hi = self.mem_read(sp1) as u16;
                 self.reg.sp = sp1.wrapping_add(1);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_read_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
                 self.reg.set_af(lo | (hi << 8));
             }
             0xf2 => self.reg.a = self.mem_read(0xff00 | u16::from(self.reg.c)),
@@ -1616,15 +1671,21 @@ impl Cpu {
                 self.internal();
                 let val = self.reg.get_af();
                 let sp0 = self.reg.sp;
-                if sp0 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp0.wrapping_sub(1);
                 let sp1 = self.reg.sp;
                 self.mem_write(sp1, (val >> 8) as u8);
-                if sp1 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
                 self.reg.sp = sp1.wrapping_sub(1);
                 let sp2 = self.reg.sp;
                 self.mem_write(sp2, val as u8);
-                if sp2 >> 8 == 0xfe { self.mem.borrow_mut().trigger_oam_write_bug(); }
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
             }
             0xf6 => {
                 let b = self.fetch_b();

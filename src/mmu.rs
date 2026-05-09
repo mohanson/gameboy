@@ -29,6 +29,8 @@ pub struct Mmu {
     pub timer: Timer,
     pub wram: [u8; 0x8000],
     pub wram_bank: usize,
+    pub speed: u8,
+    pub speed_switch: bool,
 }
 
 impl Mmu {
@@ -54,6 +56,8 @@ impl Mmu {
             timer: Timer::power_up(term, intr.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
+            speed: 1,
+            speed_switch: false,
         };
         r.sb(0xff26, 0xf1); // Must be first: enables APU power so subsequent channel writes are not blocked.
         r.sb(0xff10, 0x80);
@@ -92,6 +96,19 @@ impl Mmu {
 }
 
 impl Mmu {
+    fn video_cycles(&self, cycles: u32) -> u32 {
+        if self.speed == 2 { cycles / 2 } else { cycles }
+    }
+
+    pub fn try_switch_speed(&mut self) -> bool {
+        if self.term != Term::CGB || !self.speed_switch {
+            return false;
+        }
+        self.speed = if self.speed == 1 { 2 } else { 1 };
+        self.speed_switch = false;
+        true
+    }
+
     /// Called once per CPU instruction after all per-M-cycle ticks have already advanced
     /// timer/GPU/APU. Runs HDMA and resets the h_blank edge signal.
     pub fn next(&mut self) -> u32 {
@@ -99,8 +116,9 @@ impl Mmu {
         self.gpu.h_blank = false;
         if hdma_cycles > 0 {
             self.timer.tick(hdma_cycles);
-            self.gpu.next(hdma_cycles);
-            self.apu.next(hdma_cycles);
+            let video_cycles = self.video_cycles(hdma_cycles);
+            self.gpu.next(video_cycles);
+            self.apu.next(video_cycles);
             self.gpu.h_blank = false;
         }
         hdma_cycles
@@ -109,8 +127,9 @@ impl Mmu {
     fn advance_clock(&mut self, cycles: u32) {
         self.timer.tick(cycles);
         self.serial.tick(cycles);
-        self.gpu.next(cycles);
-        self.apu.next(cycles);
+        let video_cycles = self.video_cycles(cycles);
+        self.gpu.next(video_cycles);
+        self.apu.next(video_cycles);
         self.dma.o.advance_counter(cycles);
     }
 
@@ -175,6 +194,7 @@ impl Memory for Mmu {
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => 0xff,
                 Term::CGB => match a {
+                    0xff4d => 0x7e | ((self.speed == 2) as u8) << 7 | self.speed_switch as u8,
                     0xff4f => self.gpu.lb(a),
                     0xff51..=0xff55 => self.hdma.lb(a),
                     0xff68..=0xff6b => self.gpu.lb(a),
@@ -224,6 +244,7 @@ impl Memory for Mmu {
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => {}
                 Term::CGB => match a {
+                    0xff4d => self.speed_switch = v & 0x01 != 0,
                     0xff4f => self.gpu.sb(a, v),
                     0xff51..=0xff55 => self.hdma.sb(a, v),
                     0xff68..=0xff6b => self.gpu.sb(a, v),

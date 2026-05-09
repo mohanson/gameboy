@@ -353,7 +353,14 @@ struct FrequencySweep {
 
 impl FrequencySweep {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
-        Self { reg, timer: Clock::power_up(8), enable: false, shadow: 0x0000, newfeq: 0x0000, negated_since_trigger: false }
+        Self {
+            reg,
+            timer: Clock::power_up(8),
+            enable: false,
+            shadow: 0x0000,
+            newfeq: 0x0000,
+            negated_since_trigger: false,
+        }
     }
 
     fn reload(&mut self) {
@@ -1112,8 +1119,7 @@ impl Memory for Apu {
                 // between APU frames. We compute the "live" waveidx by counting extra fires
                 // from the time the wave channel was last processed (or triggered) using the
                 // APU frame-timer accumulator (self.timer.n).
-                let is_active = self.channel3.reg.borrow().get_trigger()
-                    && self.channel3.reg.borrow().get_dac_power();
+                let is_active = self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
                 if is_active {
                     // Compute the "live" wave position by counting all fires since the last
                     // trigger, regardless of how many APU frames have elapsed.
@@ -1129,15 +1135,10 @@ impl Memory for Apu {
                     let wave_period = self.channel3.timer.period as u64; // current (post-NR33) period
                     let trigger_period = self.channel3.p1_half as u64 * 2; // period AT trigger
                     let d = self.frame_count.wrapping_sub(self.channel3.trigger_frame) as u64;
-                    let elapsed = d * self.timer.period as u64
-                        + self.timer.n as u64
-                        - self.channel3.trigger_apu_n as u64;
+                    let elapsed =
+                        d * self.timer.period as u64 + self.timer.n as u64 - self.channel3.trigger_apu_n as u64;
                     let t_first = trigger_period + 6; // first advance at trigger_period + 6 T-cycles
-                    let fires = if elapsed < t_first {
-                        0u64
-                    } else {
-                        1 + (elapsed - t_first) / wave_period
-                    };
+                    let fires = if elapsed < t_first { 0u64 } else { 1 + (elapsed - t_first) / wave_period };
                     let live_waveidx = (fires % 32) as usize;
                     // DMG: wave RAM is only readable in a ~2-T-cycle window right after a
                     // wave advance.  Outside that window (or before the first advance),
@@ -1148,11 +1149,7 @@ impl Memory for Apu {
                         } else {
                             let t_last = t_first + (fires - 1) * wave_period;
                             let dist = elapsed - t_last;
-                            if dist < 2 {
-                                self.channel3.waveram[live_waveidx / 2]
-                            } else {
-                                0xff
-                            }
+                            if dist < 2 { self.channel3.waveram[live_waveidx / 2] } else { 0xff }
                         }
                     } else {
                         self.channel3.waveram[live_waveidx / 2]
@@ -1219,8 +1216,8 @@ impl Memory for Apu {
                 // On DMG: record d1_2mhz (2MHz cycles from first trigger to this NR33 write)
                 // for use in the SameBoy-accurate wave corruption model.
                 if self.term == Term::DMG {
-                    let is_active = self.channel3.reg.borrow().get_trigger()
-                        && self.channel3.reg.borrow().get_dac_power();
+                    let is_active =
+                        self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
                     if is_active {
                         let elapsed_t = self.sdiv_cache.wrapping_sub(self.channel3.trigger_sdiv) as u32;
                         self.channel3.d1_2mhz = elapsed_t / 2;
@@ -1230,8 +1227,7 @@ impl Memory for Apu {
             }
             0xff1e => {
                 let sdiv = self.sdiv_cache;
-                let was_active = self.channel3.reg.borrow().get_trigger()
-                    && self.channel3.reg.borrow().get_dac_power();
+                let was_active = self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
                 // On DMG, compute whether corruption happens using the SameBoy model:
                 // corruption fires only when sample_countdown == 0 at the exact trigger moment.
                 // The SameBoy wave timer starts at (P1/2 + 2) in 2MHz cycles after trigger
@@ -1335,21 +1331,15 @@ impl Memory for Apu {
                 // While CH3 is active, writes are redirected to the byte currently
                 // being accessed by the wave hardware (CGB: always; DMG: only in the
                 // 2-cycle window). Writes outside that window on DMG are ignored.
-                let is_active = self.channel3.reg.borrow().get_trigger()
-                    && self.channel3.reg.borrow().get_dac_power();
+                let is_active = self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
                 if is_active {
                     let wave_period = self.channel3.timer.period as u64;
                     let trigger_period = self.channel3.p1_half as u64 * 2;
                     let d = self.frame_count.wrapping_sub(self.channel3.trigger_frame) as u64;
-                    let elapsed = d * self.timer.period as u64
-                        + self.timer.n as u64
-                        - self.channel3.trigger_apu_n as u64;
+                    let elapsed =
+                        d * self.timer.period as u64 + self.timer.n as u64 - self.channel3.trigger_apu_n as u64;
                     let t_first = trigger_period + 6;
-                    let fires = if elapsed < t_first {
-                        0u64
-                    } else {
-                        1 + (elapsed - t_first) / wave_period
-                    };
+                    let fires = if elapsed < t_first { 0u64 } else { 1 + (elapsed - t_first) / wave_period };
                     let live_waveidx = (fires % 32) as usize;
                     if self.term == Term::DMG {
                         // DMG: write redirects to live position only within 2-cycle window
@@ -1392,10 +1382,10 @@ fn create_blipbuf(sample_rate: u32) -> BlipBuf {
 // Returns Some(byte_offset) where byte_offset = ((csi + 1) >> 1) & 0xF,
 // or None if sample_countdown ≠ 0.
 fn compute_wave_corruption_offset(
-    p1_half: u32,    // P1/2 in 2MHz cycles = (2048 - freq_at_first_trigger)
-    d1_2mhz: u32,    // 2MHz cycles from first trigger to last NR33 write
-    d2_2mhz: u32,    // 2MHz cycles from NR33 write to this re-trigger
-    p2_half: u32,    // P2/2 in 2MHz cycles = (2048 - freq_now)
+    p1_half: u32, // P1/2 in 2MHz cycles = (2048 - freq_at_first_trigger)
+    d1_2mhz: u32, // 2MHz cycles from first trigger to last NR33 write
+    d2_2mhz: u32, // 2MHz cycles from NR33 write to this re-trigger
+    p2_half: u32, // P2/2 in 2MHz cycles = (2048 - freq_now)
 ) -> Option<usize> {
     if p1_half == 0 || p2_half == 0 {
         return None;
