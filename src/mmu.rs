@@ -257,14 +257,6 @@ impl Memory for Mmu {
             _ => {}
         }
     }
-
-    fn dma_sb(&mut self, a: u16, v: u8) {
-        match a {
-            // DMA writes to OAM bypass the CPU-write-blocking guard.
-            0xfe00..=0xfe9f => self.gpu.sb(a, v),
-            _ => self.sb(a, v),
-        }
-    }
 }
 
 impl Mmu {

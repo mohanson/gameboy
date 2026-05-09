@@ -97,7 +97,10 @@ impl O {
                 // 0xc000-0xdfff (via -0x2000).
                 0xe000..=0xffff => self.mem.borrow().lb(a - 0x2000),
             };
-            self.mem.borrow_mut().dma_sb(0xfe00 + i as u16, b);
+            // DMA writes to OAM bypass the CPU-write-blocking guard.
+            let cur = self.cnt.replace(0x00);
+            self.mem.borrow_mut().sb(0xfe00 + i as u16, b);
+            self.cnt.replace(cur);
         }
     }
 }
