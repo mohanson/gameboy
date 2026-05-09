@@ -12,7 +12,6 @@ use crate::rng;
 use crate::serial::Serial;
 use crate::timer::Timer;
 use std::cell::RefCell;
-use std::path::Path;
 use std::rc::Rc;
 
 pub struct Mmu {
@@ -34,13 +33,7 @@ pub struct Mmu {
 }
 
 impl Mmu {
-    pub fn power_up(path: impl AsRef<Path>) -> Self {
-        let cart = Cartridge::power_up(path);
-        let term = match cart.lb(0x0143) & 0xC0 {
-            0xC0 => Term::CGB,
-            _ => Term::DMG,
-        };
-        rog::debugln!("GameBoy term is {}", term);
+    pub fn power_up(term: Term, cart: Cartridge) -> Self {
         let intr = Rc::new(RefCell::new(Interrupt::power_up()));
         let mut r = Self {
             apu: Apu::power_up(48000, term),

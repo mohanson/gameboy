@@ -1,4 +1,5 @@
-use crate::convention::{STEP_CYCLES, STEP_TIME};
+use crate::cartridge::Cartridge;
+use crate::convention::{Memory, STEP_CYCLES, STEP_TIME, Term};
 use crate::cpu::Cpu;
 use crate::dma::Dma;
 use crate::mmu::Mmu;
@@ -19,7 +20,15 @@ pub struct GameBoy {
 
 impl GameBoy {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
-        let mmu = Rc::new(RefCell::new(Mmu::power_up(path)));
+        let cart = Cartridge::power_up(path);
+        let term = match cart.lb(0x0143) & 0xC0 {
+            0x00 => Term::DMG,
+            0x80 => Term::DMG,
+            0xC0 => Term::CGB,
+            _ => unreachable!(),
+        };
+        rog::debugln!("GameBoy term is {}", term);
+        let mmu = Rc::new(RefCell::new(Mmu::power_up(term, cart)));
         let cpu = Cpu::power_up(mmu.borrow().term, mmu.clone());
         let mut dma = Dma::power_up(mmu.clone());
         dma.o.cnt = mmu.borrow().dma.o.cnt.clone();
