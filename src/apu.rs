@@ -1,4 +1,4 @@
-use super::convention::{CLOCK_FREQUENCY, Memory};
+use super::convention::{CLOCK_FREQUENCY, Memory, Term};
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -345,11 +345,22 @@ struct FrequencySweep {
     enable: bool,
     shadow: u16,
     newfeq: u16,
+    // Obscure behavior: tracks whether at least one frequency calculation using
+    // subtraction (negate) mode has been performed since the last trigger.  When
+    // the negate bit in NR10 is later cleared (1→0), CH1 is immediately disabled.
+    negated_since_trigger: bool,
 }
 
 impl FrequencySweep {
     fn power_up(reg: Rc<RefCell<Register>>) -> Self {
-        Self { reg, timer: Clock::power_up(8), enable: false, shadow: 0x0000, newfeq: 0x0000 }
+        Self {
+            reg,
+            timer: Clock::power_up(8),
+            enable: false,
+            shadow: 0x0000,
+            newfeq: 0x0000,
+            negated_since_trigger: false,
+        }
     }
 
     fn reload(&mut self) {
@@ -358,6 +369,7 @@ impl FrequencySweep {
         // The volume envelope and sweep timers treat a period of 0 as 8.
         self.timer.period = if p == 0 { 8 } else { u32::from(p) };
         self.enable = p != 0x00 || self.reg.borrow().get_shift() != 0x00;
+        self.negated_since_trigger = false;
         if self.reg.borrow().get_shift() != 0x00 {
             self.frequency_calculation();
             self.overflow_check();
@@ -368,9 +380,20 @@ impl FrequencySweep {
         let offset = self.shadow >> self.reg.borrow().get_shift();
         if self.reg.borrow().get_negate() {
             self.newfeq = self.shadow.wrapping_sub(offset);
+            self.negated_since_trigger = true;
         } else {
             self.newfeq = self.shadow.wrapping_add(offset);
         }
+    }
+
+    // Called when NR10 is written.  Returns true if CH1 should be disabled due
+    // to the obscure "negate-disable" behavior (negate bit cleared after at
+    // least one subtraction sweep calculation since the last trigger).
+    fn sb_nr10(&mut self, v: u8) -> bool {
+        let old_negate = self.reg.borrow().get_negate();
+        self.reg.borrow_mut().nrx0 = v;
+        let new_negate = self.reg.borrow().get_negate();
+        old_negate && !new_negate && self.negated_since_trigger
     }
 
     fn overflow_check(&mut self) {
@@ -380,10 +403,20 @@ impl FrequencySweep {
     }
 
     fn next(&mut self) {
+        let did_tick = self.timer.next(1) != 0;
+        // On every timer fire, reload the period from the current NR10 register
+        // (treating 0 as 8).  This is the correct hardware behaviour: the sweep
+        // timer reloads from the register each time it expires, so writes to NR10
+        // between fires take effect on the next reload.
+        if did_tick {
+            let p = self.reg.borrow().get_sweep_period();
+            self.timer.period = if p == 0 { 8 } else { u32::from(p) };
+            self.timer.n = 0;
+        }
         if !self.enable || self.reg.borrow().get_sweep_period() == 0 {
             return;
         }
-        if self.timer.next(1) == 0x00 {
+        if !did_tick {
             return;
         }
         self.frequency_calculation();
@@ -472,6 +505,47 @@ impl ChannelSquare {
             self.idx = (self.idx + 1) % 8;
         }
     }
+
+    // NRx4 write with optional extra length clock.
+    // extra_clock=true when the frame sequencer just fired an even step (0,2,4,6), i.e. we
+    // are in the "first half" of the length period.  In that case, enabling the length
+    // counter (bit6 0→1) produces one extra decrement, and a trigger when length was
+    // already zero causes the reloaded max to be decremented by one.
+    fn sb_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let old = self.reg.borrow().nrx4;
+        let old_enable = old & 0x40 != 0;
+        let new_enable = v & 0x40 != 0;
+        let trigger = v & 0x80 != 0;
+
+        self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
+        self.timer.period = period(self.reg.clone());
+
+        // Extra length clock when enable goes 0→1 in first half of length period.
+        if extra_clock && !old_enable && new_enable && self.lc.n != 0 {
+            self.lc.n -= 1;
+            if self.lc.n == 0 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+
+        if trigger {
+            let len_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().nrx4 |= 0x80;
+            self.lc.reload();
+            self.ve.reload();
+            if self.reg.borrow().channel == Channel::Square1 {
+                self.fs.reload();
+            }
+            // If enable bit is set in this write and length was 0 (after possible extra
+            // enable clock), the reloaded max should be decremented by one.
+            if extra_clock && new_enable && len_was_zero && self.lc.n != 0 {
+                self.lc.n -= 1;
+            }
+            if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+    }
 }
 
 impl Memory for ChannelSquare {
@@ -488,42 +562,28 @@ impl Memory for ChannelSquare {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            0xff10 | 0xff15 => self.reg.borrow_mut().nrx0 = v,
+            0xff10 => {
+                if self.fs.sb_nr10(v) {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
+            0xff15 => self.reg.borrow_mut().nrx0 = v,
             0xff11 | 0xff16 => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xff12 | 0xff17 => self.reg.borrow_mut().nrx2 = v,
+            0xff12 | 0xff17 => {
+                self.reg.borrow_mut().nrx2 = v;
+                // DAC off (starting volume=0 and not adding) → immediately disable channel.
+                if v & 0xf8 == 0x00 {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff13 | 0xff18 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff14 | 0xff19 => {
-                self.reg.borrow_mut().nrx4 = v;
-                self.timer.period = period(self.reg.clone());
-                // Trigger Event
-                //
-                // Writing a value to NRx4 with bit 7 set causes the following things to occur:
-                //
-                //   - Channel is enabled (see length counter).
-                //   - If length counter is zero, it is set to 64 (256 for wave channel).
-                //   - Frequency timer is reloaded with period.
-                //   - Volume envelope timer is reloaded with period.
-                //   - Channel volume is reloaded from NRx2.
-                //   - Noise channel's LFSR bits are all set to 1.
-                //   - Wave channel's position is set to 0 but sample buffer is NOT refilled.
-                //   - Square 1's sweep does several things (see frequency sweep).
-                //
-                // Note that if the channel's DAC is off, after the above actions occur the channel will be immediately
-                // disabled again.
-                if self.reg.borrow().get_trigger() {
-                    self.lc.reload();
-                    self.ve.reload();
-                    if self.reg.borrow().channel == Channel::Square1 {
-                        self.fs.reload();
-                    }
-                }
-            }
+            0xff14 | 0xff19 => self.sb_nrx4(v, false),
             _ => unreachable!(),
         }
     }
@@ -551,10 +611,24 @@ struct ChannelWave {
     blip: Blip,
     waveram: [u8; 16],
     waveidx: usize,
+    #[allow(dead_code)]
+    term: Term,
+    // DMG wave-RAM corruption timing state.
+    // trigger_sdiv: sdiv at the last first-trigger (was_active=false).
+    trigger_sdiv: u16,
+    // p1_half: (2048 - freq) at first trigger = P1 period in 2MHz cycles.
+    p1_half: u32,
+    // d1_2mhz: 2MHz cycles elapsed from first trigger to last NR33 write (while active).
+    d1_2mhz: u32,
+    // Live-waveidx tracking: record the APU frame counter and APU frame timer
+    // accumulator at the time of the last trigger so we can compute the real
+    // wave position for wave-RAM reads without advancing the audio state.
+    trigger_frame: u32,
+    trigger_apu_n: u32,
 }
 
 impl ChannelWave {
-    fn power_up(blip: BlipBuf) -> ChannelWave {
+    fn power_up(blip: BlipBuf, term: Term) -> ChannelWave {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         ChannelWave {
             reg: reg.clone(),
@@ -563,6 +637,12 @@ impl ChannelWave {
             blip: Blip::power_up(blip),
             waveram: [0x00; 16],
             waveidx: 0x00,
+            term,
+            trigger_sdiv: 0,
+            p1_half: 0,
+            d1_2mhz: 0,
+            trigger_frame: 0,
+            trigger_apu_n: 0,
         }
     }
 
@@ -589,6 +669,58 @@ impl ChannelWave {
             self.waveidx = (self.waveidx + 1) % 32;
         }
     }
+
+    // Apply DMG wave-RAM corruption that occurs when CH3 is re-triggered while playing.
+    // `byte_offset` is the wave-RAM byte index read by the hardware at the trigger moment,
+    // matching SameBoy's `((current_sample_index + 1) >> 1) & 0xF` formula.
+    fn apply_dmg_wave_corruption(&mut self, byte_offset: usize) {
+        if byte_offset < 4 {
+            self.waveram[0] = self.waveram[byte_offset];
+        } else {
+            let aligned = byte_offset & !3;
+            self.waveram.copy_within(aligned..aligned + 4, 0);
+        }
+    }
+
+    fn sb_nrx4(&mut self, v: u8, extra_clock: bool, dmg_corruption_offset: Option<usize>) {
+        let old = self.reg.borrow().nrx4;
+        let old_enable = old & 0x40 != 0;
+        let new_enable = v & 0x40 != 0;
+        let trigger = v & 0x80 != 0;
+
+        self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
+        self.timer.period = period(self.reg.clone());
+
+        if extra_clock && !old_enable && new_enable && self.lc.n != 0 {
+            self.lc.n -= 1;
+            if self.lc.n == 0 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+
+        if trigger {
+            // DMG obscure behavior: triggering CH3 while it is active corrupts wave RAM.
+            // The corruption offset (byte index) is pre-computed by the Apu-level caller
+            // using the SameBoy-accurate sample_countdown==0 timing model.
+            if let Some(offset) = dmg_corruption_offset {
+                self.apply_dmg_wave_corruption(offset);
+            }
+
+            let len_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().nrx4 |= 0x80;
+            self.lc.reload();
+            // Per spec, triggering CH3 reloads the period divider (resets the internal
+            // countdown to zero so the first nibble fires after a full period).
+            self.timer.n = 0;
+            self.waveidx = 0x00;
+            if extra_clock && new_enable && len_was_zero && self.lc.n != 0 {
+                self.lc.n -= 1;
+            }
+            if !self.reg.borrow().get_dac_power() {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+    }
 }
 
 impl Memory for ChannelWave {
@@ -606,7 +738,13 @@ impl Memory for ChannelWave {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            0xff1a => self.reg.borrow_mut().nrx0 = v,
+            0xff1a => {
+                self.reg.borrow_mut().nrx0 = v;
+                // DAC off (bit 7 = 0) → immediately disable channel.
+                if v & 0x80 == 0x00 {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff1b => {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
@@ -616,14 +754,7 @@ impl Memory for ChannelWave {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff1e => {
-                self.reg.borrow_mut().nrx4 = v;
-                self.timer.period = period(self.reg.clone());
-                if self.reg.borrow().get_trigger() {
-                    self.lc.reload();
-                    self.waveidx = 0x00;
-                }
-            }
+            0xff1e => self.sb_nrx4(v, false, None),
             0xff30..=0xff3f => self.waveram[a as usize - 0xff30] = v,
             _ => unreachable!(),
         }
@@ -692,6 +823,36 @@ impl ChannelNoise {
             self.blip.set(self.blip.from.wrapping_add(self.timer.period), ampl);
         }
     }
+
+    fn sb_nrx4(&mut self, v: u8, extra_clock: bool) {
+        let old = self.reg.borrow().nrx4;
+        let old_enable = old & 0x40 != 0;
+        let new_enable = v & 0x40 != 0;
+        let trigger = v & 0x80 != 0;
+
+        self.reg.borrow_mut().nrx4 = (old & 0x80) | (v & 0x7f);
+
+        if extra_clock && !old_enable && new_enable && self.lc.n != 0 {
+            self.lc.n -= 1;
+            if self.lc.n == 0 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+
+        if trigger {
+            let len_was_zero = self.lc.n == 0;
+            self.reg.borrow_mut().nrx4 |= 0x80;
+            self.lc.reload();
+            self.ve.reload();
+            self.lfsr.reload();
+            if extra_clock && new_enable && len_was_zero && self.lc.n != 0 {
+                self.lc.n -= 1;
+            }
+            if self.reg.borrow().nrx2 & 0xf8 == 0x00 {
+                self.reg.borrow_mut().set_trigger(false);
+            }
+        }
+    }
 }
 
 impl Memory for ChannelNoise {
@@ -713,19 +874,18 @@ impl Memory for ChannelNoise {
                 self.reg.borrow_mut().nrx1 = v;
                 self.lc.n = self.reg.borrow().get_length_load();
             }
-            0xff21 => self.reg.borrow_mut().nrx2 = v,
+            0xff21 => {
+                self.reg.borrow_mut().nrx2 = v;
+                // DAC off → immediately disable channel.
+                if v & 0xf8 == 0x00 {
+                    self.reg.borrow_mut().set_trigger(false);
+                }
+            }
             0xff22 => {
                 self.reg.borrow_mut().nrx3 = v;
                 self.timer.period = period(self.reg.clone());
             }
-            0xff23 => {
-                self.reg.borrow_mut().nrx4 = v;
-                if self.reg.borrow().get_trigger() {
-                    self.lc.reload();
-                    self.ve.reload();
-                    self.lfsr.reload();
-                }
-            }
+            0xff23 => self.sb_nrx4(v, false),
             _ => unreachable!(),
         }
     }
@@ -741,10 +901,25 @@ pub struct Apu {
     channel3: ChannelWave,
     channel4: ChannelNoise,
     sample_rate: u32,
+    // DIV-APU synchronization: updated from mmu before every APU register write
+    // so the NR52 power-on handler can phase-align the frame sequencer to the
+    // hardware DIV counter.
+    pub sdiv_cache: u16,
+    // When the APU is powered on while sdiv bit 12 is high, the hardware skips
+    // the very first DIV-APU event (SameBoy "APU glitch").
+    skip_next_fs_tick: bool,
+    // DMG vs CGB: on DMG, NR11/NR21/NR31/NR41 are writable when APU is off
+    // (length counters can be loaded), and lc.n is preserved through power-on.
+    // On CGB, all channel writes are blocked when APU is off.
+    term: Term,
+    // Monotonically-increasing counter incremented once per 8192-T-cycle APU frame.
+    // Used together with trigger_frame/trigger_apu_n in ChannelWave to compute the
+    // live wave position for wave-RAM reads without disturbing the audio state.
+    frame_count: u32,
 }
 
 impl Apu {
-    pub fn power_up(sample_rate: u32) -> Self {
+    pub fn power_up(sample_rate: u32, term: Term) -> Self {
         let blipbuf1 = create_blipbuf(sample_rate);
         let blipbuf2 = create_blipbuf(sample_rate);
         let blipbuf3 = create_blipbuf(sample_rate);
@@ -756,9 +931,13 @@ impl Apu {
             fs: FrameSequencer::power_up(),
             channel1: ChannelSquare::power_up(blipbuf1, Channel::Square1),
             channel2: ChannelSquare::power_up(blipbuf2, Channel::Square2),
-            channel3: ChannelWave::power_up(blipbuf3),
+            channel3: ChannelWave::power_up(blipbuf3, term),
             channel4: ChannelNoise::power_up(blipbuf4),
             sample_rate,
+            sdiv_cache: 0,
+            skip_next_fs_tick: false,
+            term,
+            frame_count: 0,
         }
     }
 
@@ -776,11 +955,26 @@ impl Apu {
     }
 
     pub fn next(&mut self, cycles: u32) {
+        // Count ticks first so the timer state is consumed regardless of power state.
+        let ticks = self.timer.next(cycles);
+
         if !self.reg.get_power() {
+            // The frame sequencer (DIV-APU) keeps running even when the APU is powered off.
+            for _ in 0..ticks {
+                if self.skip_next_fs_tick {
+                    self.skip_next_fs_tick = false;
+                    continue;
+                }
+                self.fs.next();
+            }
             return;
         }
 
-        for _ in 0..self.timer.next(cycles) {
+        for _ in 0..ticks {
+            if self.skip_next_fs_tick {
+                self.skip_next_fs_tick = false;
+                continue;
+            }
             self.channel1.next(self.timer.period);
             self.channel2.next(self.timer.period);
             self.channel3.next(self.timer.period);
@@ -812,6 +1006,7 @@ impl Apu {
             self.channel3.blip.from = self.channel3.blip.from.wrapping_sub(self.timer.period);
             self.channel4.blip.from = self.channel4.blip.from.wrapping_sub(self.timer.period);
             self.mix();
+            self.frame_count = self.frame_count.wrapping_add(1);
         }
     }
 
@@ -914,24 +1109,172 @@ impl Memory for Apu {
                 a | b | c | d | e
             }
             0xff27..=0xff2f => 0x00,
-            0xff30..=0xff3f => self.channel3.lb(a),
+            0xff30..=0xff3f => {
+                // While CH3 is active, the CPU can only access the byte currently being
+                // read by the wave hardware (DMG: only in the 2-cycle window after a read;
+                // CGB: always). We redirect to the current-position byte for both models,
+                // which is correct for CGB and matches the window blargg DMG tests use.
+                //
+                // Since we batch-process the APU every 8192 T-cycles, waveidx is frozen
+                // between APU frames. We compute the "live" waveidx by counting extra fires
+                // from the time the wave channel was last processed (or triggered) using the
+                // APU frame-timer accumulator (self.timer.n).
+                let is_active = self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
+                if is_active {
+                    // Compute the "live" wave position by counting all fires since the last
+                    // trigger, regardless of how many APU frames have elapsed.
+                    //
+                    // elapsed = full APU frames * 8192  +  timer.n  -  trigger_apu_n
+                    //   (works for D=0 when timer.n >= trigger_apu_n, and D>=1 in general)
+                    //
+                    // SameBoy's initial countdown = (period/2 - 1) + 3 in 2MHz cycles, so
+                    // the first advance fires at (trigger_period + 6) T-cycles after trigger.
+                    // After the first fire, each subsequent advance uses the CURRENT timer
+                    // period (which may differ if NR33 was written between trigger and read).
+                    // p1_half = trigger_period / 2 (recorded at trigger time).
+                    let wave_period = self.channel3.timer.period as u64; // current (post-NR33) period
+                    let trigger_period = self.channel3.p1_half as u64 * 2; // period AT trigger
+                    let d = self.frame_count.wrapping_sub(self.channel3.trigger_frame) as u64;
+                    let elapsed =
+                        d * self.timer.period as u64 + self.timer.n as u64 - self.channel3.trigger_apu_n as u64;
+                    let t_first = trigger_period + 6; // first advance at trigger_period + 6 T-cycles
+                    let fires = if elapsed < t_first { 0u64 } else { 1 + (elapsed - t_first) / wave_period };
+                    let live_waveidx = (fires % 32) as usize;
+                    // DMG: wave RAM is only readable in a ~2-T-cycle window right after a
+                    // wave advance.  Outside that window (or before the first advance),
+                    // the read returns 0xFF.
+                    if self.term == Term::DMG {
+                        if fires == 0 {
+                            0xff
+                        } else {
+                            let t_last = t_first + (fires - 1) * wave_period;
+                            let dist = elapsed - t_last;
+                            if dist < 2 { self.channel3.waveram[live_waveidx / 2] } else { 0xff }
+                        }
+                    } else {
+                        self.channel3.waveram[live_waveidx / 2]
+                    }
+                } else {
+                    self.channel3.lb(a)
+                }
+            }
             _ => unreachable!(),
         };
         r | RD_MASK[a as usize - 0xff10]
     }
 
     fn sb(&mut self, a: u16, v: u8) {
-        if a != 0xff26 && !self.reg.get_power() {
+        // Wave RAM (0xFF30-0xFF3F) is always accessible regardless of APU power state.
+        // All other registers (except NR52 = 0xFF26) are blocked when APU is off.
+        if a != 0xff26 && !(0xff30..=0xff3f).contains(&a) && !self.reg.get_power() {
+            // On DMG, NR11/NR21/NR31/NR41 (length counter registers) are
+            // writable even when the APU is powered off.  This allows games
+            // to pre-load length counters before enabling the APU.
+            // On CGB all channel writes are blocked when APU is off.
+            if self.term == Term::DMG {
+                match a {
+                    // NR11 / NR21: update lc.n; store only lower 6 bits
+                    // (duty-cycle field in bits 7-6 is NOT written when off)
+                    0xff11 => {
+                        self.channel1.reg.borrow_mut().nrx1 = v & 0x3f;
+                        self.channel1.lc.n = self.channel1.reg.borrow().get_length_load();
+                        return;
+                    }
+                    0xff16 => {
+                        self.channel2.reg.borrow_mut().nrx1 = v & 0x3f;
+                        self.channel2.lc.n = self.channel2.reg.borrow().get_length_load();
+                        return;
+                    }
+                    // NR31: full value stored, update lc.n
+                    0xff1b => {
+                        self.channel3.reg.borrow_mut().nrx1 = v;
+                        self.channel3.lc.n = self.channel3.reg.borrow().get_length_load();
+                        return;
+                    }
+                    // NR41: update lc.n
+                    0xff20 => {
+                        self.channel4.reg.borrow_mut().nrx1 = v;
+                        self.channel4.lc.n = self.channel4.reg.borrow().get_length_load();
+                        return;
+                    }
+                    _ => {}
+                }
+            }
             return;
         }
+        // For NRx4 writes, pass the extra_clock flag based on the current FS step.
+        // extra_clock is true when the FS just fired an even step (0,2,4,6) — the
+        // "first half" of the length period per the GB APU obscure behaviour spec.
+        let extra_clock = self.fs.step % 2 == 0;
         match a {
-            0xff10..=0xff14 => self.channel1.sb(a, v),
-            0xff15..=0xff19 => self.channel2.sb(a, v),
-            0xff1a..=0xff1e => self.channel3.sb(a, v),
-            0xff1f..=0xff23 => self.channel4.sb(a, v),
+            0xff10..=0xff13 => self.channel1.sb(a, v),
+            0xff14 => self.channel1.sb_nrx4(v, extra_clock),
+            0xff15..=0xff18 => self.channel2.sb(a, v),
+            0xff19 => self.channel2.sb_nrx4(v, extra_clock),
+            0xff1a..=0xff1c => self.channel3.sb(a, v),
+            0xff1d => {
+                // On DMG: record d1_2mhz (2MHz cycles from first trigger to this NR33 write)
+                // for use in the SameBoy-accurate wave corruption model.
+                if self.term == Term::DMG {
+                    let is_active =
+                        self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
+                    if is_active {
+                        let elapsed_t = self.sdiv_cache.wrapping_sub(self.channel3.trigger_sdiv) as u32;
+                        self.channel3.d1_2mhz = elapsed_t / 2;
+                    }
+                }
+                self.channel3.sb(a, v);
+            }
+            0xff1e => {
+                let sdiv = self.sdiv_cache;
+                let was_active = self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
+                // On DMG, compute whether corruption happens using the SameBoy model:
+                // corruption fires only when sample_countdown == 0 at the exact trigger moment.
+                // The SameBoy wave timer starts at (P1/2 + 2) in 2MHz cycles after trigger
+                // and resets to (P/2 - 1) after each fire (where P is the current period in T-cycles).
+                let dmg_corruption_offset = if v & 0x80 != 0 && was_active && self.term == Term::DMG {
+                    let elapsed_t = sdiv.wrapping_sub(self.channel3.trigger_sdiv) as u32;
+                    let elapsed_2mhz = elapsed_t / 2;
+                    let d1_2mhz = self.channel3.d1_2mhz;
+                    let d2_2mhz = elapsed_2mhz.saturating_sub(d1_2mhz);
+                    let p1_half = self.channel3.p1_half;
+                    // Current period in 2MHz cycles (P2/2 = 2048 - freq).
+                    // timer.period was already updated by any prior NR33 write.
+                    let p2_half = self.channel3.timer.period / 2;
+                    compute_wave_corruption_offset(p1_half, d1_2mhz, d2_2mhz, p2_half)
+                } else {
+                    None
+                };
+                // Record trigger state for next re-trigger.
+                if v & 0x80 != 0 {
+                    if !was_active {
+                        // First trigger: record state. p1_half is updated below after
+                        // sb_nrx4 so it uses the NEW period including NR34 freq_high.
+                        self.channel3.trigger_sdiv = sdiv;
+                        self.channel3.d1_2mhz = 0;
+                    } else {
+                        // Re-trigger: update trigger_sdiv so the NEXT re-trigger can use it.
+                        self.channel3.trigger_sdiv = sdiv;
+                        self.channel3.d1_2mhz = 0;
+                    }
+                    // Record APU frame state so Apu::lb can compute the live wave position.
+                    self.channel3.trigger_apu_n = self.timer.n;
+                    self.channel3.trigger_frame = self.frame_count;
+                }
+                self.channel3.sb_nrx4(v, extra_clock, dmg_corruption_offset);
+                if v & 0x80 != 0 {
+                    // Record p1_half from the NEW period (now that NR34 freq_high bits
+                    // have been applied to timer.period by sb_nrx4). This ensures the
+                    // live waveidx computation uses the correct trigger period.
+                    self.channel3.p1_half = self.channel3.timer.period / 2;
+                }
+            }
+            0xff1f..=0xff22 => self.channel4.sb(a, v),
+            0xff23 => self.channel4.sb_nrx4(v, extra_clock),
             0xff24 => self.reg.nrx0 = v,
             0xff25 => self.reg.nrx1 = v,
             0xff26 => {
+                let was_off = !self.reg.get_power();
                 self.reg.nrx2 = v;
                 // Powering APU off should write 0 to all regs
                 // Powering APU off shouldn't affect wave, that wave RAM is unchanged
@@ -961,10 +1304,62 @@ impl Memory for Apu {
                     self.reg.nrx2 = 0x00;
                     self.reg.nrx3 = 0x00;
                     self.reg.nrx4 = 0x00;
+                    // On CGB, length counters are also cleared when APU powers off.
+                    // On DMG (monochrome), length counters survive power-off (Pan Docs NR52 footnote 1).
+                    if self.term == Term::CGB {
+                        self.channel1.lc.n = 0;
+                        self.channel2.lc.n = 0;
+                        self.channel3.lc.n = 0;
+                        self.channel4.lc.n = 0;
+                    }
+                }
+                // Power-on: synchronize the frame-sequencer timer with the DIV
+                // counter so that the first FS tick happens at the next falling
+                // edge of sdiv bit 12.  Hardware glitch: if bit 12 was already
+                // high when the APU powered on, the first DIV-APU event is
+                // skipped (SameBoy reference behaviour).
+                if was_off && self.reg.get_power() {
+                    self.fs.step = 7; // next fs.next() returns 0 (= first length clock)
+                    self.timer.n = u32::from(self.sdiv_cache) % 8192;
+                    if self.sdiv_cache & 0x1000 != 0 {
+                        self.skip_next_fs_tick = true;
+                    }
                 }
             }
             0xff27..=0xff2f => {}
-            0xff30..=0xff3f => self.channel3.sb(a, v),
+            0xff30..=0xff3f => {
+                // While CH3 is active, writes are redirected to the byte currently
+                // being accessed by the wave hardware (CGB: always; DMG: only in the
+                // 2-cycle window). Writes outside that window on DMG are ignored.
+                let is_active = self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
+                if is_active {
+                    let wave_period = self.channel3.timer.period as u64;
+                    let trigger_period = self.channel3.p1_half as u64 * 2;
+                    let d = self.frame_count.wrapping_sub(self.channel3.trigger_frame) as u64;
+                    let elapsed =
+                        d * self.timer.period as u64 + self.timer.n as u64 - self.channel3.trigger_apu_n as u64;
+                    let t_first = trigger_period + 6;
+                    let fires = if elapsed < t_first { 0u64 } else { 1 + (elapsed - t_first) / wave_period };
+                    let live_waveidx = (fires % 32) as usize;
+                    if self.term == Term::DMG {
+                        // DMG: write redirects to live position only within 2-cycle window
+                        if fires > 0 {
+                            let t_last = t_first + (fires - 1) * wave_period;
+                            let dist = elapsed - t_last;
+                            if dist < 2 {
+                                self.channel3.waveram[live_waveidx / 2] = v;
+                            }
+                            // else: write is ignored outside window
+                        }
+                        // fires == 0: no advance yet, write is ignored
+                    } else {
+                        // CGB: always write to the live current position
+                        self.channel3.waveram[live_waveidx / 2] = v;
+                    }
+                } else {
+                    self.channel3.sb(a, v);
+                }
+            }
             _ => unreachable!(),
         }
     }
@@ -974,6 +1369,62 @@ fn create_blipbuf(sample_rate: u32) -> BlipBuf {
     let mut blipbuf = BlipBuf::new(sample_rate);
     blipbuf.set_rates(f64::from(CLOCK_FREQUENCY), f64::from(sample_rate));
     blipbuf
+}
+
+// Compute the DMG wave-RAM corruption byte offset using SameBoy's timing model.
+//
+// The wave channel's internal "sample_countdown" timer (2MHz cycles) starts at
+// (p1_half + 2) after the first trigger, where p1_half = P1 / 2 = (2048 - freq1).
+// It decrements each 2MHz cycle and resets to (P/2 - 1) on each fire.
+// Corruption fires only when sample_countdown == 0 at the exact moment of the
+// re-trigger write (i.e., the next fire is 1 × 2MHz cycle away).
+//
+// Returns Some(byte_offset) where byte_offset = ((csi + 1) >> 1) & 0xF,
+// or None if sample_countdown ≠ 0.
+fn compute_wave_corruption_offset(
+    p1_half: u32, // P1/2 in 2MHz cycles = (2048 - freq_at_first_trigger)
+    d1_2mhz: u32, // 2MHz cycles from first trigger to last NR33 write
+    d2_2mhz: u32, // 2MHz cycles from NR33 write to this re-trigger
+    p2_half: u32, // P2/2 in 2MHz cycles = (2048 - freq_now)
+) -> Option<usize> {
+    if p1_half == 0 || p2_half == 0 {
+        return None;
+    }
+    let c1 = p1_half - 1; // reset value for phase-1 (P1/2 - 1)
+    let c2 = p2_half - 1; // reset value for phase-2 (P2/2 - 1)
+
+    // Initial countdown after trigger: (P1/2 - 1) + 3 = P1/2 + 2
+    let mut sc: u32 = c1 + 3;
+    let mut csi: u32 = 0;
+
+    // Phase 1: d1_2mhz cycles at period P1
+    if sc >= d1_2mhz {
+        sc -= d1_2mhz;
+    } else {
+        let remaining = d1_2mhz - (sc + 1);
+        csi += 1;
+        let period1 = c1 + 1; // fires every period1 2MHz cycles
+        csi = csi.wrapping_add(remaining / period1) % 32;
+        sc = c1.saturating_sub(remaining % period1);
+    }
+
+    // Phase 2: d2_2mhz cycles at period P2
+    if sc >= d2_2mhz {
+        sc -= d2_2mhz;
+    } else {
+        let remaining = d2_2mhz - (sc + 1);
+        csi = (csi + 1) % 32;
+        let period2 = c2 + 1; // fires every period2 2MHz cycles
+        csi = csi.wrapping_add(remaining / period2) % 32;
+        sc = c2.saturating_sub(remaining % period2);
+    }
+
+    if sc == 0 {
+        let byte_offset = ((csi as usize + 1) >> 1) & 0xF;
+        Some(byte_offset)
+    } else {
+        None
+    }
 }
 
 fn period(reg: Rc<RefCell<Register>>) -> u32 {

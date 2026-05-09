@@ -41,10 +41,12 @@ impl GameBoy {
                 self.z = now;
             }
         }
+        let old_cnt = *self.dma.o.cnt.borrow();
         let cycles = self.cpu.step();
-        self.dma.o.tick(cycles);
-        let cycles = self.mmu.borrow_mut().next(cycles);
-        self.c += cycles;
-        cycles
+        let new_cnt = *self.dma.o.cnt.borrow();
+        self.dma.o.do_copies(old_cnt, new_cnt);
+        let hdma_cycles = self.mmu.borrow_mut().next();
+        self.c += cycles + hdma_cycles;
+        cycles + hdma_cycles
     }
 }

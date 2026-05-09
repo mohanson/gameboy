@@ -333,6 +333,23 @@ pub struct Gpu {
     // 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456 dots.
     // Scanlines 144 through 153 are mode 1.
     dots: u32,
+    // Extra dots to add to the mode3 threshold due to sprites on the current scanline.
+    // Computed when mode2 fires; represents floor(T_penalty/4)*4 extra dots before mode0.
+    sprite_penalty: u32,
+    // Set when LCDC bit 7 transitions 0->1. Line 0 after LCD enable starts in Mode 0
+    // (not Mode 2) and jumps directly to Mode 3 at dot 80.
+    lcdon_first_line: bool,
+    // Latched LYC=LY coincidence bit for STAT register bit 2.
+    // This is cleared at dot 452 (when LY increments) and re-evaluated at the
+    // start of each new scanline (dots=0) and when LYC is written, matching
+    // real DMG hardware timing where STAT bit 2 lags LY by one M-cycle.
+    stat_lyc_match: bool,
+    // Tracks the STAT IRQ signal level (the OR of all enabled STAT interrupt sources).
+    // The LCD interrupt (IF bit 1) is only raised on a 0→1 RISING EDGE of this signal.
+    // This implements the "STAT IRQ blocking" behaviour: if one source (e.g. LYC=LY)
+    // keeps the signal HIGH through mode 3, the mode-0 transition does NOT generate
+    // a second interrupt because the signal never goes LOW in between.
+    stat_irq: bool,
 }
 
 impl Gpu {
@@ -364,6 +381,10 @@ impl Gpu {
             oam: [0x00; 0xa0],
             prio: [(true, 0); SCREEN_W],
             dots: 0,
+            sprite_penalty: 0,
+            lcdon_first_line: false,
+            stat_lyc_match: false,
+            stat_irq: false,
         }
     }
 
@@ -392,6 +413,38 @@ impl Gpu {
             0x02 => GrayShades::Dark,
             _ => GrayShades::Black,
         }
+    }
+
+    // Compute the STAT IRQ signal level: HIGH if any enabled interrupt source is active.
+    // The signal is LOW during mode 3 (no STAT interrupt source) unless LYC=LY keeps it high.
+    // When LCD is disabled the signal is always LOW.
+    fn stat_irq_level(&self) -> bool {
+        if !self.lcdc.bit7() {
+            return false;
+        }
+        (self.stat.enable_m0_interrupt && self.stat.mode == 0)
+            || (self.stat.enable_m1_interrupt && self.stat.mode == 1)
+            || (self.stat.enable_m2_interrupt && self.stat.mode == 2)
+            || (self.stat.enable_ly_interrupt && self.stat_lyc_match)
+    }
+
+    // Recompute the STAT IRQ signal and raise an LCD interrupt on a 0→1 rising edge.
+    // Must be called after any change that could affect the signal:
+    //   mode transitions, stat_lyc_match changes, STAT enable-bit writes, LCDC writes.
+    // When LCD is OFF this is a no-op: stat_irq is "frozen" at the level it had when
+    // the LCD was last on.  This ensures that re-enabling the LCD only fires an interrupt
+    // if the comparison result actually changes (0→1), not just because the off-state
+    // appeared as level=0 and any match looks like a rising edge.
+    fn stat_irq_update(&mut self) {
+        if !self.lcdc.bit7() {
+            // Freeze: don't touch stat_irq while LCD is off.
+            return;
+        }
+        let new_level = self.stat_irq_level();
+        if new_level && !self.stat_irq {
+            self.intf.borrow_mut().raise(InterruptFlag::LCD);
+        }
+        self.stat_irq = new_level;
     }
 
     // Grey scale.
@@ -424,7 +477,7 @@ impl Gpu {
         if !self.lcdc.bit7() {
             return;
         }
-        self.h_blank = false;
+        // h_blank is NOT reset here; it is reset by Mmu::next() after HDMA has checked it.
 
         // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots,
         // or 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456
@@ -437,6 +490,10 @@ impl Gpu {
         // Mode 3  _33____33____33____33____33____33__________________3___
         // Mode 0  ___000___000___000___000___000___000________________000
         // Mode 1  ____________________________________11111111111111_____
+        // When LCD is disabled the PPU is completely halted; dots and LY freeze.
+        if !self.lcdc.bit7() {
+            return;
+        }
         if cycles == 0 {
             return;
         }
@@ -449,41 +506,61 @@ impl Gpu {
             }
             let d = self.dots;
             self.dots %= 456;
-            if d != self.dots {
+            if d == 452 {
+                // LY increments 4T before the end of the scanline.
+                // The STAT LYC=LY bit is cleared immediately: it will be re-evaluated
+                // when the new scanline starts (dots=0), matching DMG hardware behaviour.
                 self.ly = (self.ly + 1) % 154;
-                if self.stat.enable_ly_interrupt && self.ly == self.lc {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
-                }
+                self.stat_lyc_match = false;
+                // Update the STAT IRQ signal — the LYC=LY source just went inactive.
+                // The new LY's LYC coincidence is re-evaluated at mode-2 start (dots=0).
+                self.stat_irq_update();
+                // Skip mode transitions; they fire on the next tick when dots=0
+                continue;
             }
             if self.ly >= 144 {
                 if self.stat.mode == 1 {
                     continue;
                 }
                 self.stat.mode = 1;
+                self.stat_lyc_match = self.ly == self.lc;
                 self.v_blank = true;
                 self.intf.borrow_mut().raise(InterruptFlag::VBlank);
-                if self.stat.enable_m1_interrupt {
+                // DMG quirk: at line 144, a Mode 2 OAM pulse is generated simultaneously
+                // with Mode 1 (VBlank) entry.  If the M2 interrupt is enabled and the
+                // STAT signal was LOW, fire a rising edge now (before stat_irq_update
+                // sets the persistent level based on Mode 1 / LYC).
+                if self.stat.enable_m2_interrupt && !self.stat_irq {
                     self.intf.borrow_mut().raise(InterruptFlag::LCD);
                 }
-            } else if self.dots <= 80 {
+                self.stat_irq_update();
+            } else if self.dots < 80 {
+                if self.lcdon_first_line {
+                    // Line 0 after LCD enable: stay in Mode 0, skip Mode 2 entirely.
+                    continue;
+                }
                 if self.stat.mode == 2 {
                     continue;
                 }
                 self.stat.mode = 2;
-                if self.stat.enable_m2_interrupt {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
-                }
-            } else if self.dots <= (80 + 172) {
+                self.stat_lyc_match = self.ly == self.lc;
+                // Compute sprite timing penalty for this scanline's mode3 window
+                let t_pen = self.compute_sprite_penalty();
+                self.sprite_penalty = (t_pen / 4) * 4;
+                self.stat_irq_update();
+            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 + self.sprite_penalty {
+                self.lcdon_first_line = false;
                 self.stat.mode = 3;
+                // Mode 3 has no STAT interrupt source; the signal may fall to LOW here
+                // unless LYC=LY keeps it high.  Update to track any falling edge.
+                self.stat_irq_update();
             } else {
                 if self.stat.mode == 0 {
                     continue;
                 }
                 self.stat.mode = 0;
                 self.h_blank = true;
-                if self.stat.enable_m0_interrupt {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
-                }
+                self.stat_irq_update();
                 // Render scanline
                 if self.term == Term::CGB || self.lcdc.bit0() {
                     self.draw_bg();
@@ -499,6 +576,185 @@ impl Gpu {
         let result = self.v_blank;
         self.v_blank = false;
         result
+    }
+
+    /// Apply the DMG OAM write-corruption bug to the currently scanned OAM row.
+    ///
+    /// According to Pan Docs: OAM is split into 20 rows of 8 bytes each; during mode 2
+    /// the PPU reads one row per M-cycle (every 4 T-cycles).  When an IDU write is
+    /// triggered (INC/DEC rr with rr in $FE00–$FEFF), the currently accessed row is
+    /// corrupted as follows (treating the 8-byte row as four 16-bit little-endian words):
+    ///
+    ///   • First word  ← `((a ^ c) & (b ^ c)) ^ c`
+    ///   • Last three words ← last three words of the *preceding* row
+    ///
+    /// where a = first word of current row, b = first word of preceding row,
+    /// c = third word of preceding row.
+    ///
+    /// The first row (row 0, objects 0–1) is immune.
+    pub fn oam_write_corrupt(&mut self) {
+        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+            return;
+        }
+        let row = (self.dots / 4) as usize;
+        if row == 0 || row >= 20 {
+            // Row 0 is immune; row >= 20 is outside mode-2 range.
+            return;
+        }
+        let cur_start = row * 8;
+        let prev_start = (row - 1) * 8;
+
+        // Read a, b, c as little-endian 16-bit words.
+        let a = (self.oam[cur_start] as u16) | ((self.oam[cur_start + 1] as u16) << 8);
+        let b = (self.oam[prev_start] as u16) | ((self.oam[prev_start + 1] as u16) << 8);
+        let c = (self.oam[prev_start + 4] as u16) | ((self.oam[prev_start + 5] as u16) << 8);
+
+        let new_first = ((a ^ c) & (b ^ c)) ^ c;
+        self.oam[cur_start] = new_first as u8;
+        self.oam[cur_start + 1] = (new_first >> 8) as u8;
+        // Last three words (bytes 2–7) copied from preceding row.
+        for i in 2..8 {
+            self.oam[cur_start + i] = self.oam[prev_start + i];
+        }
+    }
+
+    /// Apply the DMG OAM read-corruption bug to the currently scanned OAM row.
+    ///
+    /// Triggered when a CPU memory *read* lands in $FE00–$FEFF during mode 2 (e.g.
+    /// `ld a, (hl)` with HL in OAM; or the read half of `ld a, [hli]`).
+    ///
+    ///   • First word  ← `b | (a & c)`
+    ///   • Last three words ← last three words of the preceding row
+    ///
+    /// Row 0 is immune (same as write corruption).
+    pub fn oam_read_corrupt(&mut self) {
+        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+            return;
+        }
+        let row = (self.dots / 4) as usize;
+        if row == 0 || row >= 20 {
+            return;
+        }
+        let cur_start = row * 8;
+        let prev_start = (row - 1) * 8;
+
+        let a = (self.oam[cur_start] as u16) | ((self.oam[cur_start + 1] as u16) << 8);
+        let b = (self.oam[prev_start] as u16) | ((self.oam[prev_start + 1] as u16) << 8);
+        let c = (self.oam[prev_start + 4] as u16) | ((self.oam[prev_start + 5] as u16) << 8);
+
+        let new_first = b | (a & c);
+        self.oam[cur_start] = new_first as u8;
+        self.oam[cur_start + 1] = (new_first >> 8) as u8;
+        for i in 2..8 {
+            self.oam[cur_start + i] = self.oam[prev_start + i];
+        }
+    }
+
+    /// Apply the DMG OAM "Read During Increase/Decrease" corruption pattern.
+    ///
+    /// Triggered when a CPU memory *read* from OAM happens in the same M-cycle as
+    /// an IDU operation (e.g. POP M2: bus_read[sp] + sp++).
+    ///
+    /// For rows 4–18 (inclusive):
+    ///   1. The first word of the *preceding* row is replaced with:
+    ///      `(b & (a | c | d)) | (a & c & d)`
+    ///      where a = first word two rows before, b = first word of preceding row,
+    ///      c = first word of current row, d = third word of preceding row.
+    ///   2. The preceding row (with corrupted first word) is copied to both the
+    ///      current row and two rows before.
+    ///
+    /// A normal read corruption is then applied to the current row regardless.
+    pub fn oam_rdi_corrupt(&mut self) {
+        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+            return;
+        }
+        let row_cur = (self.dots / 4) as usize;
+        if row_cur == 0 || row_cur >= 20 {
+            return;
+        }
+
+        // Complex pattern only for rows 4–18.
+        if row_cur >= 4 && row_cur < 19 {
+            let row_pre = row_cur - 1;
+            let row_pre2 = row_cur - 2;
+
+            let a = (self.oam[row_pre2 * 8] as u16) | ((self.oam[row_pre2 * 8 + 1] as u16) << 8);
+            let b = (self.oam[row_pre * 8] as u16) | ((self.oam[row_pre * 8 + 1] as u16) << 8);
+            let c = (self.oam[row_cur * 8] as u16) | ((self.oam[row_cur * 8 + 1] as u16) << 8);
+            let d = (self.oam[row_pre * 8 + 4] as u16) | ((self.oam[row_pre * 8 + 5] as u16) << 8);
+
+            let new_b = (b & (a | c | d)) | (a & c & d);
+            self.oam[row_pre * 8] = new_b as u8;
+            self.oam[row_pre * 8 + 1] = (new_b >> 8) as u8;
+
+            // Copy preceding row (with corrupted first word) to current and two-rows-before.
+            for i in 0..8 {
+                self.oam[row_pre2 * 8 + i] = self.oam[row_pre * 8 + i];
+                self.oam[row_cur * 8 + i] = self.oam[row_pre * 8 + i];
+            }
+        }
+
+        // Always apply read corruption to the current row.
+        let cur_start = row_cur * 8;
+        let prev_start = (row_cur - 1) * 8;
+        let a = (self.oam[cur_start] as u16) | ((self.oam[cur_start + 1] as u16) << 8);
+        let b = (self.oam[prev_start] as u16) | ((self.oam[prev_start + 1] as u16) << 8);
+        let c = (self.oam[prev_start + 4] as u16) | ((self.oam[prev_start + 5] as u16) << 8);
+        let new_first = b | (a & c);
+        self.oam[cur_start] = new_first as u8;
+        self.oam[cur_start + 1] = (new_first >> 8) as u8;
+        for i in 2..8 {
+            self.oam[cur_start + i] = self.oam[prev_start + i];
+        }
+    }
+
+    // Compute the sprite timing penalty (in T-cycles) for the current scanline.
+    // Each sprite on the scanline with OAM_X < 168 adds:
+    //   - 6T (tile fetch cost)
+    //   - max(0, 5 - min(5, (oam_x + scx) % 8)) T (alignment cost, once per unique X value)
+    // Only the first 10 sprites per scanline are counted (DMG hardware limit).
+    // The effective extra dots = (T_penalty / 4) * 4 (rounded down to 4T boundary).
+    fn compute_sprite_penalty(&self) -> u32 {
+        if !self.lcdc.bit1() {
+            return 0;
+        }
+        let sprite_size: i32 = if self.lcdc.bit2() { 16 } else { 8 };
+        let ly = self.ly as i32;
+        let mut penalty = 0u32;
+        let mut seen_x = [false; 256];
+        let mut count = 0u32;
+
+        for i in 0..40usize {
+            let oam_y = self.oam[i * 4] as i32;
+            let oam_x = self.oam[i * 4 + 1];
+
+            let sprite_top = oam_y - 16;
+            let sprite_bottom = sprite_top + sprite_size - 1;
+            if ly < sprite_top || ly > sprite_bottom {
+                continue;
+            }
+
+            // Sprites at OAM_X >= 168 are off-screen right and don't affect mode3 timing
+            if oam_x >= 168 {
+                continue;
+            }
+
+            count += 1;
+            if count > 10 {
+                break;
+            }
+
+            penalty += 6;
+
+            if !seen_x[oam_x as usize] {
+                seen_x[oam_x as usize] = true;
+                let fine = ((oam_x as u32) + (self.sx as u32)) % 8;
+                if fine < 5 {
+                    penalty += 5 - fine;
+                }
+            }
+        }
+        penalty
     }
 
     fn draw_bg(&mut self) {
@@ -681,15 +937,28 @@ impl Gpu {
 impl Memory for Gpu {
     fn lb(&self, a: u16) -> u8 {
         match a {
-            0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000],
-            0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00],
+            0x8000..=0x9fff => {
+                // VRAM is locked during mode 3, and also during the 4T pre-mode-3 period
+                // (mode 2, dots >= 76) where the bus is already claimed by the GPU,
+                // matching real DMG hardware bus timing.
+                let vram_locked = self.stat.mode == 3 || (self.stat.mode == 2 && self.dots >= 76);
+                if vram_locked { 0xff } else { self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] }
+            }
+            0xfe00..=0xfe9f => {
+                // OAM is locked (returns 0xFF) during mode 2 (OAM scan) and mode 3 (pixel transfer).
+                // It is also locked from dot 452 onward (LY increment / OAM scan preparation),
+                // even though STAT still reports mode 0 at that dot.
+                let oam_locked =
+                    self.stat.mode == 2 || self.stat.mode == 3 || (self.stat.mode == 0 && self.dots >= 452);
+                if oam_locked { 0xff } else { self.oam[a as usize - 0xfe00] }
+            }
             0xff40 => self.lcdc.data,
             0xff41 => {
                 let bit6 = if self.stat.enable_ly_interrupt { 0x40 } else { 0x00 };
                 let bit5 = if self.stat.enable_m2_interrupt { 0x20 } else { 0x00 };
                 let bit4 = if self.stat.enable_m1_interrupt { 0x10 } else { 0x00 };
                 let bit3 = if self.stat.enable_m0_interrupt { 0x08 } else { 0x00 };
-                let bit2 = if self.ly == self.lc { 0x04 } else { 0x00 };
+                let bit2 = if self.stat_lyc_match { 0x04 } else { 0x00 };
                 // Bit 7 is unused and always reads as 1
                 0x80 | bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
             }
@@ -737,9 +1006,23 @@ impl Memory for Gpu {
 
     fn sb(&mut self, a: u16, v: u8) {
         match a {
-            0x8000..=0x9fff => self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v,
-            0xfe00..=0xfe9f => self.oam[a as usize - 0xfe00] = v,
+            0x8000..=0x9fff => {
+                // VRAM writes are ignored during mode 3 (pixel transfer).
+                if self.stat.mode != 3 {
+                    self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v;
+                }
+            }
+            0xfe00..=0xfe9f => {
+                // OAM writes are ignored during mode 3 (pixel transfer) and during mode 2
+                // (OAM scan) while dots < 76. The last 4T of mode 2 (dots 76-79) the OAM
+                // scan is already complete and the CPU can write to OAM again.
+                let oam_write_blocked = self.stat.mode == 3 || (self.stat.mode == 2 && self.dots < 76);
+                if !oam_write_blocked {
+                    self.oam[a as usize - 0xfe00] = v;
+                }
+            }
             0xff40 => {
+                let was_on = self.lcdc.bit7();
                 self.lcdc.data = v;
                 if !self.lcdc.bit7() {
                     self.dots = 0;
@@ -748,6 +1031,14 @@ impl Memory for Gpu {
                     // Clean screen.
                     self.data = [[[0xffu8; 3]; SCREEN_W]; SCREEN_H];
                     self.v_blank = true;
+                    // LCD disabled: signal goes LOW unconditionally.
+                    self.stat_irq_update();
+                } else if !was_on {
+                    // LCD just enabled: line 0 starts in Mode 0, not Mode 2.
+                    // Evaluate LYC=LY coincidence for the initial display state.
+                    self.lcdon_first_line = true;
+                    self.stat_lyc_match = self.ly == self.lc;
+                    self.stat_irq_update();
                 }
             }
             0xff41 => {
@@ -755,11 +1046,22 @@ impl Memory for Gpu {
                 self.stat.enable_m2_interrupt = v & 0x20 != 0x00;
                 self.stat.enable_m1_interrupt = v & 0x10 != 0x00;
                 self.stat.enable_m0_interrupt = v & 0x08 != 0x00;
+                // Enabling a source that is currently active generates a rising edge.
+                self.stat_irq_update();
             }
             0xff42 => self.sy = v,
             0xff43 => self.sx = v,
             0xff44 => {}
-            0xff45 => self.lc = v,
+            0xff45 => {
+                self.lc = v;
+                // The comparison clock only runs while the LCD is on.
+                // Writing LYC while LCD is off must not change stat_lyc_match
+                // (STAT bit 2 is frozen during LCD-off).
+                if self.lcdc.bit7() {
+                    self.stat_lyc_match = self.ly == self.lc;
+                    self.stat_irq_update();
+                }
+            }
             0xff47 => self.bgp = v,
             0xff48 => self.op0 = v,
             0xff49 => self.op1 = v,

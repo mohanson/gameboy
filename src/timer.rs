@@ -46,7 +46,7 @@ impl Timer {
             term,
             intr,
             sdiv: match term {
-                Term::DMG => 0xabd4,
+                Term::DMG => 0xabcc,
                 Term::CGB => rng::u16(),
             },
             tima: 0,
@@ -57,6 +57,10 @@ impl Timer {
         }
     }
 
+    pub fn get_sdiv(&self) -> u16 {
+        self.sdiv
+    }
+
     pub fn edge(&mut self) {
         let bitpos = [9, 3, 5, 7][self.tac as usize & 0x03];
         let bitval = ((self.sdiv >> bitpos) & 1) as u8;
@@ -65,15 +69,13 @@ impl Timer {
             Term::DMG => bitval & enable,
             Term::CGB => bitval,
         };
-        let detect = if self.term == Term::DMG {
-            self.signal == 1 && signal == 0
-        } else {
-            self.signal == 1 && bitval == 0 && enable == 1
+        let detect = match self.term {
+            Term::DMG => self.signal == 1 && signal == 0,
+            Term::CGB => self.signal == 1 && bitval == 0 && enable == 1,
         };
         if detect {
-            let (addon, b) = self.tima.overflowing_add(1);
-            self.tima = addon;
-            if b {
+            self.tima = self.tima.wrapping_add(1);
+            if self.tima == 0 {
                 self.delays = 8;
             }
         }

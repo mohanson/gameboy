@@ -29,20 +29,21 @@ pub struct Mmu {
     pub timer: Timer,
     pub wram: [u8; 0x8000],
     pub wram_bank: usize,
+    pub speed: u8,
+    pub speed_switch: bool,
 }
 
 impl Mmu {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let cart = Cartridge::power_up(path);
-        let term = match cart.lb(0x0143) & 0x80 {
-            0x00 => Term::DMG,
-            0x80 => Term::CGB,
-            _ => unreachable!(),
+        let term = match cart.lb(0x0143) & 0xC0 {
+            0xC0 => Term::CGB,
+            _ => Term::DMG,
         };
         rog::debugln!("GameBoy term is {}", term);
         let intr = Rc::new(RefCell::new(Interrupt::power_up()));
         let mut r = Self {
-            apu: Apu::power_up(48000),
+            apu: Apu::power_up(48000, term),
             cartridge: cart,
             dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
             gpu: Gpu::power_up(term, intr.clone()),
@@ -50,12 +51,15 @@ impl Mmu {
             hram: [0x00; 0x7f],
             intr: intr.clone(),
             joypad: Joypad::power_up(intr.clone()),
-            serial: Serial::power_up(term),
+            serial: Serial::power_up(term, intr.clone()),
             term,
             timer: Timer::power_up(term, intr.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
+            speed: 1,
+            speed_switch: false,
         };
+        r.sb(0xff26, 0xf1); // Must be first: enables APU power so subsequent channel writes are not blocked.
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
         r.sb(0xff12, 0xf3);
@@ -64,7 +68,7 @@ impl Mmu {
         r.sb(0xff16, 0x3f);
         r.sb(0xff17, 0x00);
         r.sb(0xff18, 0xff);
-        r.sb(0xff19, 0xbf);
+        r.sb(0xff19, 0x3f); // No trigger (bit 7 = 0): Channel 2 is inactive post-boot.
         r.sb(0xff1a, 0x7f);
         r.sb(0xff1b, 0xff);
         r.sb(0xff1c, 0x9f);
@@ -73,10 +77,9 @@ impl Mmu {
         r.sb(0xff20, 0xff);
         r.sb(0xff21, 0x00);
         r.sb(0xff22, 0x00);
-        r.sb(0xff23, 0xbf);
+        r.sb(0xff23, 0x3f); // No trigger (bit 7 = 0): Channel 4 is inactive post-boot.
         r.sb(0xff24, 0x77);
         r.sb(0xff25, 0xf3);
-        r.sb(0xff26, 0xf1);
         r.sb(0xff40, 0x91);
         r.sb(0xff41, 0x85);
         r.sb(0xff42, 0x00);
@@ -93,12 +96,41 @@ impl Mmu {
 }
 
 impl Mmu {
-    pub fn next(&mut self, cycles: u32) -> u32 {
-        let cycles = cycles + self.run_dma();
+    fn video_cycles(&self, cycles: u32) -> u32 {
+        if self.speed == 2 { cycles / 2 } else { cycles }
+    }
+
+    pub fn try_switch_speed(&mut self) -> bool {
+        if self.term != Term::CGB || !self.speed_switch {
+            return false;
+        }
+        self.speed = if self.speed == 1 { 2 } else { 1 };
+        self.speed_switch = false;
+        true
+    }
+
+    /// Called once per CPU instruction after all per-M-cycle ticks have already advanced
+    /// timer/GPU/APU. Runs HDMA and resets the h_blank edge signal.
+    pub fn next(&mut self) -> u32 {
+        let hdma_cycles = self.run_dma();
+        self.gpu.h_blank = false;
+        if hdma_cycles > 0 {
+            self.timer.tick(hdma_cycles);
+            let video_cycles = self.video_cycles(hdma_cycles);
+            self.gpu.next(video_cycles);
+            self.apu.next(video_cycles);
+            self.gpu.h_blank = false;
+        }
+        hdma_cycles
+    }
+
+    fn advance_clock(&mut self, cycles: u32) {
         self.timer.tick(cycles);
-        self.gpu.next(cycles);
-        self.apu.next(cycles);
-        cycles
+        self.serial.tick(cycles);
+        let video_cycles = self.video_cycles(cycles);
+        self.gpu.next(video_cycles);
+        self.apu.next(video_cycles);
+        self.dma.o.advance_counter(cycles);
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
@@ -111,6 +143,31 @@ impl Mmu {
                 self.gpu.lb(a)
             }
             _ => unreachable!(),
+        }
+    }
+
+    /// Trigger the DMG OAM write-corruption bug.
+    /// Call this BEFORE the internal() cycle of an INC/DEC rr instruction
+    /// when the old register value is in $FE00–$FEFF and we are on a DMG.
+    pub fn trigger_oam_write_bug(&mut self) {
+        if self.term == Term::DMG {
+            self.gpu.oam_write_corrupt();
+        }
+    }
+
+    /// Trigger the DMG OAM read-corruption bug.
+    /// Call this when a CPU memory read lands in $FE00–$FEFF during mode 2.
+    pub fn trigger_oam_read_bug(&mut self) {
+        if self.term == Term::DMG {
+            self.gpu.oam_read_corrupt();
+        }
+    }
+
+    /// Trigger the DMG OAM "Read During Increase/Decrease" corruption bug.
+    /// Call this for POP-type instructions where the bus read and IDU happen simultaneously.
+    pub fn trigger_oam_rdi_bug(&mut self) {
+        if self.term == Term::DMG {
+            self.gpu.oam_rdi_corrupt();
         }
     }
 }
@@ -137,6 +194,7 @@ impl Memory for Mmu {
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => 0xff,
                 Term::CGB => match a {
+                    0xff4d => 0x7e | ((self.speed == 2) as u8) << 7 | self.speed_switch as u8,
                     0xff4f => self.gpu.lb(a),
                     0xff51..=0xff55 => self.hdma.lb(a),
                     0xff68..=0xff6b => self.gpu.lb(a),
@@ -158,19 +216,35 @@ impl Memory for Mmu {
             0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
             0xe000..=0xfdff => self.sb(a - 0x2000, v),
-            0xfe00..=0xfe9f => self.gpu.sb(a, v),
+            0xfe00..=0xfe9f => {
+                // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
+                let cnt = *self.dma.o.cnt.borrow();
+                if cnt > 0 && cnt <= 640 {
+                    return;
+                }
+                self.gpu.sb(a, v);
+            }
             0xfea0..=0xfeff => {}
             0xff00 => self.joypad.sb(a, v),
             0xff01..=0xff02 => self.serial.sb(a, v),
-            0xff04..=0xff07 => self.timer.sb(a, v),
+            0xff04..=0xff07 => {
+                if a == 0xff04 {
+                    self.serial.reset_sdiv();
+                }
+                self.timer.sb(a, v);
+            }
             0xff0f => self.intr.borrow_mut().sb(0xff0f, v),
-            0xff10..=0xff3f => self.apu.sb(a, v),
+            0xff10..=0xff3f => {
+                self.apu.sdiv_cache = self.timer.get_sdiv();
+                self.apu.sb(a, v);
+            }
             0xff40..=0xff45 => self.gpu.sb(a, v),
             0xff46 => self.dma.o.sb(a, v),
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => {}
                 Term::CGB => match a {
+                    0xff4d => self.speed_switch = v & 0x01 != 0,
                     0xff4f => self.gpu.sb(a, v),
                     0xff51..=0xff55 => self.hdma.sb(a, v),
                     0xff68..=0xff6b => self.gpu.sb(a, v),
@@ -183,9 +257,21 @@ impl Memory for Mmu {
             _ => {}
         }
     }
+
+    fn dma_sb(&mut self, a: u16, v: u8) {
+        match a {
+            // DMA writes to OAM bypass the CPU-write-blocking guard.
+            0xfe00..=0xfe9f => self.gpu.sb(a, v),
+            _ => self.sb(a, v),
+        }
+    }
 }
 
 impl Mmu {
+    pub fn tick(&mut self, cycles: u32) {
+        self.advance_clock(cycles);
+    }
+
     fn run_dma(&mut self) -> u32 {
         if !self.hdma.active {
             return 0;

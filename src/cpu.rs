@@ -1,56 +1,10 @@
 // The chip behind the NINTENDO GAME BOY: The sharp LR35902.
 use super::convention::{Memory, Term, hi, lo};
+use super::mmu::Mmu;
 use super::register::Flag::{C, H, N, Z};
 use super::register::Register;
 use std::cell::RefCell;
 use std::rc::Rc;
-
-// Nintendo documents describe the CPU & instructions speed in machine cycles while this document describes them in
-// clock cycles. Here is the translation:
-//   1 machine cycle = 4 clock cycles
-//                   GB CPU Speed    NOP Instruction
-// Machine Cycles    1.05MHz         1 cycle
-// Clock Cycles      4.19MHz         4 cycles
-//
-//  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-const OP_CYCLES: [u32; 256] = [
-    1, 3, 2, 2, 1, 1, 2, 1, 5, 2, 2, 2, 1, 1, 2, 1, // 0
-    1, 3, 2, 2, 1, 1, 2, 1, 3, 2, 2, 2, 1, 1, 2, 1, // 1
-    2, 3, 2, 2, 1, 1, 2, 1, 2, 2, 2, 2, 1, 1, 2, 1, // 2
-    2, 3, 2, 2, 3, 3, 3, 1, 2, 2, 2, 2, 1, 1, 2, 1, // 3
-    1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, // 4
-    1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, // 5
-    1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, // 6
-    2, 2, 2, 2, 2, 2, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, // 7
-    1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, // 8
-    1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, // 9
-    1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, // a
-    1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, // b
-    2, 3, 3, 4, 3, 4, 2, 4, 2, 4, 3, 0, 3, 6, 2, 4, // c
-    2, 3, 3, 0, 3, 4, 2, 4, 2, 4, 3, 0, 3, 0, 2, 4, // d
-    3, 3, 2, 0, 0, 4, 2, 4, 4, 1, 4, 0, 0, 0, 2, 4, // e
-    3, 3, 2, 1, 0, 4, 2, 4, 3, 2, 4, 1, 0, 0, 2, 4, // f
-];
-
-//  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-const CB_CYCLES: [u32; 256] = [
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 0
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 1
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 2
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 3
-    2, 2, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 3, 2, // 4
-    2, 2, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 3, 2, // 5
-    2, 2, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 3, 2, // 6
-    2, 2, 2, 2, 2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 3, 2, // 7
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 8
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // 9
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // a
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // b
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // c
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // d
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // e
-    2, 2, 2, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 4, 2, // f
-];
 
 pub struct Alu {}
 
@@ -514,45 +468,73 @@ impl Alu {
 
 pub struct Cpu {
     pub reg: Register,
-    pub mem: Rc<RefCell<dyn Memory>>,
+    pub mem: Rc<RefCell<Mmu>>,
     // Interrupt master enable flag, which controls whether the CPU will respond to interrupts.
     pub ime: u8,
     pub imp: u8,
     // Halt.
     pub low: u8,
     pub bug: u8,
+    // T-cycles consumed during the current step (reset at the start of each step()).
+    c: u32,
 }
 
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
 // If 'Flags affected' is not given for a command then none are affected.
 impl Cpu {
     fn fetch_b(&mut self) -> u8 {
-        let v = self.mem.borrow().lb(self.reg.pc);
+        let a = self.reg.pc;
         self.reg.pc = self.reg.pc.wrapping_add(1);
-        v
+        self.mem_read(a)
     }
 
     fn fetch_h(&mut self) -> u16 {
-        let v = self.mem.borrow().lh(self.reg.pc);
-        self.reg.pc = self.reg.pc.wrapping_add(2);
-        v
+        let lo = self.fetch_b() as u16;
+        let hi = self.fetch_b() as u16;
+        lo | (hi << 8)
     }
 
     fn stack_add(&mut self, v: u16) {
-        self.reg.sp = self.reg.sp.wrapping_sub(2);
-        self.mem.borrow_mut().sh(self.reg.sp, v);
+        self.reg.sp = self.reg.sp.wrapping_sub(1);
+        self.mem_write(self.reg.sp, (v >> 8) as u8);
+        self.reg.sp = self.reg.sp.wrapping_sub(1);
+        self.mem_write(self.reg.sp, v as u8);
     }
 
     fn stack_pop(&mut self) -> u16 {
-        let r = self.mem.borrow().lh(self.reg.sp);
-        self.reg.sp = self.reg.sp.wrapping_add(2);
-        r
+        let lo = self.mem_read(self.reg.sp) as u16;
+        self.reg.sp = self.reg.sp.wrapping_add(1);
+        let hi = self.mem_read(self.reg.sp) as u16;
+        self.reg.sp = self.reg.sp.wrapping_add(1);
+        lo | (hi << 8)
+    }
+
+    /// Read one byte from memory, advance subsystems by 4 T-cycles, and account for the M-cycle.
+    fn mem_read(&mut self, a: u16) -> u8 {
+        let v = self.mem.borrow().lb(a);
+        self.mem.borrow_mut().tick(4);
+        self.c += 4;
+        v
+    }
+
+    /// Write one byte to memory, advance subsystems by 4 T-cycles, and account for the M-cycle.
+    fn mem_write(&mut self, a: u16, v: u8) {
+        self.mem.borrow_mut().sb(a, v);
+        self.mem.borrow_mut().tick(4);
+        self.c += 4;
+    }
+
+    /// Spend one internal M-cycle (e.g. branch delay, SP arithmetic) without a bus access.
+    fn internal(&mut self) {
+        self.mem.borrow_mut().tick(4);
+        self.c += 4;
     }
 }
 
 impl Cpu {
-    // Execute the instruction pointed by the program counter (PC) and return the number of cycles it took.
-    fn exec_opcode(&mut self) -> u32 {
+    // Execute the instruction pointed by the program counter (PC).
+    // Cycles are accumulated into self.c via mem_read/mem_write/internal helpers.
+    fn exec_opcode(&mut self) {
         let mut opcode = self.fetch_b();
         // Apply pending IME enable from a previous EI instruction (1-instruction delay).
         // This must happen before fetching the opcode so that a consecutive EI does not
@@ -567,15 +549,21 @@ impl Cpu {
             self.bug = 0;
             self.reg.pc = self.reg.pc.wrapping_sub(1);
         }
-        let mut cycles = OP_CYCLES[opcode as usize];
         match opcode {
             0x00 => {}
             0x01 => {
                 let h = self.fetch_h();
                 self.reg.set_bc(h);
             }
-            0x02 => self.mem.borrow_mut().sb(self.reg.get_bc(), self.reg.a),
-            0x03 => self.reg.set_bc(self.reg.get_bc().wrapping_add(1)),
+            0x02 => self.mem_write(self.reg.get_bc(), self.reg.a),
+            0x03 => {
+                let old = self.reg.get_bc();
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.set_bc(old.wrapping_add(1));
+            }
             0x04 => self.reg.b = Alu::inc(self, self.reg.b),
             0x05 => self.reg.b = Alu::dec(self, self.reg.b),
             0x06 => self.reg.b = self.fetch_b(),
@@ -585,11 +573,22 @@ impl Cpu {
             }
             0x08 => {
                 let h = self.fetch_h();
-                self.mem.borrow_mut().sh(h, self.reg.sp);
+                self.mem_write(h, self.reg.sp as u8);
+                self.mem_write(h.wrapping_add(1), (self.reg.sp >> 8) as u8);
             }
-            0x09 => Alu::add_hl(self, self.reg.get_bc()),
-            0x0a => self.reg.a = self.mem.borrow().lb(self.reg.get_bc()),
-            0x0b => self.reg.set_bc(self.reg.get_bc().wrapping_sub(1)),
+            0x09 => {
+                self.internal();
+                Alu::add_hl(self, self.reg.get_bc());
+            }
+            0x0a => self.reg.a = self.mem_read(self.reg.get_bc()),
+            0x0b => {
+                let old = self.reg.get_bc();
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.set_bc(old.wrapping_sub(1));
+            }
             0x0c => self.reg.c = Alu::inc(self, self.reg.c),
             0x0d => self.reg.c = Alu::dec(self, self.reg.c),
             0x0e => self.reg.c = self.fetch_b(),
@@ -599,13 +598,21 @@ impl Cpu {
             }
             0x10 => {
                 assert!(self.fetch_b() == 0x00);
+                self.mem.borrow_mut().try_switch_speed();
             }
             0x11 => {
                 let h = self.fetch_h();
                 self.reg.set_de(h);
             }
-            0x12 => self.mem.borrow_mut().sb(self.reg.get_de(), self.reg.a),
-            0x13 => self.reg.set_de(self.reg.get_de().wrapping_add(1)),
+            0x12 => self.mem_write(self.reg.get_de(), self.reg.a),
+            0x13 => {
+                let old = self.reg.get_de();
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.set_de(old.wrapping_add(1));
+            }
             0x14 => self.reg.d = Alu::inc(self, self.reg.d),
             0x15 => self.reg.d = Alu::dec(self, self.reg.d),
             0x16 => self.reg.d = self.fetch_b(),
@@ -615,11 +622,22 @@ impl Cpu {
             }
             0x18 => {
                 let b = self.fetch_b();
+                self.internal();
                 Alu::jr(self, b);
             }
-            0x19 => Alu::add_hl(self, self.reg.get_de()),
-            0x1a => self.reg.a = self.mem.borrow().lb(self.reg.get_de()),
-            0x1b => self.reg.set_de(self.reg.get_de().wrapping_sub(1)),
+            0x19 => {
+                self.internal();
+                Alu::add_hl(self, self.reg.get_de());
+            }
+            0x1a => self.reg.a = self.mem_read(self.reg.get_de()),
+            0x1b => {
+                let old = self.reg.get_de();
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.set_de(old.wrapping_sub(1));
+            }
             0x1c => self.reg.e = Alu::inc(self, self.reg.e),
             0x1d => self.reg.e = Alu::dec(self, self.reg.e),
             0x1e => self.reg.e = self.fetch_b(),
@@ -630,8 +648,8 @@ impl Cpu {
             0x20 => {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(Z) {
+                    self.internal();
                     Alu::jr(self, b);
-                    cycles += 0x01;
                 }
             }
             0x21 => {
@@ -640,10 +658,17 @@ impl Cpu {
             }
             0x22 => {
                 let h = self.reg.get_hl();
-                self.mem.borrow_mut().sb(h, self.reg.a);
+                self.mem_write(h, self.reg.a);
                 self.reg.set_hl(h.wrapping_add(1));
             }
-            0x23 => self.reg.set_hl(self.reg.get_hl().wrapping_add(1)),
+            0x23 => {
+                let old = self.reg.get_hl();
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.set_hl(old.wrapping_add(1));
+            }
             0x24 => self.reg.h = Alu::inc(self, self.reg.h),
             0x25 => self.reg.h = Alu::dec(self, self.reg.h),
             0x26 => self.reg.h = self.fetch_b(),
@@ -651,17 +676,30 @@ impl Cpu {
             0x28 => {
                 let b = self.fetch_b();
                 if self.reg.get_flag(Z) {
+                    self.internal();
                     Alu::jr(self, b);
-                    cycles += 0x01;
                 }
             }
-            0x29 => Alu::add_hl(self, self.reg.get_hl()),
+            0x29 => {
+                self.internal();
+                Alu::add_hl(self, self.reg.get_hl());
+            }
             0x2a => {
                 let h = self.reg.get_hl();
-                self.reg.a = self.mem.borrow().lb(h);
+                self.reg.a = self.mem_read(h);
+                if h >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 self.reg.set_hl(h.wrapping_add(1));
             }
-            0x2b => self.reg.set_hl(self.reg.get_hl().wrapping_sub(1)),
+            0x2b => {
+                let old = self.reg.get_hl();
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.set_hl(old.wrapping_sub(1));
+            }
             0x2c => self.reg.l = Alu::inc(self, self.reg.l),
             0x2d => self.reg.l = Alu::dec(self, self.reg.l),
             0x2e => self.reg.l = self.fetch_b(),
@@ -669,49 +707,69 @@ impl Cpu {
             0x30 => {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(C) {
+                    self.internal();
                     Alu::jr(self, b);
-                    cycles += 0x01;
                 }
             }
             0x31 => self.reg.sp = self.fetch_h(),
             0x32 => {
                 let h = self.reg.get_hl();
-                self.mem.borrow_mut().sb(h, self.reg.a);
+                self.mem_write(h, self.reg.a);
                 self.reg.set_hl(h.wrapping_sub(1));
             }
-            0x33 => self.reg.sp = self.reg.sp.wrapping_add(1),
+            0x33 => {
+                let old = self.reg.sp;
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = old.wrapping_add(1);
+            }
             0x34 => {
                 let h = self.reg.get_hl();
-                let b = self.mem.borrow().lb(h);
+                let b = self.mem_read(h);
                 let b = Alu::inc(self, b);
-                self.mem.borrow_mut().sb(h, b);
+                self.mem_write(h, b);
             }
             0x35 => {
                 let h = self.reg.get_hl();
-                let b = self.mem.borrow().lb(h);
+                let b = self.mem_read(h);
                 let b = Alu::dec(self, b);
-                self.mem.borrow_mut().sb(h, b);
+                self.mem_write(h, b);
             }
             0x36 => {
                 let h = self.reg.get_hl();
                 let b = self.fetch_b();
-                self.mem.borrow_mut().sb(h, b);
+                self.mem_write(h, b);
             }
             0x37 => Alu::scf(self),
             0x38 => {
                 let b = self.fetch_b();
                 if self.reg.get_flag(C) {
+                    self.internal();
                     Alu::jr(self, b);
-                    cycles += 0x01;
                 }
             }
-            0x39 => Alu::add_hl(self, self.reg.sp),
+            0x39 => {
+                self.internal();
+                Alu::add_hl(self, self.reg.sp);
+            }
             0x3a => {
                 let h = self.reg.get_hl();
-                self.reg.a = self.mem.borrow().lb(h);
+                self.reg.a = self.mem_read(h);
+                if h >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
                 self.reg.set_hl(h.wrapping_sub(1));
             }
-            0x3b => self.reg.sp = self.reg.sp.wrapping_sub(1),
+            0x3b => {
+                let old = self.reg.sp;
+                self.internal();
+                if old >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = old.wrapping_sub(1);
+            }
             0x3c => self.reg.a = Alu::inc(self, self.reg.a),
             0x3d => self.reg.a = Alu::dec(self, self.reg.a),
             0x3e => self.reg.a = self.fetch_b(),
@@ -722,7 +780,7 @@ impl Cpu {
             0x43 => self.reg.b = self.reg.e,
             0x44 => self.reg.b = self.reg.h,
             0x45 => self.reg.b = self.reg.l,
-            0x46 => self.reg.b = self.mem.borrow().lb(self.reg.get_hl()),
+            0x46 => self.reg.b = self.mem_read(self.reg.get_hl()),
             0x47 => self.reg.b = self.reg.a,
             0x48 => self.reg.c = self.reg.b,
             0x49 => {}
@@ -730,7 +788,7 @@ impl Cpu {
             0x4b => self.reg.c = self.reg.e,
             0x4c => self.reg.c = self.reg.h,
             0x4d => self.reg.c = self.reg.l,
-            0x4e => self.reg.c = self.mem.borrow().lb(self.reg.get_hl()),
+            0x4e => self.reg.c = self.mem_read(self.reg.get_hl()),
             0x4f => self.reg.c = self.reg.a,
             0x50 => self.reg.d = self.reg.b,
             0x51 => self.reg.d = self.reg.c,
@@ -738,7 +796,7 @@ impl Cpu {
             0x53 => self.reg.d = self.reg.e,
             0x54 => self.reg.d = self.reg.h,
             0x55 => self.reg.d = self.reg.l,
-            0x56 => self.reg.d = self.mem.borrow().lb(self.reg.get_hl()),
+            0x56 => self.reg.d = self.mem_read(self.reg.get_hl()),
             0x57 => self.reg.d = self.reg.a,
             0x58 => self.reg.e = self.reg.b,
             0x59 => self.reg.e = self.reg.c,
@@ -746,7 +804,7 @@ impl Cpu {
             0x5b => {}
             0x5c => self.reg.e = self.reg.h,
             0x5d => self.reg.e = self.reg.l,
-            0x5e => self.reg.e = self.mem.borrow().lb(self.reg.get_hl()),
+            0x5e => self.reg.e = self.mem_read(self.reg.get_hl()),
             0x5f => self.reg.e = self.reg.a,
             0x60 => self.reg.h = self.reg.b,
             0x61 => self.reg.h = self.reg.c,
@@ -754,7 +812,7 @@ impl Cpu {
             0x63 => self.reg.h = self.reg.e,
             0x64 => {}
             0x65 => self.reg.h = self.reg.l,
-            0x66 => self.reg.h = self.mem.borrow().lb(self.reg.get_hl()),
+            0x66 => self.reg.h = self.mem_read(self.reg.get_hl()),
             0x67 => self.reg.h = self.reg.a,
             0x68 => self.reg.l = self.reg.b,
             0x69 => self.reg.l = self.reg.c,
@@ -762,14 +820,14 @@ impl Cpu {
             0x6b => self.reg.l = self.reg.e,
             0x6c => self.reg.l = self.reg.h,
             0x6d => {}
-            0x6e => self.reg.l = self.mem.borrow().lb(self.reg.get_hl()),
+            0x6e => self.reg.l = self.mem_read(self.reg.get_hl()),
             0x6f => self.reg.l = self.reg.a,
-            0x70 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.b),
-            0x71 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.c),
-            0x72 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.d),
-            0x73 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.e),
-            0x74 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.h),
-            0x75 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.l),
+            0x70 => self.mem_write(self.reg.get_hl(), self.reg.b),
+            0x71 => self.mem_write(self.reg.get_hl(), self.reg.c),
+            0x72 => self.mem_write(self.reg.get_hl(), self.reg.d),
+            0x73 => self.mem_write(self.reg.get_hl(), self.reg.e),
+            0x74 => self.mem_write(self.reg.get_hl(), self.reg.h),
+            0x75 => self.mem_write(self.reg.get_hl(), self.reg.l),
             0x76 => {
                 let intf = self.mem.borrow().lb(0xff0f);
                 let inte = self.mem.borrow().lb(0xffff);
@@ -781,14 +839,14 @@ impl Cpu {
                     self.low = 1;
                 }
             }
-            0x77 => self.mem.borrow_mut().sb(self.reg.get_hl(), self.reg.a),
+            0x77 => self.mem_write(self.reg.get_hl(), self.reg.a),
             0x78 => self.reg.a = self.reg.b,
             0x79 => self.reg.a = self.reg.c,
             0x7a => self.reg.a = self.reg.d,
             0x7b => self.reg.a = self.reg.e,
             0x7c => self.reg.a = self.reg.h,
             0x7d => self.reg.a = self.reg.l,
-            0x7e => self.reg.a = self.mem.borrow().lb(self.reg.get_hl()),
+            0x7e => self.reg.a = self.mem_read(self.reg.get_hl()),
             0x7f => {}
             0x80 => Alu::add(self, self.reg.b),
             0x81 => Alu::add(self, self.reg.c),
@@ -797,7 +855,7 @@ impl Cpu {
             0x84 => Alu::add(self, self.reg.h),
             0x85 => Alu::add(self, self.reg.l),
             0x86 => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::add(self, b);
             }
             0x87 => Alu::add(self, self.reg.a),
@@ -808,7 +866,7 @@ impl Cpu {
             0x8c => Alu::adc(self, self.reg.h),
             0x8d => Alu::adc(self, self.reg.l),
             0x8e => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::adc(self, b);
             }
             0x8f => Alu::adc(self, self.reg.a),
@@ -819,7 +877,7 @@ impl Cpu {
             0x94 => Alu::sub(self, self.reg.h),
             0x95 => Alu::sub(self, self.reg.l),
             0x96 => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::sub(self, b);
             }
             0x97 => Alu::sub(self, self.reg.a),
@@ -830,7 +888,7 @@ impl Cpu {
             0x9c => Alu::sbc(self, self.reg.h),
             0x9d => Alu::sbc(self, self.reg.l),
             0x9e => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::sbc(self, b);
             }
             0x9f => Alu::sbc(self, self.reg.a),
@@ -841,7 +899,7 @@ impl Cpu {
             0xa4 => Alu::and(self, self.reg.h),
             0xa5 => Alu::and(self, self.reg.l),
             0xa6 => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::and(self, b);
             }
             0xa7 => Alu::and(self, self.reg.a),
@@ -852,7 +910,7 @@ impl Cpu {
             0xac => Alu::xor(self, self.reg.h),
             0xad => Alu::xor(self, self.reg.l),
             0xae => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::xor(self, b);
             }
             0xaf => Alu::xor(self, self.reg.a),
@@ -863,7 +921,7 @@ impl Cpu {
             0xb4 => Alu::or(self, self.reg.h),
             0xb5 => Alu::or(self, self.reg.l),
             0xb6 => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::or(self, b);
             }
             0xb7 => Alu::or(self, self.reg.a),
@@ -874,63 +932,102 @@ impl Cpu {
             0xbc => Alu::cp(self, self.reg.h),
             0xbd => Alu::cp(self, self.reg.l),
             0xbe => {
-                let b = self.mem.borrow().lb(self.reg.get_hl());
+                let b = self.mem_read(self.reg.get_hl());
                 Alu::cp(self, b);
             }
             0xbf => Alu::cp(self, self.reg.a),
             0xc0 => {
+                self.internal();
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
-                    cycles += 0x03;
+                    self.internal();
                 }
             }
             0xc1 => {
-                let h = self.stack_pop();
-                self.reg.set_bc(h);
+                let sp0 = self.reg.sp;
+                let lo = self.mem_read(sp0) as u16;
+                self.reg.sp = sp0.wrapping_add(1);
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
+                let sp1 = self.reg.sp;
+                let hi = self.mem_read(sp1) as u16;
+                self.reg.sp = sp1.wrapping_add(1);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
+                self.reg.set_bc(lo | (hi << 8));
             }
             0xc2 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(Z) {
+                    self.internal();
                     self.reg.pc = h;
-                    cycles += 0x01;
                 }
             }
-            0xc3 => self.reg.pc = self.fetch_h(),
+            0xc3 => {
+                let h = self.fetch_h();
+                self.internal();
+                self.reg.pc = h;
+            }
             0xc4 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(Z) {
+                    self.internal();
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
-                    cycles += 0x03;
                 }
             }
-            0xc5 => self.stack_add(self.reg.get_bc()),
+            0xc5 => {
+                self.internal();
+                let val = self.reg.get_bc();
+                let sp0 = self.reg.sp;
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp0.wrapping_sub(1);
+                let sp1 = self.reg.sp;
+                self.mem_write(sp1, (val >> 8) as u8);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp1.wrapping_sub(1);
+                let sp2 = self.reg.sp;
+                self.mem_write(sp2, val as u8);
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+            }
             0xc6 => {
                 let b = self.fetch_b();
                 Alu::add(self, b);
             }
             0xc7 => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x00;
             }
             0xc8 => {
+                self.internal();
                 if self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
-                    cycles += 0x03;
+                    self.internal();
                 }
             }
-            0xc9 => self.reg.pc = self.stack_pop(),
+            0xc9 => {
+                self.reg.pc = self.stack_pop();
+                self.internal();
+            }
             0xca => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(Z) {
+                    self.internal();
                     self.reg.pc = h;
-                    cycles += 0x01;
                 }
             }
             // Extended Bit Operations
             0xcb => {
                 opcode = self.fetch_b();
-                cycles += CB_CYCLES[opcode as usize];
                 match opcode {
                     // RLC r8
                     0x00 => self.reg.b = Alu::rlc(self, self.reg.b),
@@ -941,9 +1038,9 @@ impl Cpu {
                     0x05 => self.reg.l = Alu::rlc(self, self.reg.l),
                     0x06 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::rlc(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x07 => self.reg.a = Alu::rlc(self, self.reg.a),
                     0x08 => self.reg.b = Alu::rrc(self, self.reg.b),
@@ -954,9 +1051,9 @@ impl Cpu {
                     0x0d => self.reg.l = Alu::rrc(self, self.reg.l),
                     0x0e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::rrc(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x0f => self.reg.a = Alu::rrc(self, self.reg.a),
                     0x10 => self.reg.b = Alu::rl(self, self.reg.b),
@@ -967,9 +1064,9 @@ impl Cpu {
                     0x15 => self.reg.l = Alu::rl(self, self.reg.l),
                     0x16 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::rl(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x17 => self.reg.a = Alu::rl(self, self.reg.a),
                     0x18 => self.reg.b = Alu::rr(self, self.reg.b),
@@ -980,9 +1077,9 @@ impl Cpu {
                     0x1d => self.reg.l = Alu::rr(self, self.reg.l),
                     0x1e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::rr(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x1f => self.reg.a = Alu::rr(self, self.reg.a),
                     0x20 => self.reg.b = Alu::sla(self, self.reg.b),
@@ -993,9 +1090,9 @@ impl Cpu {
                     0x25 => self.reg.l = Alu::sla(self, self.reg.l),
                     0x26 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::sla(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x27 => self.reg.a = Alu::sla(self, self.reg.a),
                     0x28 => self.reg.b = Alu::sra(self, self.reg.b),
@@ -1006,9 +1103,9 @@ impl Cpu {
                     0x2d => self.reg.l = Alu::sra(self, self.reg.l),
                     0x2e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::sra(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x2f => self.reg.a = Alu::sra(self, self.reg.a),
                     0x30 => self.reg.b = Alu::swap(self, self.reg.b),
@@ -1019,9 +1116,9 @@ impl Cpu {
                     0x35 => self.reg.l = Alu::swap(self, self.reg.l),
                     0x36 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::swap(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x37 => self.reg.a = Alu::swap(self, self.reg.a),
                     0x38 => self.reg.b = Alu::srl(self, self.reg.b),
@@ -1032,9 +1129,9 @@ impl Cpu {
                     0x3d => self.reg.l = Alu::srl(self, self.reg.l),
                     0x3e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::srl(self, b);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x3f => self.reg.a = Alu::srl(self, self.reg.a),
                     0x40 => Alu::bit(self, self.reg.b, 0),
@@ -1045,7 +1142,7 @@ impl Cpu {
                     0x45 => Alu::bit(self, self.reg.l, 0),
                     0x46 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 0);
                     }
                     0x47 => Alu::bit(self, self.reg.a, 0),
@@ -1057,7 +1154,7 @@ impl Cpu {
                     0x4d => Alu::bit(self, self.reg.l, 1),
                     0x4e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 1);
                     }
                     0x4f => Alu::bit(self, self.reg.a, 1),
@@ -1069,7 +1166,7 @@ impl Cpu {
                     0x55 => Alu::bit(self, self.reg.l, 2),
                     0x56 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 2);
                     }
                     0x57 => Alu::bit(self, self.reg.a, 2),
@@ -1081,7 +1178,7 @@ impl Cpu {
                     0x5d => Alu::bit(self, self.reg.l, 3),
                     0x5e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 3);
                     }
                     0x5f => Alu::bit(self, self.reg.a, 3),
@@ -1093,7 +1190,7 @@ impl Cpu {
                     0x65 => Alu::bit(self, self.reg.l, 4),
                     0x66 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 4);
                     }
                     0x67 => Alu::bit(self, self.reg.a, 4),
@@ -1105,7 +1202,7 @@ impl Cpu {
                     0x6d => Alu::bit(self, self.reg.l, 5),
                     0x6e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 5);
                     }
                     0x6f => Alu::bit(self, self.reg.a, 5),
@@ -1117,7 +1214,7 @@ impl Cpu {
                     0x75 => Alu::bit(self, self.reg.l, 6),
                     0x76 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 6);
                     }
                     0x77 => Alu::bit(self, self.reg.a, 6),
@@ -1129,7 +1226,7 @@ impl Cpu {
                     0x7d => Alu::bit(self, self.reg.l, 7),
                     0x7e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         Alu::bit(self, b, 7);
                     }
                     0x7f => Alu::bit(self, self.reg.a, 7),
@@ -1141,9 +1238,9 @@ impl Cpu {
                     0x85 => self.reg.l = Alu::res(self.reg.l, 0),
                     0x86 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 0);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x87 => self.reg.a = Alu::res(self.reg.a, 0),
                     0x88 => self.reg.b = Alu::res(self.reg.b, 1),
@@ -1154,9 +1251,9 @@ impl Cpu {
                     0x8d => self.reg.l = Alu::res(self.reg.l, 1),
                     0x8e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 1);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x8f => self.reg.a = Alu::res(self.reg.a, 1),
                     0x90 => self.reg.b = Alu::res(self.reg.b, 2),
@@ -1167,9 +1264,9 @@ impl Cpu {
                     0x95 => self.reg.l = Alu::res(self.reg.l, 2),
                     0x96 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 2);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x97 => self.reg.a = Alu::res(self.reg.a, 2),
                     0x98 => self.reg.b = Alu::res(self.reg.b, 3),
@@ -1180,9 +1277,9 @@ impl Cpu {
                     0x9d => self.reg.l = Alu::res(self.reg.l, 3),
                     0x9e => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 3);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0x9f => self.reg.a = Alu::res(self.reg.a, 3),
                     0xa0 => self.reg.b = Alu::res(self.reg.b, 4),
@@ -1193,9 +1290,9 @@ impl Cpu {
                     0xa5 => self.reg.l = Alu::res(self.reg.l, 4),
                     0xa6 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 4);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xa7 => self.reg.a = Alu::res(self.reg.a, 4),
                     0xa8 => self.reg.b = Alu::res(self.reg.b, 5),
@@ -1206,9 +1303,9 @@ impl Cpu {
                     0xad => self.reg.l = Alu::res(self.reg.l, 5),
                     0xae => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 5);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xaf => self.reg.a = Alu::res(self.reg.a, 5),
                     0xb0 => self.reg.b = Alu::res(self.reg.b, 6),
@@ -1219,9 +1316,9 @@ impl Cpu {
                     0xb5 => self.reg.l = Alu::res(self.reg.l, 6),
                     0xb6 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 6);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xb7 => self.reg.a = Alu::res(self.reg.a, 6),
                     0xb8 => self.reg.b = Alu::res(self.reg.b, 7),
@@ -1232,9 +1329,9 @@ impl Cpu {
                     0xbd => self.reg.l = Alu::res(self.reg.l, 7),
                     0xbe => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::res(b, 7);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xbf => self.reg.a = Alu::res(self.reg.a, 7),
                     0xc0 => self.reg.b = Alu::set(self.reg.b, 0),
@@ -1245,9 +1342,9 @@ impl Cpu {
                     0xc5 => self.reg.l = Alu::set(self.reg.l, 0),
                     0xc6 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 0);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xc7 => self.reg.a = Alu::set(self.reg.a, 0),
                     0xc8 => self.reg.b = Alu::set(self.reg.b, 1),
@@ -1258,9 +1355,9 @@ impl Cpu {
                     0xcd => self.reg.l = Alu::set(self.reg.l, 1),
                     0xce => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 1);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xcf => self.reg.a = Alu::set(self.reg.a, 1),
                     0xd0 => self.reg.b = Alu::set(self.reg.b, 2),
@@ -1271,9 +1368,9 @@ impl Cpu {
                     0xd5 => self.reg.l = Alu::set(self.reg.l, 2),
                     0xd6 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 2);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xd7 => self.reg.a = Alu::set(self.reg.a, 2),
                     0xd8 => self.reg.b = Alu::set(self.reg.b, 3),
@@ -1284,9 +1381,9 @@ impl Cpu {
                     0xdd => self.reg.l = Alu::set(self.reg.l, 3),
                     0xde => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 3);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xdf => self.reg.a = Alu::set(self.reg.a, 3),
                     0xe0 => self.reg.b = Alu::set(self.reg.b, 4),
@@ -1297,9 +1394,9 @@ impl Cpu {
                     0xe5 => self.reg.l = Alu::set(self.reg.l, 4),
                     0xe6 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 4);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xe7 => self.reg.a = Alu::set(self.reg.a, 4),
                     0xe8 => self.reg.b = Alu::set(self.reg.b, 5),
@@ -1310,9 +1407,9 @@ impl Cpu {
                     0xed => self.reg.l = Alu::set(self.reg.l, 5),
                     0xee => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 5);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xef => self.reg.a = Alu::set(self.reg.a, 5),
                     0xf0 => self.reg.b = Alu::set(self.reg.b, 6),
@@ -1323,9 +1420,9 @@ impl Cpu {
                     0xf5 => self.reg.l = Alu::set(self.reg.l, 6),
                     0xf6 => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 6);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xf7 => self.reg.a = Alu::set(self.reg.a, 6),
                     0xf8 => self.reg.b = Alu::set(self.reg.b, 7),
@@ -1336,9 +1433,9 @@ impl Cpu {
                     0xfd => self.reg.l = Alu::set(self.reg.l, 7),
                     0xfe => {
                         let h = self.reg.get_hl();
-                        let b = self.mem.borrow().lb(h);
+                        let b = self.mem_read(h);
                         let b = Alu::set(b, 7);
-                        self.mem.borrow_mut().sb(h, b);
+                        self.mem_write(h, b);
                     }
                     0xff => self.reg.a = Alu::set(self.reg.a, 7),
                 }
@@ -1346,13 +1443,14 @@ impl Cpu {
             0xcc => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(Z) {
+                    self.internal();
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
-                    cycles += 0x03;
                 }
             }
             0xcd => {
                 let h = self.fetch_h();
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = h;
             }
@@ -1361,24 +1459,37 @@ impl Cpu {
                 Alu::adc(self, b);
             }
             0xcf => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x08;
             }
             0xd0 => {
+                self.internal();
                 if !self.reg.get_flag(C) {
                     self.reg.pc = self.stack_pop();
-                    cycles += 0x03;
+                    self.internal();
                 }
             }
             0xd1 => {
-                let h = self.stack_pop();
-                self.reg.set_de(h);
+                let sp0 = self.reg.sp;
+                let lo = self.mem_read(sp0) as u16;
+                self.reg.sp = sp0.wrapping_add(1);
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
+                let sp1 = self.reg.sp;
+                let hi = self.mem_read(sp1) as u16;
+                self.reg.sp = sp1.wrapping_add(1);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
+                self.reg.set_de(lo | (hi << 8));
             }
             0xd2 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(C) {
+                    self.internal();
                     self.reg.pc = h;
-                    cycles += 0x01;
                 }
             }
             0xd3 => unreachable!(),
@@ -1386,44 +1497,66 @@ impl Cpu {
             0xd4 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(C) {
+                    self.internal();
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
-                    cycles += 0x03;
                 }
             }
-            0xd5 => self.stack_add(self.reg.get_de()),
+            0xd5 => {
+                self.internal();
+                let val = self.reg.get_de();
+                let sp0 = self.reg.sp;
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp0.wrapping_sub(1);
+                let sp1 = self.reg.sp;
+                self.mem_write(sp1, (val >> 8) as u8);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp1.wrapping_sub(1);
+                let sp2 = self.reg.sp;
+                self.mem_write(sp2, val as u8);
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+            }
             0xd6 => {
                 let b = self.fetch_b();
                 Alu::sub(self, b);
             }
             0xd7 => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x10;
             }
             0xd8 => {
+                self.internal();
                 if self.reg.get_flag(C) {
                     self.reg.pc = self.stack_pop();
-                    cycles += 0x03;
+                    self.internal();
                 }
             }
             0xd9 => {
                 self.reg.pc = self.stack_pop();
+                self.internal();
                 self.ime = 1;
             }
             0xda => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(C) {
+                    self.internal();
                     self.reg.pc = h;
-                    cycles += 0x01;
                 }
             }
             0xdb => unreachable!(),
             0xdc => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(C) {
+                    self.internal();
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
-                    cycles += 0x03;
                 }
             }
             0xdd => unreachable!(),
@@ -1432,34 +1565,70 @@ impl Cpu {
                 Alu::sbc(self, b);
             }
             0xdf => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x18;
             }
             0xe0 => {
                 let h = 0xff00 | u16::from(self.fetch_b());
-                self.mem.borrow_mut().sb(h, self.reg.a);
+                self.mem_write(h, self.reg.a);
             }
             0xe1 => {
-                let h = self.stack_pop();
-                self.reg.set_hl(h);
+                let sp0 = self.reg.sp;
+                let lo = self.mem_read(sp0) as u16;
+                self.reg.sp = sp0.wrapping_add(1);
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
+                let sp1 = self.reg.sp;
+                let hi = self.mem_read(sp1) as u16;
+                self.reg.sp = sp1.wrapping_add(1);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
+                self.reg.set_hl(lo | (hi << 8));
             }
-            0xe2 => self.mem.borrow_mut().sb(0xff00 | u16::from(self.reg.c), self.reg.a),
+            0xe2 => self.mem_write(0xff00 | u16::from(self.reg.c), self.reg.a),
             0xe3 => unreachable!(),
             0xe4 => unreachable!(),
-            0xe5 => self.stack_add(self.reg.get_hl()),
+            0xe5 => {
+                self.internal();
+                let val = self.reg.get_hl();
+                let sp0 = self.reg.sp;
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp0.wrapping_sub(1);
+                let sp1 = self.reg.sp;
+                self.mem_write(sp1, (val >> 8) as u8);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp1.wrapping_sub(1);
+                let sp2 = self.reg.sp;
+                self.mem_write(sp2, val as u8);
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+            }
             0xe6 => {
                 let b = self.fetch_b();
                 Alu::and(self, b);
             }
             0xe7 => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x20;
             }
-            0xe8 => Alu::add_sp(self),
+            0xe8 => {
+                Alu::add_sp(self);
+                self.internal();
+                self.internal();
+            }
             0xe9 => self.reg.pc = self.reg.get_hl(),
             0xea => {
                 let h = self.fetch_h();
-                self.mem.borrow_mut().sb(h, self.reg.a);
+                self.mem_write(h, self.reg.a);
             }
             0xeb => unreachable!(),
             0xec => unreachable!(),
@@ -1469,29 +1638,61 @@ impl Cpu {
                 Alu::xor(self, b);
             }
             0xef => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x28;
             }
             0xf0 => {
                 let h = 0xff00 | u16::from(self.fetch_b());
-                self.reg.a = self.mem.borrow().lb(h);
+                self.reg.a = self.mem_read(h);
             }
             0xf1 => {
-                let h = self.stack_pop();
-                self.reg.set_af(h);
+                let sp0 = self.reg.sp;
+                let lo = self.mem_read(sp0) as u16;
+                self.reg.sp = sp0.wrapping_add(1);
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_rdi_bug();
+                }
+                let sp1 = self.reg.sp;
+                let hi = self.mem_read(sp1) as u16;
+                self.reg.sp = sp1.wrapping_add(1);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_read_bug();
+                }
+                self.reg.set_af(lo | (hi << 8));
             }
-            0xf2 => self.reg.a = self.mem.borrow().lb(0xff00 | u16::from(self.reg.c)),
+            0xf2 => self.reg.a = self.mem_read(0xff00 | u16::from(self.reg.c)),
             0xf3 => {
                 self.ime = 0;
                 self.imp = 0;
             }
             0xf4 => unreachable!(),
-            0xf5 => self.stack_add(self.reg.get_af()),
+            0xf5 => {
+                self.internal();
+                let val = self.reg.get_af();
+                let sp0 = self.reg.sp;
+                if sp0 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp0.wrapping_sub(1);
+                let sp1 = self.reg.sp;
+                self.mem_write(sp1, (val >> 8) as u8);
+                if sp1 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+                self.reg.sp = sp1.wrapping_sub(1);
+                let sp2 = self.reg.sp;
+                self.mem_write(sp2, val as u8);
+                if sp2 >> 8 == 0xfe {
+                    self.mem.borrow_mut().trigger_oam_write_bug();
+                }
+            }
             0xf6 => {
                 let b = self.fetch_b();
                 Alu::or(self, b);
             }
             0xf7 => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x30;
             }
@@ -1503,11 +1704,15 @@ impl Cpu {
                 self.reg.set_flag(N, false);
                 self.reg.set_flag(Z, false);
                 self.reg.set_hl(a.wrapping_add(b));
+                self.internal();
             }
-            0xf9 => self.reg.sp = self.reg.get_hl(),
+            0xf9 => {
+                self.internal();
+                self.reg.sp = self.reg.get_hl();
+            }
             0xfa => {
                 let h = self.fetch_h();
-                self.reg.a = self.mem.borrow().lb(h);
+                self.reg.a = self.mem_read(h);
             }
             0xfb => self.imp = 2,
             0xfc => unreachable!(),
@@ -1517,6 +1722,7 @@ impl Cpu {
                 Alu::cp(self, b);
             }
             0xff => {
+                self.internal();
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x38;
             }
@@ -1524,7 +1730,6 @@ impl Cpu {
         if self.imp == 2 {
             self.imp = 1;
         }
-        cycles
     }
 
     // The IME (interrupt master enable) flag is reset by DI and prohibits all interrupts. It is set by EI and
@@ -1534,35 +1739,41 @@ impl Cpu {
     // 3. Reset the IME flag and prevent all interrupts.
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
-    fn handle_trap(&mut self) -> u32 {
+    fn handle_trap(&mut self) -> bool {
         if self.low == 0 && self.ime == 0 {
-            return 0;
+            return false;
         }
         let intf = self.mem.borrow().lb(0xff0f);
         let inte = self.mem.borrow().lb(0xffff);
         let ivec = intf & inte & 0x1f;
         if ivec == 0x00 {
-            return 0;
+            return false;
         }
         self.low = 0;
         if self.ime == 0 {
-            return 0;
+            return false;
         }
         self.ime = 0;
+
+        // Two internal cycles before pushing PC.
+        self.internal();
+        self.internal();
 
         // Consume an interrupter, the rest is written back to the register.
         self.reg.sp = self.reg.sp.wrapping_sub(1);
         // Push high byte of pc first. If sp-1 = 0xffff (ie register), this write may modify ie.
-        self.mem.borrow_mut().sb(self.reg.sp, hi(self.reg.pc));
+        self.mem_write(self.reg.sp, hi(self.reg.pc));
         let intf = self.mem.borrow().lb(0xff0f);
         let inte = self.mem.borrow().lb(0xffff);
         let ivec = intf & inte & 0x1f;
         self.reg.sp = self.reg.sp.wrapping_sub(1);
-        self.mem.borrow_mut().sb(self.reg.sp, lo(self.reg.pc));
+        self.mem_write(self.reg.sp, lo(self.reg.pc));
+        // One internal cycle to load the vector address into PC.
+        self.internal();
         // No interrupt pending after the high-byte push, jump to 0x0000.
         if ivec == 0x00 {
             self.reg.pc = 0x0000;
-            return 5;
+            return true;
         }
         let isig = ivec.trailing_zeros();
         let intf = intf & !(1 << isig);
@@ -1574,28 +1785,30 @@ impl Cpu {
         //  Serial: 0x58
         //  JOYPAD: 0x60
         self.reg.pc = 0x0040 | ((isig as u16) << 3);
-        return 5;
+        true
     }
 }
 
 impl Cpu {
-    pub fn power_up(term: Term, mem: Rc<RefCell<dyn Memory>>) -> Self {
+    pub fn power_up(term: Term, mem: Rc<RefCell<Mmu>>) -> Self {
         let mut reg = Register::power_up(term);
         let chk = mem.borrow().lb(0x014d);
         if term == Term::DMG && chk != 0x00 {
             reg.f = 0xb0;
         }
-        Self { reg, mem, ime: 0, imp: 0, low: 0, bug: 0 }
+        Self { reg, mem, ime: 0, imp: 0, low: 0, bug: 0, c: 0 }
     }
 
     pub fn step(&mut self) -> u32 {
-        let c = self.handle_trap();
-        if c != 0 {
-            return 4 * c;
+        self.c = 0;
+        if self.handle_trap() {
+            return self.c;
         }
         if self.low == 1 {
-            return 4 * OP_CYCLES[0];
+            self.internal();
+            return self.c;
         }
-        4 * self.exec_opcode()
+        self.exec_opcode();
+        self.c
     }
 }

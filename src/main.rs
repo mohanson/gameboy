@@ -19,7 +19,7 @@ struct Argument {
 fn main() {
     rog::reg("gameboy");
     rog::reg("gameboy::cartridge");
-    rog::reg("gameboy::mmunit");
+    rog::reg("gameboy::mmu");
     let mut argu = Argument { audio: false, mode: String::from("minifb"), rom: String::from(""), scale: 2, speed: 1 };
     {
         let mut ap = argparse::ArgumentParser::new();
@@ -60,8 +60,9 @@ fn mode_blargg_serial_output(argu: &Argument) {
     loop {
         mbrd.step();
         if mbrd.mmu.borrow().serial.ctrl == 0x81 {
-            print!("{}", char::from(mbrd.mmu.borrow().serial.data));
-            buff.push(char::from(mbrd.mmu.borrow().serial.data));
+            let tx = mbrd.mmu.borrow().serial.tx_byte;
+            print!("{}", char::from(tx));
+            buff.push(char::from(tx));
             // Clear the transfer start flag to indicate that the transfer is complete.
             mbrd.mmu.borrow_mut().serial.ctrl = 0x01;
             std::io::stdout().flush().unwrap();
@@ -141,7 +142,7 @@ fn mode_minifb(argu: &Argument) {
         let config: cpal::StreamConfig = config.into();
         rog::debugln!("Stream config: {:?}", config);
 
-        let apu = Apu::power_up(config.sample_rate.0);
+        let apu = Apu::power_up(config.sample_rate.0, mbrd.mmu.borrow().term);
         let apu_data = apu.buffer.clone();
         mbrd.mmu.borrow_mut().apu = apu;
 
@@ -247,11 +248,11 @@ fn mode_mts(argu: &Argument) {
     loop {
         mbrd.step();
         let reg = &mbrd.cpu.reg;
+        let pc = reg.pc;
         let sig = [reg.b, reg.c, reg.d, reg.e, reg.h, reg.l];
         if sig != passed && sig != failed {
             continue;
         }
-        let pc = reg.pc;
         if mbrd.mmu.borrow().lb(pc) != 0x18 || mbrd.mmu.borrow().lb(pc.wrapping_add(1)) != 0xfe {
             continue;
         }
