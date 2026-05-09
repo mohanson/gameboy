@@ -34,10 +34,9 @@ pub struct Mmu {
 impl Mmu {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
         let cart = Cartridge::power_up(path);
-        let term = match cart.lb(0x0143) & 0x80 {
-            0x00 => Term::DMG,
-            0x80 => Term::CGB,
-            _ => unreachable!(),
+        let term = match cart.lb(0x0143) & 0xC0 {
+            0xC0 => Term::CGB,
+            _ => Term::DMG,
         };
         rog::debugln!("GameBoy term is {}", term);
         let intr = Rc::new(RefCell::new(Interrupt::power_up()));
@@ -125,6 +124,31 @@ impl Mmu {
                 self.gpu.lb(a)
             }
             _ => unreachable!(),
+        }
+    }
+
+    /// Trigger the DMG OAM write-corruption bug.
+    /// Call this BEFORE the internal() cycle of an INC/DEC rr instruction
+    /// when the old register value is in $FE00–$FEFF and we are on a DMG.
+    pub fn trigger_oam_write_bug(&mut self) {
+        if self.term == Term::DMG {
+            self.gpu.oam_write_corrupt();
+        }
+    }
+
+    /// Trigger the DMG OAM read-corruption bug.
+    /// Call this when a CPU memory read lands in $FE00–$FEFF during mode 2.
+    pub fn trigger_oam_read_bug(&mut self) {
+        if self.term == Term::DMG {
+            self.gpu.oam_read_corrupt();
+        }
+    }
+
+    /// Trigger the DMG OAM "Read During Increase/Decrease" corruption bug.
+    /// Call this for POP-type instructions where the bus read and IDU happen simultaneously.
+    pub fn trigger_oam_rdi_bug(&mut self) {
+        if self.term == Term::DMG {
+            self.gpu.oam_rdi_corrupt();
         }
     }
 }

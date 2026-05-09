@@ -490,6 +490,10 @@ impl Gpu {
         // Mode 3  _33____33____33____33____33____33__________________3___
         // Mode 0  ___000___000___000___000___000___000________________000
         // Mode 1  ____________________________________11111111111111_____
+        // When LCD is disabled the PPU is completely halted; dots and LY freeze.
+        if !self.lcdc.bit7() {
+            return;
+        }
         if cycles == 0 {
             return;
         }
@@ -572,6 +576,136 @@ impl Gpu {
         let result = self.v_blank;
         self.v_blank = false;
         result
+    }
+
+    /// Apply the DMG OAM write-corruption bug to the currently scanned OAM row.
+    ///
+    /// According to Pan Docs: OAM is split into 20 rows of 8 bytes each; during mode 2
+    /// the PPU reads one row per M-cycle (every 4 T-cycles).  When an IDU write is
+    /// triggered (INC/DEC rr with rr in $FE00–$FEFF), the currently accessed row is
+    /// corrupted as follows (treating the 8-byte row as four 16-bit little-endian words):
+    ///
+    ///   • First word  ← `((a ^ c) & (b ^ c)) ^ c`
+    ///   • Last three words ← last three words of the *preceding* row
+    ///
+    /// where a = first word of current row, b = first word of preceding row,
+    /// c = third word of preceding row.
+    ///
+    /// The first row (row 0, objects 0–1) is immune.
+    pub fn oam_write_corrupt(&mut self) {
+        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+            return;
+        }
+        let row = (self.dots / 4) as usize;
+        if row == 0 || row >= 20 {
+            // Row 0 is immune; row >= 20 is outside mode-2 range.
+            return;
+        }
+        let cur_start = row * 8;
+        let prev_start = (row - 1) * 8;
+
+        // Read a, b, c as little-endian 16-bit words.
+        let a = (self.oam[cur_start] as u16) | ((self.oam[cur_start + 1] as u16) << 8);
+        let b = (self.oam[prev_start] as u16) | ((self.oam[prev_start + 1] as u16) << 8);
+        let c = (self.oam[prev_start + 4] as u16) | ((self.oam[prev_start + 5] as u16) << 8);
+
+        let new_first = ((a ^ c) & (b ^ c)) ^ c;
+        self.oam[cur_start] = new_first as u8;
+        self.oam[cur_start + 1] = (new_first >> 8) as u8;
+        // Last three words (bytes 2–7) copied from preceding row.
+        for i in 2..8 {
+            self.oam[cur_start + i] = self.oam[prev_start + i];
+        }
+    }
+
+    /// Apply the DMG OAM read-corruption bug to the currently scanned OAM row.
+    ///
+    /// Triggered when a CPU memory *read* lands in $FE00–$FEFF during mode 2 (e.g.
+    /// `ld a, (hl)` with HL in OAM; or the read half of `ld a, [hli]`).
+    ///
+    ///   • First word  ← `b | (a & c)`
+    ///   • Last three words ← last three words of the preceding row
+    ///
+    /// Row 0 is immune (same as write corruption).
+    pub fn oam_read_corrupt(&mut self) {
+        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+            return;
+        }
+        let row = (self.dots / 4) as usize;
+        if row == 0 || row >= 20 {
+            return;
+        }
+        let cur_start = row * 8;
+        let prev_start = (row - 1) * 8;
+
+        let a = (self.oam[cur_start] as u16) | ((self.oam[cur_start + 1] as u16) << 8);
+        let b = (self.oam[prev_start] as u16) | ((self.oam[prev_start + 1] as u16) << 8);
+        let c = (self.oam[prev_start + 4] as u16) | ((self.oam[prev_start + 5] as u16) << 8);
+
+        let new_first = b | (a & c);
+        self.oam[cur_start] = new_first as u8;
+        self.oam[cur_start + 1] = (new_first >> 8) as u8;
+        for i in 2..8 {
+            self.oam[cur_start + i] = self.oam[prev_start + i];
+        }
+    }
+
+    /// Apply the DMG OAM "Read During Increase/Decrease" corruption pattern.
+    ///
+    /// Triggered when a CPU memory *read* from OAM happens in the same M-cycle as
+    /// an IDU operation (e.g. POP M2: bus_read[sp] + sp++).
+    ///
+    /// For rows 4–18 (inclusive):
+    ///   1. The first word of the *preceding* row is replaced with:
+    ///      `(b & (a | c | d)) | (a & c & d)`
+    ///      where a = first word two rows before, b = first word of preceding row,
+    ///      c = first word of current row, d = third word of preceding row.
+    ///   2. The preceding row (with corrupted first word) is copied to both the
+    ///      current row and two rows before.
+    ///
+    /// A normal read corruption is then applied to the current row regardless.
+    pub fn oam_rdi_corrupt(&mut self) {
+        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+            return;
+        }
+        let row_cur = (self.dots / 4) as usize;
+        if row_cur == 0 || row_cur >= 20 {
+            return;
+        }
+
+        // Complex pattern only for rows 4–18.
+        if row_cur >= 4 && row_cur < 19 {
+            let row_pre = row_cur - 1;
+            let row_pre2 = row_cur - 2;
+
+            let a = (self.oam[row_pre2 * 8] as u16) | ((self.oam[row_pre2 * 8 + 1] as u16) << 8);
+            let b = (self.oam[row_pre * 8] as u16) | ((self.oam[row_pre * 8 + 1] as u16) << 8);
+            let c = (self.oam[row_cur * 8] as u16) | ((self.oam[row_cur * 8 + 1] as u16) << 8);
+            let d = (self.oam[row_pre * 8 + 4] as u16) | ((self.oam[row_pre * 8 + 5] as u16) << 8);
+
+            let new_b = (b & (a | c | d)) | (a & c & d);
+            self.oam[row_pre * 8] = new_b as u8;
+            self.oam[row_pre * 8 + 1] = (new_b >> 8) as u8;
+
+            // Copy preceding row (with corrupted first word) to current and two-rows-before.
+            for i in 0..8 {
+                self.oam[row_pre2 * 8 + i] = self.oam[row_pre * 8 + i];
+                self.oam[row_cur * 8 + i] = self.oam[row_pre * 8 + i];
+            }
+        }
+
+        // Always apply read corruption to the current row.
+        let cur_start = row_cur * 8;
+        let prev_start = (row_cur - 1) * 8;
+        let a = (self.oam[cur_start] as u16) | ((self.oam[cur_start + 1] as u16) << 8);
+        let b = (self.oam[prev_start] as u16) | ((self.oam[prev_start + 1] as u16) << 8);
+        let c = (self.oam[prev_start + 4] as u16) | ((self.oam[prev_start + 5] as u16) << 8);
+        let new_first = b | (a & c);
+        self.oam[cur_start] = new_first as u8;
+        self.oam[cur_start + 1] = (new_first >> 8) as u8;
+        for i in 2..8 {
+            self.oam[cur_start + i] = self.oam[prev_start + i];
+        }
     }
 
     // Compute the sprite timing penalty (in T-cycles) for the current scanline.
