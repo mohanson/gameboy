@@ -1,4 +1,4 @@
-use super::convention::{CLOCK_FREQUENCY, Memory, Term};
+use crate::convention::{CLOCK_FREQUENCY, Memory, Term};
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
 use std::rc::Rc;

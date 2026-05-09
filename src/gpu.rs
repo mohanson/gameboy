@@ -1,5 +1,5 @@
-use super::convention::{Memory, Term};
-use super::interrupt::{Interrupt, InterruptFlag};
+use crate::convention::{Memory, Term};
+use crate::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -1,16 +1,16 @@
 // A memory management unit (MMU), sometimes called paged memory management unit (PMMU), is a computer hardware unit
 // having all memory references passed through itself, primarily performing the translation of virtual memory addresses
 // to physical addresses.
-use super::apu::Apu;
-use super::cartridge::Cartridge;
-use super::convention::{Hollow, Memory, Term};
-use super::dma::Dma;
-use super::gpu::{Gpu, Hdma, HdmaMode};
-use super::interrupt::Interrupt;
-use super::joypad::Joypad;
-use super::rng;
-use super::serial::Serial;
-use super::timer::Timer;
+use crate::apu::Apu;
+use crate::cartridge::Cartridge;
+use crate::convention::{Hollow, Memory, Term};
+use crate::dma::Dma;
+use crate::gpu::{Gpu, Hdma, HdmaMode};
+use crate::interrupt::Interrupt;
+use crate::joypad::Joypad;
+use crate::rng;
+use crate::serial::Serial;
+use crate::timer::Timer;
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;

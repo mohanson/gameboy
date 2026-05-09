@@ -8,7 +8,7 @@
 // Reference:
 //   - http://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
 //   - http://gbdev.gg8.se/wiki/articles/Memory_Bank_Controllers
-use super::convention::{Memory, Stable};
+use crate::convention::{Memory, Stable};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};

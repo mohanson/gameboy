@@ -14,8 +14,8 @@
 //
 // Note: Most programs are repeatedly reading from this port several times (the first reads used as short delay,
 // allowing the inputs to stabilize, and only the value from the last read actually used).
-use super::convention::Memory;
-use super::interrupt::{Interrupt, InterruptFlag};
+use crate::convention::Memory;
+use crate::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
 

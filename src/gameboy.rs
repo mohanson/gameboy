@@ -1,7 +1,7 @@
-use super::convention::{STEP_CYCLES, STEP_TIME};
-use super::cpu::Cpu;
-use super::dma::Dma;
-use super::mmu::Mmu;
+use crate::convention::{STEP_CYCLES, STEP_TIME};
+use crate::cpu::Cpu;
+use crate::dma::Dma;
+use crate::mmu::Mmu;
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;

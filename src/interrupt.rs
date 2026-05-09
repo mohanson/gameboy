@@ -1,4 +1,4 @@
-use super::convention::Memory;
+use crate::convention::Memory;
 
 // FF0F   IF       Interrupt Flag (R/W)
 // Bit 0: V-Blank  Interrupt Request (INT 40h)  (1=Request)

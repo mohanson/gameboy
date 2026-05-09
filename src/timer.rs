@@ -4,9 +4,9 @@
 // with the contents of Timer Modulo (TMA).
 //
 // See: http://gbdev.gg8.se/wiki/articles/Timer_and_Divider_Registers
-use super::convention::{Memory, Term};
-use super::interrupt::{Interrupt, InterruptFlag};
-use super::rng;
+use crate::convention::{Memory, Term, Ticker};
+use crate::interrupt::{Interrupt, InterruptFlag};
+use crate::rng;
 use std::cell::RefCell;
 use std::ops::Shr;
 use std::rc::Rc;
@@ -133,6 +133,22 @@ impl Memory for Timer {
                 self.edge();
             }
             _ => unreachable!(),
+        }
+    }
+}
+
+impl Ticker for Timer {
+    fn tick(&mut self, cycles: u32) {
+        for _ in 0..cycles {
+            if self.delays > 0 {
+                self.delays -= 1;
+                if self.delays == 4 {
+                    self.tima = self.tma;
+                    self.intr.borrow_mut().raise(InterruptFlag::Timer);
+                }
+            }
+            self.sdiv = self.sdiv.wrapping_add(1);
+            self.edge();
         }
     }
 }

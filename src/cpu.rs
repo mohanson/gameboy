@@ -1,8 +1,8 @@
 // The chip behind the NINTENDO GAME BOY: The sharp LR35902.
-use super::convention::{Memory, Term, hi, lo};
-use super::mmu::Mmu;
-use super::register::Flag::{C, H, N, Z};
-use super::register::Register;
+use crate::convention::{Memory, Term, hi, lo};
+use crate::mmu::Mmu;
+use crate::register::Flag::{C, H, N, Z};
+use crate::register::Register;
 use std::cell::RefCell;
 use std::rc::Rc;
 
