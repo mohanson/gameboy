@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Term {
     DMG, // Original GameBoy (GameBoy Classic)
@@ -50,6 +53,21 @@ impl Memory for Hollow {
     }
 
     fn sb(&mut self, _: u16, _: u8) {}
+}
+
+// Global is a struct that holds global state that may be needed by multiple components.
+pub struct Global {
+    pub term: Term,
+}
+
+impl Global {
+    pub fn power_up() -> Self {
+        Self { term: Term::DMG }
+    }
+
+    pub fn share(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
 }
 
 // Stable is a trait for components that can save their state to disk, so that the game can be resumed later.

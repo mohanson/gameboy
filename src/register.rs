@@ -1,4 +1,6 @@
-use crate::convention::Term;
+use crate::convention::{Global, Term};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 // The GameBoy has instructions & registers similar to the Intel 8080, Intel 8085, & Zilog Z80 microprocessors. It has
 // eight 8-bit registers A,B,C,D,E,F,H,L and two 16-bit registers SP & PC
@@ -106,9 +108,9 @@ impl Register {
 }
 
 impl Register {
-    pub fn power_up(term: Term) -> Self {
+    pub fn power_up(glo: Rc<RefCell<Global>>) -> Self {
         let mut r = Self::default();
-        match term {
+        match glo.borrow().term {
             Term::DMG => {
                 r.a = 0x01;
                 // If the header checksum is $00, then the carry and half-carry flags are clear; otherwise, they are

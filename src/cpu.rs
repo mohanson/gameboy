@@ -1,5 +1,5 @@
 // The chip behind the NINTENDO GAME BOY: The sharp LR35902.
-use crate::convention::{Memory, Term, hi, lo};
+use crate::convention::{Global, Memory, Term, hi, lo};
 use crate::mmu::Mmu;
 use crate::register::Flag::{C, H, N, Z};
 use crate::register::Register;
@@ -467,6 +467,7 @@ impl Alu {
 }
 
 pub struct Cpu {
+    pub glo: Rc<RefCell<Global>>,
     pub reg: Register,
     pub mem: Rc<RefCell<Mmu>>,
     // Interrupt master enable flag, which controls whether the CPU will respond to interrupts.
@@ -1790,13 +1791,13 @@ impl Cpu {
 }
 
 impl Cpu {
-    pub fn power_up(term: Term, mem: Rc<RefCell<Mmu>>) -> Self {
-        let mut reg = Register::power_up(term);
+    pub fn power_up(glo: Rc<RefCell<Global>>, mem: Rc<RefCell<Mmu>>) -> Self {
+        let mut reg = Register::power_up(glo.clone());
         let chk = mem.borrow().lb(0x014d);
-        if term == Term::DMG && chk != 0x00 {
+        if glo.borrow().term == Term::DMG && chk != 0x00 {
             reg.f = 0xb0;
         }
-        Self { reg, mem, ime: 0, imp: 0, low: 0, bug: 0, c: 0 }
+        Self { glo, reg, mem, ime: 0, imp: 0, low: 0, bug: 0, c: 0 }
     }
 
     pub fn step(&mut self) -> u32 {

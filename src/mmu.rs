@@ -3,7 +3,7 @@
 // to physical addresses.
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
-use crate::convention::{Hollow, Memory, Term};
+use crate::convention::{Global, Hollow, Memory, Term};
 use crate::dma::Dma;
 use crate::gpu::{Gpu, Hdma, HdmaMode};
 use crate::interrupt::Interrupt;
@@ -33,11 +33,12 @@ pub struct Mmu {
 }
 
 impl Mmu {
-    pub fn power_up(term: Term, cart: Cartridge) -> Self {
+    pub fn power_up(glo: Rc<RefCell<Global>>, rom: Cartridge) -> Self {
+        let term = glo.borrow().term;
         let intr = Rc::new(RefCell::new(Interrupt::power_up()));
         let mut r = Self {
             apu: Apu::power_up(48000, term),
-            cartridge: cart,
+            cartridge: rom,
             dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
             gpu: Gpu::power_up(term, intr.clone()),
             hdma: Hdma::power_up(),

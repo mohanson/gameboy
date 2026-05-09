@@ -1,5 +1,5 @@
 use crate::cartridge::Cartridge;
-use crate::convention::{Memory, STEP_CYCLES, STEP_TIME, Term};
+use crate::convention::{Global, Memory, STEP_CYCLES, STEP_TIME, Term};
 use crate::cpu::Cpu;
 use crate::dma::Dma;
 use crate::mmu::Mmu;
@@ -13,6 +13,7 @@ pub struct GameBoy {
     pub mmu: Rc<RefCell<Mmu>>,
     pub cpu: Cpu,
     pub dma: Dma,
+    pub glo: Rc<RefCell<Global>>,
     pub spd: u32,
     c: u32,
     z: time::Instant,
@@ -20,21 +21,22 @@ pub struct GameBoy {
 
 impl GameBoy {
     pub fn power_up(path: impl AsRef<Path>) -> Self {
-        let cart = Cartridge::power_up(path);
-        let term = match cart.lb(0x0143) & 0xC0 {
+        let rom = Cartridge::power_up(path);
+        let glo = Global::power_up().share();
+        glo.borrow_mut().term = match rom.lb(0x0143) & 0xC0 {
             0x00 => Term::DMG,
             0x80 => Term::DMG,
             0xC0 => Term::CGB,
             _ => unreachable!(),
         };
-        rog::debugln!("GameBoy term is {}", term);
-        let mmu = Rc::new(RefCell::new(Mmu::power_up(term, cart)));
-        let cpu = Cpu::power_up(mmu.borrow().term, mmu.clone());
+        rog::debugln!("GameBoy term is {}", glo.borrow().term);
+        let mmu = Rc::new(RefCell::new(Mmu::power_up(glo.clone(), rom)));
+        let cpu = Cpu::power_up(glo.clone(), mmu.clone());
         let mut dma = Dma::power_up(mmu.clone());
         dma.o.cnt = mmu.borrow().dma.o.cnt.clone();
         dma.o.reg = mmu.borrow().dma.o.reg.clone();
         dma.o.sig = mmu.borrow().dma.o.sig.clone();
-        Self { mmu, cpu, dma, spd: 1, c: 0, z: time::Instant::now() }
+        Self { mmu, cpu, dma, glo, spd: 1, c: 0, z: time::Instant::now() }
     }
 
     pub fn step(&mut self) -> u32 {
