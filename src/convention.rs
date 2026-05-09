@@ -57,14 +57,15 @@ impl Memory for Hollow {
 
 // Global is a struct that holds global state that may be needed by multiple components.
 pub struct Global {
-    pub term: Term,
-    pub intf: u8,
     pub inte: u8,
+    pub intf: u8,
+    pub sdiv: u16,
+    pub term: Term,
 }
 
 impl Global {
     pub fn power_up() -> Self {
-        Self { term: Term::DMG, intf: 0x00, inte: 0x00 }
+        Self { inte: 0x00, intf: 0x00, sdiv: 0x0000, term: Term::DMG }
     }
 
     pub fn share(self) -> Rc<RefCell<Self>> {

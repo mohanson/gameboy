@@ -3,7 +3,7 @@
 // to physical addresses.
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
-use crate::convention::{Global, Hollow, Memory, Term};
+use crate::convention::{Global, Hollow, Memory, Term, Ticker};
 use crate::dma::Dma;
 use crate::gpu::{Gpu, Hdma, HdmaMode};
 use crate::interrupt::Interrupt;
@@ -15,6 +15,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct Mmu {
+    pub glo: Rc<RefCell<Global>>,
     pub apu: Apu,
     pub cartridge: Cartridge,
     pub dma: Dma,
@@ -37,6 +38,7 @@ impl Mmu {
         let term = glo.borrow().term;
         let intr = Rc::new(RefCell::new(Interrupt::power_up(glo.clone())));
         let mut r = Self {
+            glo: glo.clone(),
             apu: Apu::power_up(48000, term),
             cartridge: rom,
             dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
@@ -47,7 +49,7 @@ impl Mmu {
             joypad: Joypad::power_up(intr.clone()),
             serial: Serial::power_up(term, intr.clone()),
             term,
-            timer: Timer::power_up(term, intr.clone()),
+            timer: Timer::power_up(glo.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
             speed: 1,
@@ -229,7 +231,7 @@ impl Memory for Mmu {
             }
             0xff0f => self.intr.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => {
-                self.apu.sdiv_cache = self.timer.get_sdiv();
+                self.apu.sdiv_cache = self.glo.borrow().sdiv;
                 self.apu.sb(a, v);
             }
             0xff40..=0xff45 => self.gpu.sb(a, v),
