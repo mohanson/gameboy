@@ -35,7 +35,7 @@ pub struct Mmu {
 impl Mmu {
     pub fn power_up(glo: Rc<RefCell<Global>>, rom: Cartridge) -> Self {
         let term = glo.borrow().term;
-        let intr = Rc::new(RefCell::new(Interrupt::power_up()));
+        let intr = Rc::new(RefCell::new(Interrupt::power_up(glo.clone())));
         let mut r = Self {
             apu: Apu::power_up(48000, term),
             cartridge: rom,
