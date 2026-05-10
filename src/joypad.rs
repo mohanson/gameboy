@@ -14,7 +14,7 @@
 //
 // Note: Most programs are repeatedly reading from this port several times (the first reads used as short delay,
 // allowing the inputs to stabilize, and only the value from the last read actually used).
-use crate::convention::Memory;
+use crate::convention::{Global, Memory};
 use crate::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -33,21 +33,21 @@ pub enum JoypadKey {
 }
 
 pub struct Joypad {
-    intr: Rc<RefCell<Interrupt>>,
+    glo: Rc<RefCell<Global>>,
     matrix: u8,
     select: u8,
 }
 
 impl Joypad {
-    pub fn power_up(intr: Rc<RefCell<Interrupt>>) -> Self {
-        Self { intr, matrix: 0xff, select: 0xcf }
+    pub fn power_up(glo: Rc<RefCell<Global>>) -> Self {
+        Self { glo, matrix: 0xff, select: 0xcf }
     }
 }
 
 impl Joypad {
     pub fn key_down(&mut self, key: JoypadKey) {
         self.matrix &= !(key as u8);
-        self.intr.borrow_mut().raise(InterruptFlag::Joypad);
+        Interrupt::owned(self.glo.clone()).raise(InterruptFlag::Joypad);
     }
 
     pub fn key_free(&mut self, key: JoypadKey) {

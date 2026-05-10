@@ -46,7 +46,7 @@ impl Mmu {
             hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
             intr: intr.clone(),
-            joypad: Joypad::power_up(intr.clone()),
+            joypad: Joypad::power_up(glo.clone()),
             serial: Serial::power_up(glo.clone()),
             term,
             timer: Timer::power_up(glo.clone()),
