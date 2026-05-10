@@ -47,7 +47,7 @@ impl Mmu {
             hram: [0x00; 0x7f],
             intr: intr.clone(),
             joypad: Joypad::power_up(intr.clone()),
-            serial: Serial::power_up(term, intr.clone()),
+            serial: Serial::power_up(glo.clone()),
             term,
             timer: Timer::power_up(glo.clone()),
             wram: [0x00; 0x8000],
@@ -223,12 +223,7 @@ impl Memory for Mmu {
             0xfea0..=0xfeff => {}
             0xff00 => self.joypad.sb(a, v),
             0xff01..=0xff02 => self.serial.sb(a, v),
-            0xff04..=0xff07 => {
-                if a == 0xff04 {
-                    self.serial.reset_sdiv();
-                }
-                self.timer.sb(a, v);
-            }
+            0xff04..=0xff07 => self.timer.sb(a, v),
             0xff0f => self.intr.borrow_mut().sb(0xff0f, v),
             0xff10..=0xff3f => {
                 self.apu.sdiv_cache = self.glo.borrow().sdiv;
