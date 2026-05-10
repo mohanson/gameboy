@@ -68,8 +68,8 @@ impl Memory for Joypad {
         assert_eq!(a, 0xff00);
         match self.select & 0x30 {
             0x00 => 0xc0 | 0x00 | self.lo() & self.hi(),
-            0x10 => 0xc0 | 0x10 | self.lo(),
-            0x20 => 0xc0 | 0x20 | self.hi(),
+            0x10 => 0xc0 | 0x10 | self.hi(),
+            0x20 => 0xc0 | 0x20 | self.lo(),
             0x30 => 0xff,
             _ => unreachable!(),
         }
