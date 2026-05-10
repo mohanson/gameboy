@@ -57,9 +57,13 @@ impl Memory for Hollow {
 
 // Global is a struct that holds global state that may be needed by multiple components.
 pub struct Global {
+    // The interrupt enable register, which controls which interrupts are enabled.
     pub inte: u8,
+    // The interrupt flag register, which indicates which interrupts are currently pending.
     pub intf: u8,
+    //  The serial division register, which is used for the serial communication feature of the gameboy.
     pub sdiv: u16,
+    // The term of the gameboy.
     pub term: Term,
 }
 
