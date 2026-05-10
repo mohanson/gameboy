@@ -14,10 +14,10 @@ use std::rc::Rc;
 
 pub struct Serial {
     glo: Rc<RefCell<Global>>,
-    pub data: u8,    // SB: serial data (shifts MSB-first during transfer)
-    pub ctrl: u8,    // SC: control
-    bits: u8,        // bits remaining in the current transfer; 0 = idle
-    pub tx_byte: u8, // byte latched at transfer start (SB is shifted in-place, original lost)
+    data: u8,      // SB: serial data (shifts MSB-first during transfer)
+    ctrl: u8,      // SC: control
+    bits: u8,      // bits remaining in the current transfer; 0 = idle
+    outs: Vec<u8>, // completed outgoing bytes, FIFO; capped at 256
 }
 
 impl Serial {
@@ -26,7 +26,12 @@ impl Serial {
             Term::DMG => 0x7e,
             Term::CGB => 0x7f,
         };
-        Self { glo, data: 0, ctrl, bits: 0, tx_byte: 0 }
+        Self { glo, data: 0, ctrl, bits: 0, outs: Vec::new() }
+    }
+
+    // Returns the next byte received from the master, or None if the buffer is empty.
+    pub fn read(&mut self) -> Option<u8> {
+        if self.outs.is_empty() { None } else { Some(self.outs.remove(0)) }
     }
 }
 
@@ -48,7 +53,10 @@ impl Memory for Serial {
             0xff02 => {
                 self.ctrl = v;
                 if v & 0x81 == 0x81 {
-                    self.tx_byte = self.data;
+                    if self.outs.len() == 256 {
+                        self.outs.remove(0);
+                    }
+                    self.outs.push(self.data);
                     self.bits = 8;
                 }
             }
@@ -58,8 +66,6 @@ impl Memory for Serial {
 }
 
 impl Ticker for Serial {
-    // Called after timer.tick(cycles) has already advanced glo.sdiv.
-    // A bit-8 falling edge of sdiv (every 512 T-cycles) clocks one serial bit.
     fn tick(&mut self, cycles: u32) {
         if self.bits == 0 {
             return;
