@@ -127,8 +127,8 @@ impl Ticker for Timer {
                 self.ima = self.tma;
                 Interrupt::owned(self.glo.clone()).raise(InterruptFlag::Timer);
             }
-            let sidv = self.glo.borrow().sdiv.wrapping_add(1);
-            self.glo.borrow_mut().sdiv = sidv;
+            let sdiv = self.glo.borrow().sdiv.wrapping_add(1);
+            self.glo.borrow_mut().sdiv = sdiv;
             if self.window == 0 {
                 self.edge()
             }
