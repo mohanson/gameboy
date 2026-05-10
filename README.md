@@ -15,7 +15,7 @@ The following options are supported:
 ```text
 -a, --enable-audio    Enable audio, default is false
 -x, --scale-factor    Scale the video by a factor of 1, 2, 4, or 8
--s, --speed-factor    Set the emulator speed (1 for normal speed, 2 for double speed, etc.)
+-s, --speed-factor    Set the emulator speed (1 for normal speed, 2 for double speed, etc)
 ```
 
 Gameboy is developed in Rust and has been thoroughly tested on Windows, Ubuntu, and Mac.
@@ -32,8 +32,8 @@ You may need to install the native dependencies these libraries require before r
 For Ubuntu Linux, you can run:
 
 ```sh
-sudo apt install libasound2-dev # Install CPAL dependencies
-sudo apt install libxkbcommon-dev libwayland-cursor0 libwayland-dev # Install MiniFB dependencies
+sudo apt install libasound2-dev # Install cpal dependencies
+sudo apt install libxkbcommon-dev libwayland-cursor0 libwayland-dev # Install minifb dependencies
 ```
 
 For Windows, you should install [Microsoft C++ Build Tools](https://aka.ms/vs/17/release/vs_BuildTools.exe).
@@ -61,6 +61,10 @@ Left/Right <--- ||_ O _|   ,-. "._,"|
                 |  `  `      \\\\\\ ,
                 |________...______,"
 ```
+
+# Develop your own UI
+
+This emulator is designed to be modular, allowing you to replace the built-in UI with your own implementation. In terms of default settings, all the code related to display and audio is located in the `mode_minifb()` function in `src/main.rs`. You can refer to this code and then easily implement your own UI: for example, Gameboy running in the terminal or web.
 
 # Tests
 
