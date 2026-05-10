@@ -8,10 +8,11 @@ use std::rc::Rc;
 // Bit 2: Timer    Interrupt Request (INT 50h)  (1=Request)
 // Bit 3: Serial   Interrupt Request (INT 58h)  (1=Request)
 // Bit 4: Joypad   Interrupt Request (INT 60h)  (1=Request)
+#[rustfmt::skip]
 pub enum InterruptFlag {
     VBlank = 0,
-    LCD = 1,
-    Timer = 2,
+    LCD    = 1,
+    Timer  = 2,
     Serial = 3,
     Joypad = 4,
 }
