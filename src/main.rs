@@ -59,7 +59,7 @@ fn mode_blargg_serial_output(argu: &Argument) {
     let mut buff = String::new();
     loop {
         mbrd.step();
-        while let Some(b) = mbrd.mmu.borrow_mut().serial.read() {
+        if let Some(b) = mbrd.mmu.borrow_mut().serial.read() {
             let c = char::from(b);
             print!("{c}");
             buff.push(c);
