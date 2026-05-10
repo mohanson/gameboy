@@ -38,7 +38,7 @@ fn main() {
         ap.refer(&mut argu.speed).add_option(
             &["-s", "--speed-factor"],
             argparse::Store,
-            "Set the emulator speed (1 for normal speed, 2 for double speed, etc.)",
+            "Set the emulator speed (1 for normal speed, 2 for double speed, etc)",
         );
         ap.refer(&mut argu.rom).add_argument("rom", argparse::Store, "Rom name");
         ap.parse_args_or_exit();
