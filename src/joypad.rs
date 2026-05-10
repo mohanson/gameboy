@@ -53,18 +53,26 @@ impl Joypad {
     pub fn key_free(&mut self, key: JoypadKey) {
         self.matrix |= key as u8;
     }
+
+    pub fn lo(&self) -> u8 {
+        self.matrix & 0x0f
+    }
+
+    pub fn hi(&self) -> u8 {
+        self.matrix >> 0x4
+    }
 }
 
 impl Memory for Joypad {
     fn lb(&self, a: u16) -> u8 {
         assert_eq!(a, 0xff00);
-        if (self.select & 0b0001_0000) == 0x00 {
-            return 0xc0 | (self.select & 0x30) | (self.matrix & 0x0f);
+        match self.select & 0x30 {
+            0x00 => 0xc0 | 0x00 | self.lo() & self.hi(),
+            0x10 => 0xc0 | 0x10 | self.lo(),
+            0x20 => 0xc0 | 0x20 | self.hi(),
+            0x30 => 0xff,
+            _ => unreachable!(),
         }
-        if (self.select & 0b0010_0000) == 0x00 {
-            return 0xc0 | (self.select & 0x30) | (self.matrix >> 0x4);
-        }
-        0xc0 | self.select | 0x0f
     }
 
     fn sb(&mut self, a: u16, v: u8) {
