@@ -1,5 +1,5 @@
 use crate::convention::{Global, Memory, Term, Ticker};
-use crate::interrupt::InterruptFlag;
+use crate::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -96,7 +96,7 @@ impl Ticker for Serial {
                 self.bits -= 1;
                 if self.bits == 0 {
                     self.ctrl &= !0x80; // clear Transfer Start Flag
-                    self.glo.borrow_mut().intf |= 1 << InterruptFlag::Serial as u8;
+                    Interrupt::owned(self.glo.clone()).raise(InterruptFlag::Serial);
                     return;
                 }
             }
