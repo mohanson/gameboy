@@ -1,4 +1,4 @@
-use crate::convention::{Global, Memory, Term};
+use crate::convention::{Global, Memory, Term, Ticker};
 use crate::interrupt::InterruptFlag;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -39,39 +39,6 @@ impl Serial {
             tx_byte: 0,
         }
     }
-
-    /// Advance the serial clock by `cycles` T-cycles.
-    /// Each falling edge of bit 8 of sdiv (every 512 T-cycles) shifts one bit when a
-    /// transfer is active.  After 8 bits the interrupt is raised and the transfer-start flag
-    /// (SC bit 7) is cleared.
-    /// NOTE: must be called AFTER timer.tick(cycles) has already advanced glo.sdiv.
-    pub fn tick(&mut self, cycles: u32) {
-        if self.bits == 0 {
-            return;
-        }
-        // Timer has already incremented glo.sdiv by `cycles`; reconstruct the pre-tick value
-        // so we can scan the same T-cycle range for bit-8 falling edges.
-        let sdiv_end = self.glo.borrow().sdiv;
-        let sdiv_start = sdiv_end.wrapping_sub(cycles as u16);
-        let mut sdiv = sdiv_start;
-        for _ in 0..cycles {
-            let old_bit8 = (sdiv >> 8) & 1;
-            sdiv = sdiv.wrapping_add(1);
-            let new_bit8 = (sdiv >> 8) & 1;
-
-            // Falling edge of bit 8 (1 → 0): one serial bit clock.
-            if old_bit8 == 1 && new_bit8 == 0 {
-                // Shift data left; shift in 1 (no connected device → all-high line).
-                self.data = self.data.wrapping_shl(1) | 0x01;
-                self.bits -= 1;
-                if self.bits == 0 {
-                    self.ctrl &= !0x80; // clear Transfer Start Flag
-                    self.glo.borrow_mut().intf |= 1 << InterruptFlag::Serial as u8;
-                    return;
-                }
-            }
-        }
-    }
 }
 
 impl Memory for Serial {
@@ -99,5 +66,40 @@ impl Memory for Serial {
             }
             _ => unreachable!(),
         };
+    }
+}
+
+impl Ticker for Serial {
+    /// Advance the serial clock by `cycles` T-cycles.
+    /// Each falling edge of bit 8 of sdiv (every 512 T-cycles) shifts one bit when a
+    /// transfer is active.  After 8 bits the interrupt is raised and the transfer-start flag
+    /// (SC bit 7) is cleared.
+    /// NOTE: must be called AFTER timer.tick(cycles) has already advanced glo.sdiv.
+    fn tick(&mut self, cycles: u32) {
+        if self.bits == 0 {
+            return;
+        }
+        // Timer has already incremented glo.sdiv by `cycles`; reconstruct the pre-tick value
+        // so we can scan the same T-cycle range for bit-8 falling edges.
+        let sdiv_end = self.glo.borrow().sdiv;
+        let sdiv_start = sdiv_end.wrapping_sub(cycles as u16);
+        let mut sdiv = sdiv_start;
+        for _ in 0..cycles {
+            let old_bit8 = (sdiv >> 8) & 1;
+            sdiv = sdiv.wrapping_add(1);
+            let new_bit8 = (sdiv >> 8) & 1;
+
+            // Falling edge of bit 8 (1 → 0): one serial bit clock.
+            if old_bit8 == 1 && new_bit8 == 0 {
+                // Shift data left; shift in 1 (no connected device → all-high line).
+                self.data = self.data.wrapping_shl(1) | 0x01;
+                self.bits -= 1;
+                if self.bits == 0 {
+                    self.ctrl &= !0x80; // clear Transfer Start Flag
+                    self.glo.borrow_mut().intf |= 1 << InterruptFlag::Serial as u8;
+                    return;
+                }
+            }
+        }
     }
 }
