@@ -61,15 +61,17 @@ pub struct Global {
     pub inte: u8,
     // The interrupt flag register, which indicates which interrupts are currently pending.
     pub intf: u8,
-    //  The serial division register, which is used for the serial communication feature of the gameboy.
+    // The serial division register, which is used for the serial communication feature of the gameboy.
     pub sdiv: u16,
+    // Same as sdiv, but strictly increases every clock cycle.
+    pub sdiw: u16,
     // The term of the gameboy.
     pub term: Term,
 }
 
 impl Global {
     pub fn power_up() -> Self {
-        Self { inte: 0x00, intf: 0x00, sdiv: 0x0000, term: Term::DMG }
+        Self { inte: 0x00, intf: 0x00, sdiv: 0x0000, sdiw: 0x0000, term: Term::DMG }
     }
 
     pub fn share(self) -> Rc<RefCell<Self>> {

@@ -476,8 +476,6 @@ pub struct Cpu {
     // Halt.
     pub low: u8,
     pub bug: u8,
-    // T-cycles consumed during the current step (reset at the start of each step()).
-    c: u32,
 }
 
 // The GameBoy CPU is based on a subset of the Z80 microprocessor. A summary of these commands is given below.
@@ -514,7 +512,6 @@ impl Cpu {
     fn mem_read(&mut self, a: u16) -> u8 {
         let v = self.mem.borrow().lb(a);
         self.mem.borrow_mut().tick(4);
-        self.c += 4;
         v
     }
 
@@ -522,13 +519,11 @@ impl Cpu {
     fn mem_write(&mut self, a: u16, v: u8) {
         self.mem.borrow_mut().sb(a, v);
         self.mem.borrow_mut().tick(4);
-        self.c += 4;
     }
 
     /// Spend one internal M-cycle (e.g. branch delay, SP arithmetic) without a bus access.
     fn internal(&mut self) {
         self.mem.borrow_mut().tick(4);
-        self.c += 4;
     }
 }
 
@@ -1797,19 +1792,17 @@ impl Cpu {
         if glo.borrow().term == Term::DMG && chk != 0x00 {
             reg.f = 0xb0;
         }
-        Self { glo, reg, mem, ime: 0, imp: 0, low: 0, bug: 0, c: 0 }
+        Self { glo, reg, mem, ime: 0, imp: 0, low: 0, bug: 0 }
     }
 
-    pub fn step(&mut self) -> u32 {
-        self.c = 0;
+    pub fn step(&mut self) {
         if self.handle_trap() {
-            return self.c;
+            return;
         }
         if self.low == 1 {
             self.internal();
-            return self.c;
+            return;
         }
         self.exec_opcode();
-        self.c
     }
 }
