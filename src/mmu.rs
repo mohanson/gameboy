@@ -3,8 +3,7 @@
 // to physical addresses.
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
-use crate::convention::{Global, Hollow, Memory, Term, Ticker};
-use crate::dma::Dma;
+use crate::convention::{Global, Memory, Term, Ticker};
 use crate::gpu::{Gpu, Hdma, HdmaMode};
 use crate::interrupt::Interrupt;
 use crate::joypad::Joypad;
@@ -14,11 +13,65 @@ use crate::timer::Timer;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// OAM DMA state machine.
+pub struct OamDma {
+    /// Source page address (register 0xFF46).
+    reg: u8,
+    /// Countdown: 648 → startup delay → 640 (active, OAM blocked) → 0 (idle).
+    cnt: u32,
+    /// Pending trigger: set on write to 0xFF46, consumed on next tick.
+    pending: bool,
+}
+
+impl OamDma {
+    fn new() -> Self {
+        Self { reg: 0xff, cnt: 0, pending: false }
+    }
+
+    /// `true` during the 160 M-cycle window when OAM bus is taken over.
+    fn is_active(&self) -> bool {
+        self.cnt > 0 && self.cnt <= 640
+    }
+
+    /// Advance by `cycles` T-cycles and call `copy(src, dst)` for every byte
+    /// that falls inside the elapsed copy window.
+    /// `src` is always in 0x0000–0xDFFF (echo-remapped by caller); `dst` is 0xFE00–0xFE9F.
+    fn tick(&mut self, cycles: u16, mut copy: impl FnMut(u16, u16)) {
+        let old_cnt = self.cnt;
+
+        if self.pending {
+            self.pending = false;
+            match self.cnt {
+                0 => self.cnt = 648,       // fresh start: 2 M-cycle startup delay
+                1..=639 => self.cnt = 648, // restart mid-copy: same startup
+                _ => {}                    // cnt==640 (first active) or >640 (startup): ignore
+            }
+        }
+        if self.cnt != 0 {
+            self.cnt = self.cnt.saturating_sub(cycles as u32);
+        }
+
+        // Determine which bytes (if any) were copied during this M-cycle.
+        if old_cnt == 0 || old_cnt.min(640) <= self.cnt {
+            return;
+        }
+        let first = (640u32.saturating_sub(old_cnt.min(640)) + 3) / 4;
+        let last = (640u32.saturating_sub(self.cnt) + 3) / 4;
+        let src_page = (self.reg as u16) << 8;
+        for i in first..last.min(160) {
+            let src = src_page | i as u16;
+            // DMG DMA extends echo mapping: 0xE000–0xFFFF → 0xC000–0xDFFF.
+            let src = if src <= 0xdfff { src } else { src - 0x2000 };
+            copy(src, 0xfe00 + i as u16);
+        }
+    }
+}
+
 pub struct Mmu {
     pub glo: Rc<RefCell<Global>>,
     pub apu: Apu,
     pub cartridge: Cartridge,
-    pub dma: Dma,
+    pub oam_dma: OamDma,
     pub gpu: Gpu,
     pub hdma: Hdma,
     pub hram: [u8; 0x7f],
@@ -41,7 +94,7 @@ impl Mmu {
             glo: glo.clone(),
             apu: Apu::power_up(48000, term),
             cartridge: rom,
-            dma: Dma::power_up(Rc::new(RefCell::new(Hollow::power_up()))),
+            oam_dma: OamDma::new(),
             gpu: Gpu::power_up(term, intr.clone()),
             hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
@@ -123,14 +176,29 @@ impl Mmu {
         let video_cycles = self.video_cycles(cycles);
         self.gpu.next(video_cycles);
         self.apu.next(video_cycles);
-        self.dma.o.advance_counter(cycles);
+        // Split-borrow: dma/gpu/cartridge/wram are distinct fields, so Rust
+        // allows holding &mut dma, &mut gpu, and &Cartridge/&wram simultaneously.
+        let wram_bank = self.wram_bank;
+        let oam_dma = &mut self.oam_dma;
+        let gpu = &mut self.gpu;
+        let cartridge = &self.cartridge;
+        let wram = &self.wram;
+        oam_dma.tick(cycles as u16, |src, dst| {
+            let b = match src {
+                0x0000..=0x7fff | 0xa000..=0xbfff => cartridge.lb(src),
+                0x8000..=0x9fff => gpu.lb(src),
+                0xc000..=0xcfff => wram[src as usize - 0xc000],
+                0xd000..=0xdfff => wram[src as usize - 0xd000 + 0x1000 * wram_bank],
+                _ => 0xff,
+            };
+            gpu.sb(dst, b);
+        });
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
         match a {
             0xfe00..=0xfe9f => {
-                let cnt = self.dma.o.cnt.borrow().clone();
-                if cnt > 0 && cnt <= 640 {
+                if self.oam_dma.is_active() {
                     return 0xff;
                 }
                 self.gpu.lb(a)
@@ -200,7 +268,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.borrow().lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => self.dma.o.lb(a),
+            0xff46 => self.oam_dma.reg,
             0xff47..=0xff4b => self.gpu.lb(a),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => 0xff,
@@ -229,8 +297,7 @@ impl Memory for Mmu {
             0xe000..=0xfdff => self.sb(a - 0x2000, v),
             0xfe00..=0xfe9f => {
                 // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
-                let cnt = *self.dma.o.cnt.borrow();
-                if cnt > 0 && cnt <= 640 {
+                if self.oam_dma.is_active() {
                     return;
                 }
                 self.gpu.sb(a, v);
@@ -245,7 +312,10 @@ impl Memory for Mmu {
                 self.apu.sb(a, v);
             }
             0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => self.dma.o.sb(a, v),
+            0xff46 => {
+                self.oam_dma.reg = v;
+                self.oam_dma.pending = true;
+            }
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.term {
                 Term::DMG => {}
@@ -268,6 +338,7 @@ impl Memory for Mmu {
 impl Mmu {
     pub fn tick(&mut self, cycles: u32) {
         self.advance_clock(cycles);
+        self.next();
     }
 
     fn run_dma(&mut self) -> u32 {

@@ -1,7 +1,6 @@
 use crate::cartridge::Cartridge;
 use crate::convention::{Global, Memory, STEP_CYCLES, STEP_TIME, Term};
 use crate::cpu::Cpu;
-use crate::dma::Dma;
 use crate::mmu::Mmu;
 use std::cell::RefCell;
 use std::path::Path;
@@ -10,10 +9,9 @@ use std::thread;
 use std::time;
 
 pub struct GameBoy {
-    pub mmu: Rc<RefCell<Mmu>>,
     pub cpu: Cpu,
-    pub dma: Dma,
     pub glo: Rc<RefCell<Global>>,
+    pub mmu: Rc<RefCell<Mmu>>,
     pub spd: u32,
     c: u32,
     z: time::Instant,
@@ -32,11 +30,7 @@ impl GameBoy {
         rog::debugln!("GameBoy term is {}", glo.borrow().term);
         let mmu = Rc::new(RefCell::new(Mmu::power_up(glo.clone(), rom)));
         let cpu = Cpu::power_up(glo.clone(), mmu.clone());
-        let mut dma = Dma::power_up(mmu.clone());
-        dma.o.cnt = mmu.borrow().dma.o.cnt.clone();
-        dma.o.reg = mmu.borrow().dma.o.reg.clone();
-        dma.o.sig = mmu.borrow().dma.o.sig.clone();
-        Self { mmu, cpu, dma, glo, spd: 1, c: 0, z: time::Instant::now() }
+        Self { cpu, glo, mmu, spd: 1, c: 0, z: time::Instant::now() }
     }
 
     pub fn step(&mut self) -> u32 {
@@ -52,14 +46,10 @@ impl GameBoy {
                 self.z = now;
             }
         }
-        let now = self.glo.borrow().sdiw;
-        let old_cnt = *self.dma.o.cnt.borrow();
+        let origin = self.glo.borrow().sdiw;
         self.cpu.step();
-        let new_cnt = *self.dma.o.cnt.borrow();
-        let cycles = self.glo.borrow().sdiw - now;
-        self.dma.o.do_copies(old_cnt, new_cnt);
-        let hdma_cycles = self.mmu.borrow_mut().next();
-        self.c += cycles as u32 + hdma_cycles;
-        cycles as u32 + hdma_cycles
+        let cycles = self.glo.borrow().sdiw.wrapping_sub(origin);
+        self.c += cycles as u32;
+        cycles as u32
     }
 }

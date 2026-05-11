@@ -2,7 +2,6 @@ pub mod apu;
 pub mod cartridge;
 pub mod convention;
 pub mod cpu;
-pub mod dma;
 pub mod gameboy;
 pub mod gpu;
 pub mod interrupt;
