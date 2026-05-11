@@ -225,6 +225,7 @@ impl Alu {
     fn jr(cpu: &mut Cpu, n: u8) {
         let n = n as i8;
         cpu.reg.pc = ((u32::from(cpu.reg.pc) as i32) + i32::from(n)) as u16;
+        cpu.mem.borrow_mut().tick(4);
     }
 
     // Logical OR n with register A, result in A.
@@ -608,7 +609,6 @@ impl Cpu {
             }
             0x18 => {
                 let b = self.fetch_b();
-                self.mem.borrow_mut().tick(4);
                 Alu::jr(self, b);
             }
             0x19 => {
@@ -632,7 +632,6 @@ impl Cpu {
             0x20 => {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(Z) {
-                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
@@ -658,7 +657,6 @@ impl Cpu {
             0x28 => {
                 let b = self.fetch_b();
                 if self.reg.get_flag(Z) {
-                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
@@ -685,7 +683,6 @@ impl Cpu {
             0x30 => {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(C) {
-                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
@@ -722,7 +719,6 @@ impl Cpu {
             0x38 => {
                 let b = self.fetch_b();
                 if self.reg.get_flag(C) {
-                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
