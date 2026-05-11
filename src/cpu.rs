@@ -550,10 +550,10 @@ impl Cpu {
             }
             0x02 => self.sb(self.reg.get_bc(), self.reg.a),
             0x03 => {
-                let old = self.reg.get_bc();
+                let h = self.reg.get_bc();
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.set_bc(old.wrapping_add(1));
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.set_bc(h.wrapping_add(1));
             }
             0x04 => self.reg.b = Alu::inc(self, self.reg.b),
             0x05 => self.reg.b = Alu::dec(self, self.reg.b),
@@ -571,10 +571,10 @@ impl Cpu {
             0x09 => Alu::add_hl(self, self.reg.get_bc()),
             0x0a => self.reg.a = self.lb(self.reg.get_bc()),
             0x0b => {
-                let old = self.reg.get_bc();
+                let h = self.reg.get_bc();
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.set_bc(old.wrapping_sub(1));
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.set_bc(h.wrapping_sub(1));
             }
             0x0c => self.reg.c = Alu::inc(self, self.reg.c),
             0x0d => self.reg.c = Alu::dec(self, self.reg.c),
@@ -593,10 +593,10 @@ impl Cpu {
             }
             0x12 => self.sb(self.reg.get_de(), self.reg.a),
             0x13 => {
-                let old = self.reg.get_de();
+                let h = self.reg.get_de();
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.set_de(old.wrapping_add(1));
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.set_de(h.wrapping_add(1));
             }
             0x14 => self.reg.d = Alu::inc(self, self.reg.d),
             0x15 => self.reg.d = Alu::dec(self, self.reg.d),
@@ -612,10 +612,10 @@ impl Cpu {
             0x19 => Alu::add_hl(self, self.reg.get_de()),
             0x1a => self.reg.a = self.lb(self.reg.get_de()),
             0x1b => {
-                let old = self.reg.get_de();
+                let h = self.reg.get_de();
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.set_de(old.wrapping_sub(1));
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.set_de(h.wrapping_sub(1));
             }
             0x1c => self.reg.e = Alu::inc(self, self.reg.e),
             0x1d => self.reg.e = Alu::dec(self, self.reg.e),
@@ -640,10 +640,10 @@ impl Cpu {
                 self.reg.set_hl(h.wrapping_add(1));
             }
             0x23 => {
-                let old = self.reg.get_hl();
+                let h = self.reg.get_hl();
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.set_hl(old.wrapping_add(1));
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.set_hl(h.wrapping_add(1));
             }
             0x24 => self.reg.h = Alu::inc(self, self.reg.h),
             0x25 => self.reg.h = Alu::dec(self, self.reg.h),
@@ -663,10 +663,10 @@ impl Cpu {
                 self.reg.set_hl(h.wrapping_add(1));
             }
             0x2b => {
-                let old = self.reg.get_hl();
+                let h = self.reg.get_hl();
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.set_hl(old.wrapping_sub(1));
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.set_hl(h.wrapping_sub(1));
             }
             0x2c => self.reg.l = Alu::inc(self, self.reg.l),
             0x2d => self.reg.l = Alu::dec(self, self.reg.l),
@@ -685,10 +685,10 @@ impl Cpu {
                 self.reg.set_hl(h.wrapping_sub(1));
             }
             0x33 => {
-                let old = self.reg.sp;
+                let h = self.reg.sp;
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.sp = old.wrapping_add(1);
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.sp = h.wrapping_add(1);
             }
             0x34 => {
                 let h = self.reg.get_hl();
@@ -722,10 +722,10 @@ impl Cpu {
                 self.reg.set_hl(h.wrapping_sub(1));
             }
             0x3b => {
-                let old = self.reg.sp;
+                let h = self.reg.sp;
                 self.mem.borrow_mut().tick(4);
-                self.mem.borrow_mut().notify_idu(old);
-                self.reg.sp = old.wrapping_sub(1);
+                self.mem.borrow_mut().notify_idu(h);
+                self.reg.sp = h.wrapping_sub(1);
             }
             0x3c => self.reg.a = Alu::inc(self, self.reg.a),
             0x3d => self.reg.a = Alu::dec(self, self.reg.a),
@@ -901,14 +901,14 @@ impl Cpu {
                 }
             }
             0xc1 => {
-                let sp0 = self.reg.sp;
-                let lo = self.lb(sp0) as u16;
-                self.reg.sp = sp0.wrapping_add(1);
-                self.mem.borrow_mut().notify_rdi(sp0);
-                let sp1 = self.reg.sp;
-                let hi = self.lb(sp1) as u16;
-                self.reg.sp = sp1.wrapping_add(1);
-                self.mem.borrow_mut().notify_seq(sp1);
+                let sp = self.reg.sp;
+                let lo = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_rdi(sp);
+                let sp = self.reg.sp;
+                let hi = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_seq(sp);
                 self.reg.set_bc(lo | (hi << 8));
             }
             0xc2 => {
@@ -933,17 +933,13 @@ impl Cpu {
             }
             0xc5 => {
                 self.mem.borrow_mut().tick(4);
-                let val = self.reg.get_bc();
-                let sp0 = self.reg.sp;
-                self.mem.borrow_mut().notify_idu(sp0);
-                self.reg.sp = sp0.wrapping_sub(1);
-                let sp1 = self.reg.sp;
-                self.sb(sp1, (val >> 8) as u8);
-                self.mem.borrow_mut().notify_idu(sp1);
-                self.reg.sp = sp1.wrapping_sub(1);
-                let sp2 = self.reg.sp;
-                self.sb(sp2, val as u8);
-                self.mem.borrow_mut().notify_idu(sp2);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.b);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.c);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
             }
             0xc6 => {
                 let b = self.fetch_b();
@@ -1418,14 +1414,14 @@ impl Cpu {
                 }
             }
             0xd1 => {
-                let sp0 = self.reg.sp;
-                let lo = self.lb(sp0) as u16;
-                self.reg.sp = sp0.wrapping_add(1);
-                self.mem.borrow_mut().notify_rdi(sp0);
-                let sp1 = self.reg.sp;
-                let hi = self.lb(sp1) as u16;
-                self.reg.sp = sp1.wrapping_add(1);
-                self.mem.borrow_mut().notify_seq(sp1);
+                let sp = self.reg.sp;
+                let lo = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_rdi(sp);
+                let sp = self.reg.sp;
+                let hi = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_seq(sp);
                 self.reg.set_de(lo | (hi << 8));
             }
             0xd2 => {
@@ -1447,17 +1443,13 @@ impl Cpu {
             }
             0xd5 => {
                 self.mem.borrow_mut().tick(4);
-                let val = self.reg.get_de();
-                let sp0 = self.reg.sp;
-                self.mem.borrow_mut().notify_idu(sp0);
-                self.reg.sp = sp0.wrapping_sub(1);
-                let sp1 = self.reg.sp;
-                self.sb(sp1, (val >> 8) as u8);
-                self.mem.borrow_mut().notify_idu(sp1);
-                self.reg.sp = sp1.wrapping_sub(1);
-                let sp2 = self.reg.sp;
-                self.sb(sp2, val as u8);
-                self.mem.borrow_mut().notify_idu(sp2);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.d);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.e);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
             }
             0xd6 => {
                 let b = self.fetch_b();
@@ -1511,14 +1503,14 @@ impl Cpu {
                 self.sb(h, self.reg.a);
             }
             0xe1 => {
-                let sp0 = self.reg.sp;
-                let lo = self.lb(sp0) as u16;
-                self.reg.sp = sp0.wrapping_add(1);
-                self.mem.borrow_mut().notify_rdi(sp0);
-                let sp1 = self.reg.sp;
-                let hi = self.lb(sp1) as u16;
-                self.reg.sp = sp1.wrapping_add(1);
-                self.mem.borrow_mut().notify_seq(sp1);
+                let sp = self.reg.sp;
+                let lo = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_rdi(sp);
+                let sp = self.reg.sp;
+                let hi = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_seq(sp);
                 self.reg.set_hl(lo | (hi << 8));
             }
             0xe2 => self.sb(0xff00 | u16::from(self.reg.c), self.reg.a),
@@ -1526,17 +1518,13 @@ impl Cpu {
             0xe4 => unreachable!(),
             0xe5 => {
                 self.mem.borrow_mut().tick(4);
-                let val = self.reg.get_hl();
-                let sp0 = self.reg.sp;
-                self.mem.borrow_mut().notify_idu(sp0);
-                self.reg.sp = sp0.wrapping_sub(1);
-                let sp1 = self.reg.sp;
-                self.sb(sp1, (val >> 8) as u8);
-                self.mem.borrow_mut().notify_idu(sp1);
-                self.reg.sp = sp1.wrapping_sub(1);
-                let sp2 = self.reg.sp;
-                self.sb(sp2, val as u8);
-                self.mem.borrow_mut().notify_idu(sp2);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.h);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.l);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
             }
             0xe6 => {
                 let b = self.fetch_b();
@@ -1574,14 +1562,14 @@ impl Cpu {
                 self.reg.a = self.lb(h);
             }
             0xf1 => {
-                let sp0 = self.reg.sp;
-                let lo = self.lb(sp0) as u16;
-                self.reg.sp = sp0.wrapping_add(1);
-                self.mem.borrow_mut().notify_rdi(sp0);
-                let sp1 = self.reg.sp;
-                let hi = self.lb(sp1) as u16;
-                self.reg.sp = sp1.wrapping_add(1);
-                self.mem.borrow_mut().notify_seq(sp1);
+                let sp = self.reg.sp;
+                let lo = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_rdi(sp);
+                let sp = self.reg.sp;
+                let hi = self.lb(sp) as u16;
+                self.reg.sp = sp.wrapping_add(1);
+                self.mem.borrow_mut().notify_seq(sp);
                 self.reg.set_af(lo | (hi << 8));
             }
             0xf2 => self.reg.a = self.lb(0xff00 | u16::from(self.reg.c)),
@@ -1592,17 +1580,13 @@ impl Cpu {
             0xf4 => unreachable!(),
             0xf5 => {
                 self.mem.borrow_mut().tick(4);
-                let val = self.reg.get_af();
-                let sp0 = self.reg.sp;
-                self.mem.borrow_mut().notify_idu(sp0);
-                self.reg.sp = sp0.wrapping_sub(1);
-                let sp1 = self.reg.sp;
-                self.sb(sp1, (val >> 8) as u8);
-                self.mem.borrow_mut().notify_idu(sp1);
-                self.reg.sp = sp1.wrapping_sub(1);
-                let sp2 = self.reg.sp;
-                self.sb(sp2, val as u8);
-                self.mem.borrow_mut().notify_idu(sp2);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.a);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
+                self.reg.sp = self.reg.sp.wrapping_sub(1);
+                self.sb(self.reg.sp, self.reg.f);
+                self.mem.borrow_mut().notify_idu(self.reg.sp);
             }
             0xf6 => {
                 let b = self.fetch_b();
