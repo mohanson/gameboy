@@ -142,26 +142,44 @@ impl Mmu {
         }
     }
 
-    /// Trigger the DMG OAM write-corruption bug.
-    /// Call this BEFORE the internal() cycle of an INC/DEC rr instruction
-    /// when the old register value is in $FE00–$FEFF and we are on a DMG.
-    pub fn trigger_oam_write_bug(&mut self) {
+    /// Called by the CPU when its IDU (Increment/Decrement Unit) operates with
+    /// `addr` as the current register-pair value. The MMU applies any address-
+    /// range-specific bus side effects (e.g. OAM corruption on DMG) internally.
+    pub fn notify_idu(&mut self, addr: u16) {
+        if addr >> 8 == 0xfe {
+            self.oam_write_corrupt();
+        }
+    }
+
+    /// Called by the CPU when a bus read occurs simultaneously with an IDU
+    /// operation (Read-During-IDU), e.g. LDI/LDD or the first byte of POP.
+    pub fn notify_rdi(&mut self, addr: u16) {
+        if addr >> 8 == 0xfe {
+            self.oam_rdi_corrupt();
+        }
+    }
+
+    /// Called by the CPU when a sequential (non-IDU) bus read occurs, e.g.
+    /// the second byte of a POP instruction.
+    pub fn notify_seq(&mut self, addr: u16) {
+        if addr >> 8 == 0xfe {
+            self.oam_read_corrupt();
+        }
+    }
+
+    fn oam_write_corrupt(&mut self) {
         if self.term == Term::DMG {
             self.gpu.oam_write_corrupt();
         }
     }
 
-    /// Trigger the DMG OAM read-corruption bug.
-    /// Call this when a CPU memory read lands in $FE00–$FEFF during mode 2.
-    pub fn trigger_oam_read_bug(&mut self) {
+    fn oam_read_corrupt(&mut self) {
         if self.term == Term::DMG {
             self.gpu.oam_read_corrupt();
         }
     }
 
-    /// Trigger the DMG OAM "Read During Increase/Decrease" corruption bug.
-    /// Call this for POP-type instructions where the bus read and IDU happen simultaneously.
-    pub fn trigger_oam_rdi_bug(&mut self) {
+    fn oam_rdi_corrupt(&mut self) {
         if self.term == Term::DMG {
             self.gpu.oam_rdi_corrupt();
         }
