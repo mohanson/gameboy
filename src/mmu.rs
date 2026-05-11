@@ -111,7 +111,7 @@ impl Mmu {
         let hdma_cycles = self.run_dma();
         self.gpu.h_blank = false;
         if hdma_cycles > 0 {
-            self.timer.tick(hdma_cycles);
+            self.timer.tick(hdma_cycles as u16);
             let video_cycles = self.video_cycles(hdma_cycles);
             self.gpu.next(video_cycles);
             self.apu.next(video_cycles);
@@ -121,8 +121,8 @@ impl Mmu {
     }
 
     fn advance_clock(&mut self, cycles: u32) {
-        self.timer.tick(cycles);
-        self.serial.tick(cycles);
+        self.timer.tick(cycles as u16);
+        self.serial.tick(cycles as u16);
         let video_cycles = self.video_cycles(cycles);
         self.gpu.next(video_cycles);
         self.apu.next(video_cycles);

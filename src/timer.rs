@@ -118,7 +118,7 @@ impl Memory for Timer {
 }
 
 impl Ticker for Timer {
-    fn tick(&mut self, cycles: u32) {
+    fn tick(&mut self, cycles: u16) {
         for _ in 0..cycles {
             if self.window != 0 {
                 self.window = self.window.wrapping_sub(1);
@@ -129,6 +129,8 @@ impl Ticker for Timer {
             }
             let sdiv = self.glo.borrow().sdiv.wrapping_add(1);
             self.glo.borrow_mut().sdiv = sdiv;
+            let sdiw = self.glo.borrow().sdiw.wrapping_add(1);
+            self.glo.borrow_mut().sdiw = sdiw;
             if self.window == 0 {
                 self.edge()
             }

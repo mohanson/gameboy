@@ -86,7 +86,7 @@ pub trait Stable: Memory {
 
 // Ticker is a trait for components that need to be updated every clock cycle.
 pub trait Ticker: Memory {
-    fn tick(&mut self, cycles: u32);
+    fn tick(&mut self, cycles: u16);
 }
 
 pub fn hi(n: u16) -> u8 {
