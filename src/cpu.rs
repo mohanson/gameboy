@@ -61,6 +61,7 @@ impl Alu {
         cpu.reg.set_flag(H, (a & 0x0fff) + (n & 0x0fff) > 0x0fff);
         cpu.reg.set_flag(N, false);
         cpu.reg.set_hl(r);
+        cpu.mem.borrow_mut().tick(4);
     }
 
     // Add n to Stack Pointer (SP).
@@ -567,10 +568,7 @@ impl Cpu {
                 let h = h.wrapping_add(1);
                 self.sb(h, hi(self.reg.sp));
             }
-            0x09 => {
-                self.mem.borrow_mut().tick(4);
-                Alu::add_hl(self, self.reg.get_bc());
-            }
+            0x09 => Alu::add_hl(self, self.reg.get_bc()),
             0x0a => self.reg.a = self.lb(self.reg.get_bc()),
             0x0b => {
                 let old = self.reg.get_bc();
@@ -611,10 +609,7 @@ impl Cpu {
                 let b = self.fetch_b();
                 Alu::jr(self, b);
             }
-            0x19 => {
-                self.mem.borrow_mut().tick(4);
-                Alu::add_hl(self, self.reg.get_de());
-            }
+            0x19 => Alu::add_hl(self, self.reg.get_de()),
             0x1a => self.reg.a = self.lb(self.reg.get_de()),
             0x1b => {
                 let old = self.reg.get_de();
@@ -660,10 +655,7 @@ impl Cpu {
                     Alu::jr(self, b);
                 }
             }
-            0x29 => {
-                self.mem.borrow_mut().tick(4);
-                Alu::add_hl(self, self.reg.get_hl());
-            }
+            0x29 => Alu::add_hl(self, self.reg.get_hl()),
             0x2a => {
                 let h = self.reg.get_hl();
                 self.reg.a = self.lb(h);
@@ -722,10 +714,7 @@ impl Cpu {
                     Alu::jr(self, b);
                 }
             }
-            0x39 => {
-                self.mem.borrow_mut().tick(4);
-                Alu::add_hl(self, self.reg.sp);
-            }
+            0x39 => Alu::add_hl(self, self.reg.sp),
             0x3a => {
                 let h = self.reg.get_hl();
                 self.reg.a = self.lb(h);
