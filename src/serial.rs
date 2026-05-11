@@ -66,12 +66,11 @@ impl Memory for Serial {
 }
 
 impl Ticker for Serial {
-    fn tick(&mut self, cycles: u32) {
-        assert!(cycles <= u16::MAX as u32);
+    fn tick(&mut self, cycles: u16) {
         if self.bits == 0 {
             return;
         }
-        let mut sdiv = self.glo.borrow().sdiv.wrapping_sub(cycles as u16);
+        let mut sdiv = self.glo.borrow().sdiv.wrapping_sub(cycles);
         for _ in 0..cycles {
             sdiv = sdiv.wrapping_add(1);
             if sdiv & 0x01ff == 0x0000 {
