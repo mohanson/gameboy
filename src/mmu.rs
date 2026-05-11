@@ -96,11 +96,8 @@ impl Mmu {
         if self.speed == 2 { cycles / 2 } else { cycles }
     }
 
-    pub fn try_switch_speed(&mut self) -> bool {
-        if self.term != Term::CGB || !self.speed_switch {
-            return false;
-        }
-        self.speed = if self.speed == 1 { 2 } else { 1 };
+    pub fn notify_spd(&mut self) -> bool {
+        self.speed = 3 - self.speed;
         self.speed_switch = false;
         true
     }

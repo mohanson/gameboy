@@ -585,7 +585,14 @@ impl Cpu {
             }
             0x10 => {
                 assert!(self.fetch_b() == 0x00);
-                self.mem.borrow_mut().try_switch_speed();
+                match self.glo.borrow().term {
+                    Term::DMG => {}
+                    Term::CGB => {
+                        if self.mem.borrow().lb(0xff4d) & 0x01 == 0x01 {
+                            self.mem.borrow_mut().notify_spd();
+                        }
+                    }
+                }
             }
             0x11 => {
                 let h = self.fetch_h();
