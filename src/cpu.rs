@@ -520,11 +520,6 @@ impl Cpu {
         self.reg.sp = self.reg.sp.wrapping_add(1);
         lo | (hi << 8)
     }
-
-    /// Spend one internal M-cycle (e.g. branch delay, SP arithmetic) without a bus access.
-    fn internal(&mut self) {
-        self.mem.borrow_mut().tick(4);
-    }
 }
 
 impl Cpu {
@@ -554,7 +549,7 @@ impl Cpu {
             0x02 => self.sb(self.reg.get_bc(), self.reg.a),
             0x03 => {
                 let old = self.reg.get_bc();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -573,13 +568,13 @@ impl Cpu {
                 self.sb(h.wrapping_add(1), (self.reg.sp >> 8) as u8);
             }
             0x09 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 Alu::add_hl(self, self.reg.get_bc());
             }
             0x0a => self.reg.a = self.lb(self.reg.get_bc()),
             0x0b => {
                 let old = self.reg.get_bc();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -603,7 +598,7 @@ impl Cpu {
             0x12 => self.sb(self.reg.get_de(), self.reg.a),
             0x13 => {
                 let old = self.reg.get_de();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -618,17 +613,17 @@ impl Cpu {
             }
             0x18 => {
                 let b = self.fetch_b();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 Alu::jr(self, b);
             }
             0x19 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 Alu::add_hl(self, self.reg.get_de());
             }
             0x1a => self.reg.a = self.lb(self.reg.get_de()),
             0x1b => {
                 let old = self.reg.get_de();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -644,7 +639,7 @@ impl Cpu {
             0x20 => {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(Z) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
@@ -659,7 +654,7 @@ impl Cpu {
             }
             0x23 => {
                 let old = self.reg.get_hl();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -672,12 +667,12 @@ impl Cpu {
             0x28 => {
                 let b = self.fetch_b();
                 if self.reg.get_flag(Z) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
             0x29 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 Alu::add_hl(self, self.reg.get_hl());
             }
             0x2a => {
@@ -690,7 +685,7 @@ impl Cpu {
             }
             0x2b => {
                 let old = self.reg.get_hl();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -703,7 +698,7 @@ impl Cpu {
             0x30 => {
                 let b = self.fetch_b();
                 if !self.reg.get_flag(C) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
@@ -715,7 +710,7 @@ impl Cpu {
             }
             0x33 => {
                 let old = self.reg.sp;
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -742,12 +737,12 @@ impl Cpu {
             0x38 => {
                 let b = self.fetch_b();
                 if self.reg.get_flag(C) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     Alu::jr(self, b);
                 }
             }
             0x39 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 Alu::add_hl(self, self.reg.sp);
             }
             0x3a => {
@@ -760,7 +755,7 @@ impl Cpu {
             }
             0x3b => {
                 let old = self.reg.sp;
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if old >> 8 == 0xfe {
                     self.mem.borrow_mut().trigger_oam_write_bug();
                 }
@@ -933,10 +928,10 @@ impl Cpu {
             }
             0xbf => Alu::cp(self, self.reg.a),
             0xc0 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if !self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                 }
             }
             0xc1 => {
@@ -957,25 +952,25 @@ impl Cpu {
             0xc2 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(Z) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.reg.pc = h;
                 }
             }
             0xc3 => {
                 let h = self.fetch_h();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.reg.pc = h;
             }
             0xc4 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(Z) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
                 }
             }
             0xc5 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 let val = self.reg.get_bc();
                 let sp0 = self.reg.sp;
                 if sp0 >> 8 == 0xfe {
@@ -999,25 +994,25 @@ impl Cpu {
                 Alu::add(self, b);
             }
             0xc7 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x00;
             }
             0xc8 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if self.reg.get_flag(Z) {
                     self.reg.pc = self.stack_pop();
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                 }
             }
             0xc9 => {
                 self.reg.pc = self.stack_pop();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
             }
             0xca => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(Z) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.reg.pc = h;
                 }
             }
@@ -1439,14 +1434,14 @@ impl Cpu {
             0xcc => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(Z) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
                 }
             }
             0xcd => {
                 let h = self.fetch_h();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = h;
             }
@@ -1455,15 +1450,15 @@ impl Cpu {
                 Alu::adc(self, b);
             }
             0xcf => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x08;
             }
             0xd0 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if !self.reg.get_flag(C) {
                     self.reg.pc = self.stack_pop();
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                 }
             }
             0xd1 => {
@@ -1484,7 +1479,7 @@ impl Cpu {
             0xd2 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(C) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.reg.pc = h;
                 }
             }
@@ -1493,13 +1488,13 @@ impl Cpu {
             0xd4 => {
                 let h = self.fetch_h();
                 if !self.reg.get_flag(C) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
                 }
             }
             0xd5 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 let val = self.reg.get_de();
                 let sp0 = self.reg.sp;
                 if sp0 >> 8 == 0xfe {
@@ -1523,26 +1518,26 @@ impl Cpu {
                 Alu::sub(self, b);
             }
             0xd7 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x10;
             }
             0xd8 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 if self.reg.get_flag(C) {
                     self.reg.pc = self.stack_pop();
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                 }
             }
             0xd9 => {
                 self.reg.pc = self.stack_pop();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.ime = 1;
             }
             0xda => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(C) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.reg.pc = h;
                 }
             }
@@ -1550,7 +1545,7 @@ impl Cpu {
             0xdc => {
                 let h = self.fetch_h();
                 if self.reg.get_flag(C) {
-                    self.internal();
+                    self.mem.borrow_mut().tick(4);
                     self.stack_add(self.reg.pc);
                     self.reg.pc = h;
                 }
@@ -1561,7 +1556,7 @@ impl Cpu {
                 Alu::sbc(self, b);
             }
             0xdf => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x18;
             }
@@ -1588,7 +1583,7 @@ impl Cpu {
             0xe3 => unreachable!(),
             0xe4 => unreachable!(),
             0xe5 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 let val = self.reg.get_hl();
                 let sp0 = self.reg.sp;
                 if sp0 >> 8 == 0xfe {
@@ -1612,14 +1607,14 @@ impl Cpu {
                 Alu::and(self, b);
             }
             0xe7 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x20;
             }
             0xe8 => {
                 Alu::add_sp(self);
-                self.internal();
-                self.internal();
+                self.mem.borrow_mut().tick(4);
+                self.mem.borrow_mut().tick(4);
             }
             0xe9 => self.reg.pc = self.reg.get_hl(),
             0xea => {
@@ -1634,7 +1629,7 @@ impl Cpu {
                 Alu::xor(self, b);
             }
             0xef => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x28;
             }
@@ -1664,7 +1659,7 @@ impl Cpu {
             }
             0xf4 => unreachable!(),
             0xf5 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 let val = self.reg.get_af();
                 let sp0 = self.reg.sp;
                 if sp0 >> 8 == 0xfe {
@@ -1688,7 +1683,7 @@ impl Cpu {
                 Alu::or(self, b);
             }
             0xf7 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x30;
             }
@@ -1700,10 +1695,10 @@ impl Cpu {
                 self.reg.set_flag(N, false);
                 self.reg.set_flag(Z, false);
                 self.reg.set_hl(a.wrapping_add(b));
-                self.internal();
+                self.mem.borrow_mut().tick(4);
             }
             0xf9 => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.reg.sp = self.reg.get_hl();
             }
             0xfa => {
@@ -1718,7 +1713,7 @@ impl Cpu {
                 Alu::cp(self, b);
             }
             0xff => {
-                self.internal();
+                self.mem.borrow_mut().tick(4);
                 self.stack_add(self.reg.pc);
                 self.reg.pc = 0x38;
             }
@@ -1752,8 +1747,8 @@ impl Cpu {
         self.ime = 0;
 
         // Two internal cycles before pushing PC.
-        self.internal();
-        self.internal();
+        self.mem.borrow_mut().tick(4);
+        self.mem.borrow_mut().tick(4);
 
         // Consume an interrupter, the rest is written back to the register.
         self.reg.sp = self.reg.sp.wrapping_sub(1);
@@ -1765,7 +1760,7 @@ impl Cpu {
         self.reg.sp = self.reg.sp.wrapping_sub(1);
         self.sb(self.reg.sp, lo(self.reg.pc));
         // One internal cycle to load the vector address into PC.
-        self.internal();
+        self.mem.borrow_mut().tick(4);
         // No interrupt pending after the high-byte push, jump to 0x0000.
         if ivec == 0x00 {
             self.reg.pc = 0x0000;
@@ -1800,7 +1795,7 @@ impl Cpu {
             return;
         }
         if self.low == 1 {
-            self.internal();
+            self.mem.borrow_mut().tick(4);
             return;
         }
         self.exec_opcode();
