@@ -1730,45 +1730,41 @@ impl Cpu {
     // 3. Reset the IME flag and prevent all interrupts.
     // 4. The PC (program counter) is pushed onto the stack.
     // 5. Jump to the starting address of the interrupt.
-    fn handle_trap(&mut self) -> bool {
+    fn handle_trap(&mut self) -> Option<()> {
         if self.low == 0 && self.ime == 0 {
-            return false;
+            return None;
         }
-        let intf = self.mem.borrow().lb(0xff0f);
-        let inte = self.mem.borrow().lb(0xffff);
+        let intf = self.glo.borrow().intf;
+        let inte = self.glo.borrow().inte;
         let ivec = intf & inte & 0x1f;
         if ivec == 0x00 {
-            return false;
+            return None;
         }
         self.low = 0;
         if self.ime == 0 {
-            return false;
+            return None;
         }
         self.ime = 0;
 
-        // Two internal cycles before pushing PC.
-        self.mem.borrow_mut().tick(4);
-        self.mem.borrow_mut().tick(4);
-
+        self.mem.borrow_mut().tick(8);
         // Consume an interrupter, the rest is written back to the register.
         self.reg.sp = self.reg.sp.wrapping_sub(1);
         // Push high byte of pc first. If sp-1 = 0xffff (ie register), this write may modify ie.
         self.sb(self.reg.sp, hi(self.reg.pc));
-        let intf = self.mem.borrow().lb(0xff0f);
-        let inte = self.mem.borrow().lb(0xffff);
+        let intf = self.glo.borrow().intf;
+        let inte = self.glo.borrow().inte;
         let ivec = intf & inte & 0x1f;
         self.reg.sp = self.reg.sp.wrapping_sub(1);
         self.sb(self.reg.sp, lo(self.reg.pc));
-        // One internal cycle to load the vector address into PC.
         self.mem.borrow_mut().tick(4);
         // No interrupt pending after the high-byte push, jump to 0x0000.
         if ivec == 0x00 {
             self.reg.pc = 0x0000;
-            return true;
+            return Some(());
         }
         let isig = ivec.trailing_zeros();
         let intf = intf & !(1 << isig);
-        self.mem.borrow_mut().sb(0xff0f, intf);
+        self.glo.borrow_mut().intf = intf;
         // Set the PC to correspond interrupt process program:
         // V-Blank: 0x40
         //     LCD: 0x48
@@ -1776,7 +1772,7 @@ impl Cpu {
         //  Serial: 0x58
         //  JOYPAD: 0x60
         self.reg.pc = 0x0040 | ((isig as u16) << 3);
-        true
+        Some(())
     }
 }
 
@@ -1791,7 +1787,7 @@ impl Cpu {
     }
 
     pub fn step(&mut self) {
-        if self.handle_trap() {
+        if self.handle_trap().is_some() {
             return;
         }
         if self.low == 1 {
