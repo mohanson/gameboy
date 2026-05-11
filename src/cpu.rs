@@ -562,8 +562,9 @@ impl Cpu {
             }
             0x08 => {
                 let h = self.fetch_h();
-                self.sb(h, self.reg.sp as u8);
-                self.sb(h.wrapping_add(1), (self.reg.sp >> 8) as u8);
+                self.sb(h, lo(self.reg.sp));
+                let h = h.wrapping_add(1);
+                self.sb(h, hi(self.reg.sp));
             }
             0x09 => {
                 self.mem.borrow_mut().tick(4);
