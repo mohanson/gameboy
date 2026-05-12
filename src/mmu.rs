@@ -102,7 +102,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => self.dma.o.reg,
+            0xff46 => self.dma.o.lb(0xff46),
             0xff47..=0xff4b => self.gpu.lb(a),
             0xff4c..=0xff70 => match self.glo.borrow().term {
                 Term::DMG => 0xff,
@@ -146,10 +146,7 @@ impl Memory for Mmu {
                 self.apu.sb(a, v);
             }
             0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => {
-                self.dma.o.reg = v;
-                self.dma.o.pending = true;
-            }
+            0xff46 => self.dma.o.sb(0xff46, v),
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.glo.borrow().term {
                 Term::DMG => {}
@@ -212,8 +209,8 @@ impl Mmu {
 
     fn odma(&mut self, cycles: u32) {
         let old_cnt = self.dma.o.cnt;
-        if self.dma.o.pending {
-            self.dma.o.pending = false;
+        if self.dma.o.sig != 0x00 {
+            self.dma.o.sig = 0x00;
             if self.dma.o.cnt <= 639 {
                 self.dma.o.cnt = 648; // 2 M-cycle startup delay (fresh start or restart mid-copy)
             }
@@ -284,7 +281,11 @@ impl Mmu {
     pub fn lb_odma(&self, a: u16) -> u8 {
         match a {
             0xfe00..=0xfe9f => {
-                if self.dma.o.is_active() { 0xff } else { self.gpu.lb(a) }
+                if self.dma.o.is_active() {
+                    0xff
+                } else {
+                    self.gpu.lb(a)
+                }
             }
             _ => unreachable!(),
         }

@@ -71,18 +71,27 @@ impl Memory for H {
 }
 
 pub struct O {
-    // FF46 — DMA: OAM DMA source address & start. Writing (reg << 8) as the source page triggers a
-    // 160-byte copy from (reg << 8)..+(reg<<8|0x9F) into OAM. Valid source range: 0x00–0xDF.
     pub reg: u8,
-    // Countdown: loaded to 648 on trigger (2 M-cycle startup delay), active while 1–640.
     pub cnt: u32,
-    // Set on write to FF46; consumed on the next advance_clock call to start the countdown.
-    pub pending: bool,
+    pub sig: u8,
+}
+
+impl Memory for O {
+    fn lb(&self, a: u16) -> u8 {
+        assert_eq!(a, 0xff46);
+        self.reg
+    }
+
+    fn sb(&mut self, a: u16, v: u8) {
+        assert_eq!(a, 0xff46);
+        self.reg = v;
+        self.sig = 0x01;
+    }
 }
 
 impl O {
     pub fn power_up() -> Self {
-        Self { reg: 0xff, cnt: 0, pending: false }
+        Self { reg: 0xff, cnt: 0x00000000, sig: 0x00 }
     }
 
     pub fn is_active(&self) -> bool {
