@@ -173,9 +173,10 @@ impl Ticker for Mmu {
         let cycles = self.hdma();
         self.gpu.h_blank = false;
         if cycles != 0 {
-            self.next(cycles);
-            self.gpu.h_blank = false;
+            return;
         }
+        self.next(cycles);
+        self.gpu.h_blank = false;
     }
 }
 
