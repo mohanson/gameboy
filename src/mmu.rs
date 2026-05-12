@@ -22,9 +22,6 @@ pub struct Mmu {
     pub hram: [u8; 0x7f],
     pub intr: Interrupt,
     pub joypad: Joypad,
-    pub oam_dma_reg: u8,
-    pub oam_dma_cnt: u32,
-    pub oam_dma_pending: bool,
     pub rom: Cartridge,
     pub serial: Serial,
     pub speed: u8,
@@ -44,9 +41,6 @@ impl Mmu {
             hram: [0x00; 0x7f],
             intr: Interrupt::power_up(glo.clone()),
             joypad: Joypad::power_up(glo.clone()),
-            oam_dma_reg: 0xff,
-            oam_dma_cnt: 0,
-            oam_dma_pending: false,
             rom,
             serial: Serial::power_up(glo.clone()),
             speed: 1,
@@ -108,7 +102,7 @@ impl Memory for Mmu {
             0xff0f => self.intr.lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => self.oam_dma_reg,
+            0xff46 => self.dma.o.reg,
             0xff47..=0xff4b => self.gpu.lb(a),
             0xff4c..=0xff70 => match self.glo.borrow().term {
                 Term::DMG => 0xff,
@@ -137,7 +131,7 @@ impl Memory for Mmu {
             0xe000..=0xfdff => self.sb(a - 0x2000, v),
             0xfe00..=0xfe9f => {
                 // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
-                if self.oam_dma_is_active() {
+                if self.dma.o.is_active() {
                     return;
                 }
                 self.gpu.sb(a, v);
@@ -153,8 +147,8 @@ impl Memory for Mmu {
             }
             0xff40..=0xff45 => self.gpu.sb(a, v),
             0xff46 => {
-                self.oam_dma_reg = v;
-                self.oam_dma_pending = true;
+                self.dma.o.reg = v;
+                self.dma.o.pending = true;
             }
             0xff47..=0xff4b => self.gpu.sb(a, v),
             0xff4c..=0xff70 => match self.glo.borrow().term {
@@ -215,6 +209,41 @@ impl Mmu {
             self.dma.h.status = DmaStatus::None;
         }
     }
+
+    fn odma(&mut self, cycles: u32) {
+        let old_cnt = self.dma.o.cnt;
+        if self.dma.o.pending {
+            self.dma.o.pending = false;
+            if self.dma.o.cnt <= 639 {
+                self.dma.o.cnt = 648; // 2 M-cycle startup delay (fresh start or restart mid-copy)
+            }
+        }
+        if self.dma.o.cnt != 0 {
+            self.dma.o.cnt = self.dma.o.cnt.saturating_sub(cycles);
+        }
+        if old_cnt == 0 || old_cnt.min(640) <= self.dma.o.cnt {
+            return;
+        }
+        let first = (640u32.saturating_sub(old_cnt.min(640)) + 3) / 4;
+        let last = (640u32.saturating_sub(self.dma.o.cnt) + 3) / 4;
+        let src_page = (self.dma.o.reg as u16) << 8;
+        let wram_bank = self.wram_bank;
+        let gpu = &mut self.gpu;
+        let rom = &self.rom;
+        let wram = &self.wram;
+        for i in first..last.min(160) {
+            let src = src_page | i as u16;
+            let src = if src <= 0xdfff { src } else { src - 0x2000 };
+            let b = match src {
+                0x0000..=0x7fff | 0xa000..=0xbfff => rom.lb(src),
+                0x8000..=0x9fff => gpu.lb(src),
+                0xc000..=0xcfff => wram[src as usize - 0xc000],
+                0xd000..=0xdfff => wram[src as usize - 0xd000 + 0x1000 * wram_bank],
+                _ => 0xff,
+            };
+            gpu.sb(0xfe00 + i as u16, b);
+        }
+    }
 }
 
 impl Mmu {
@@ -249,51 +278,13 @@ impl Mmu {
         let video_cycles = self.video_cycles(cycles);
         self.gpu.next(video_cycles);
         self.apu.next(video_cycles);
-        // OAM DMA: advance the countdown and copy any bytes that fall inside this M-cycle.
-        let old_cnt = self.oam_dma_cnt;
-        if self.oam_dma_pending {
-            self.oam_dma_pending = false;
-            if self.oam_dma_cnt <= 639 {
-                self.oam_dma_cnt = 648; // 2 M-cycle startup delay (fresh start or restart mid-copy)
-            }
-        }
-        if self.oam_dma_cnt != 0 {
-            self.oam_dma_cnt = self.oam_dma_cnt.saturating_sub(cycles as u32);
-        }
-        if old_cnt != 0 && old_cnt.min(640) > self.oam_dma_cnt {
-            let first = (640u32.saturating_sub(old_cnt.min(640)) + 3) / 4;
-            let last = (640u32.saturating_sub(self.oam_dma_cnt) + 3) / 4;
-            let src_page = (self.oam_dma_reg as u16) << 8;
-            let wram_bank = self.wram_bank;
-            let gpu = &mut self.gpu;
-            let rom = &self.rom;
-            let wram = &self.wram;
-            for i in first..last.min(160) {
-                let src = src_page | i as u16;
-                let src = if src <= 0xdfff { src } else { src - 0x2000 };
-                let b = match src {
-                    0x0000..=0x7fff | 0xa000..=0xbfff => rom.lb(src),
-                    0x8000..=0x9fff => gpu.lb(src),
-                    0xc000..=0xcfff => wram[src as usize - 0xc000],
-                    0xd000..=0xdfff => wram[src as usize - 0xd000 + 0x1000 * wram_bank],
-                    _ => 0xff,
-                };
-                gpu.sb(0xfe00 + i as u16, b);
-            }
-        }
-    }
-
-    fn oam_dma_is_active(&self) -> bool {
-        self.oam_dma_cnt > 0 && self.oam_dma_cnt <= 640
+        self.odma(cycles);
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
         match a {
             0xfe00..=0xfe9f => {
-                if self.oam_dma_is_active() {
-                    return 0xff;
-                }
-                self.gpu.lb(a)
+                if self.dma.o.is_active() { 0xff } else { self.gpu.lb(a) }
             }
             _ => unreachable!(),
         }
