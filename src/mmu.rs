@@ -168,7 +168,12 @@ impl Memory for Mmu {
 
 impl Ticker for Mmu {
     fn tick(&mut self, cycles: u16) {
-        self.advance_clock(cycles as u32);
+        self.timer.tick(cycles);
+        self.serial.tick(cycles);
+        let video_cycles = self.video_cycles(cycles as u32);
+        self.gpu.next(video_cycles);
+        self.apu.next(video_cycles);
+        self.odma(cycles);
         self.next();
     }
 }
@@ -267,15 +272,6 @@ impl Mmu {
             self.gpu.h_blank = false;
         }
         hdma_cycles as u32
-    }
-
-    fn advance_clock(&mut self, cycles: u32) {
-        self.timer.tick(cycles as u16);
-        self.serial.tick(cycles as u16);
-        let video_cycles = self.video_cycles(cycles);
-        self.gpu.next(video_cycles);
-        self.apu.next(video_cycles);
-        self.odma(cycles as u16);
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
