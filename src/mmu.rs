@@ -4,7 +4,8 @@
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
 use crate::convention::{Global, Memory, Term, Ticker};
-use crate::gpu::{Gpu, Hdma, HdmaMode};
+use crate::dma::{Dma, HdmaMode};
+use crate::gpu::Gpu;
 use crate::interrupt::Interrupt;
 use crate::joypad::Joypad;
 use crate::rng;
@@ -16,8 +17,8 @@ use std::rc::Rc;
 pub struct Mmu {
     pub glo: Rc<RefCell<Global>>,
     pub apu: Apu,
+    pub dma: Dma,
     pub gpu: Gpu,
-    pub hdma: Hdma,
     pub hram: [u8; 0x7f],
     pub intr: Interrupt,
     pub joypad: Joypad,
@@ -38,8 +39,8 @@ impl Mmu {
         let mut r = Self {
             glo: glo.clone(),
             apu: Apu::power_up(glo.clone(), 48000),
+            dma: Dma::power_up(),
             gpu: Gpu::power_up(glo.clone()),
-            hdma: Hdma::power_up(),
             hram: [0x00; 0x7f],
             intr: Interrupt::power_up(glo.clone()),
             joypad: Joypad::power_up(glo.clone()),
@@ -240,7 +241,7 @@ impl Memory for Mmu {
                 Term::CGB => match a {
                     0xff4d => 0x7e | ((self.speed == 2) as u8) << 7 | self.speed_switch as u8,
                     0xff4f => self.gpu.lb(a),
-                    0xff51..=0xff55 => self.hdma.lb(a),
+                    0xff51..=0xff55 => self.dma.h.lb(a),
                     0xff68..=0xff6b => self.gpu.lb(a),
                     0xff70 => self.wram_bank as u8,
                     _ => 0xff,
@@ -287,7 +288,7 @@ impl Memory for Mmu {
                 Term::CGB => match a {
                     0xff4d => self.speed_switch = v & 0x01 != 0,
                     0xff4f => self.gpu.sb(a, v),
-                    0xff51..=0xff55 => self.hdma.sb(a, v),
+                    0xff51..=0xff55 => self.dma.h.sb(a, v),
                     0xff68..=0xff6b => self.gpu.sb(a, v),
                     0xff70 => self.wram_bank = (v as usize & 0x7).max(1),
                     _ => {}
@@ -307,16 +308,16 @@ impl Mmu {
     }
 
     fn run_dma(&mut self) -> u32 {
-        if !self.hdma.active {
+        if !self.dma.h.active {
             return 0;
         }
-        match self.hdma.mode {
+        match self.dma.h.mode {
             HdmaMode::Gdma => {
-                let len = u32::from(self.hdma.remain) + 1;
+                let len = u32::from(self.dma.h.remain) + 1;
                 for _ in 0..len {
                     self.run_dma_hrampart();
                 }
-                self.hdma.active = false;
+                self.dma.h.active = false;
                 len * 8
             }
             HdmaMode::Hdma => {
@@ -324,8 +325,8 @@ impl Mmu {
                     return 0;
                 }
                 self.run_dma_hrampart();
-                if self.hdma.remain == 0x7f {
-                    self.hdma.active = false;
+                if self.dma.h.remain == 0x7f {
+                    self.dma.h.active = false;
                 }
                 8
             }
@@ -333,17 +334,17 @@ impl Mmu {
     }
 
     fn run_dma_hrampart(&mut self) {
-        let mmu_src = self.hdma.src;
+        let mmu_src = self.dma.h.src;
         for i in 0..0x10 {
             let b: u8 = self.lb(mmu_src + i);
-            self.gpu.sb(self.hdma.dst + i, b);
+            self.gpu.sb(self.dma.h.dst + i, b);
         }
-        self.hdma.src += 0x10;
-        self.hdma.dst += 0x10;
-        if self.hdma.remain == 0 {
-            self.hdma.remain = 0x7f;
+        self.dma.h.src += 0x10;
+        self.dma.h.dst += 0x10;
+        if self.dma.h.remain == 0 {
+            self.dma.h.remain = 0x7f;
         } else {
-            self.hdma.remain -= 1;
+            self.dma.h.remain -= 1;
         }
     }
 }
