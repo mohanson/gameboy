@@ -112,7 +112,7 @@ fn mode_blargg_memory_output(argu: &Argument) {
 fn mode_minifb(argu: &Argument) {
     let mut mbrd = GameBoy::power_up(&argu.rom);
     mbrd.spd = argu.speed;
-    let rom_name = mbrd.mmu.borrow().cartridge.title.clone();
+    let rom_name = mbrd.mmu.borrow().rom.title.clone();
 
     let mut option = minifb::WindowOptions::default();
     option.resize = true;
@@ -140,7 +140,7 @@ fn mode_minifb(argu: &Argument) {
         let config: cpal::StreamConfig = config.into();
         rog::debugln!("Stream config: {:?}", config);
 
-        let apu = Apu::power_up(config.sample_rate.0, mbrd.mmu.borrow().term);
+        let apu = Apu::power_up(mbrd.mmu.borrow().glo.clone(), config.sample_rate.0);
         let apu_data = apu.buffer.clone();
         mbrd.mmu.borrow_mut().apu = apu;
 
@@ -235,7 +235,7 @@ fn mode_minifb(argu: &Argument) {
         }
     }
 
-    mbrd.mmu.borrow_mut().cartridge.save();
+    mbrd.mmu.borrow_mut().rom.save();
 }
 
 fn mode_mts(argu: &Argument) {

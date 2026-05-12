@@ -1,4 +1,4 @@
-use crate::convention::{Memory, Term};
+use crate::convention::{Global, Memory, Term, hi, lo};
 use crate::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -47,12 +47,12 @@ impl Hdma {
 impl Memory for Hdma {
     fn lb(&self, a: u16) -> u8 {
         match a {
-            0xff51 => (self.src >> 8) as u8,
-            0xff52 => self.src as u8,
-            0xff53 => (self.dst >> 8) as u8,
-            0xff54 => self.dst as u8,
+            0xff51 => hi(self.src),
+            0xff52 => lo(self.src),
+            0xff53 => hi(self.dst),
+            0xff54 => lo(self.dst),
             0xff55 => self.remain | if self.active { 0x00 } else { 0x80 },
-            _ => panic!(""),
+            _ => unreachable!(),
         }
     }
 
@@ -73,7 +73,7 @@ impl Memory for Hdma {
                 self.remain = v & 0x7f;
                 self.mode = if v & 0x80 != 0x00 { HdmaMode::Hdma } else { HdmaMode::Gdma };
             }
-            _ => panic!(""),
+            _ => unreachable!(),
         };
     }
 }
@@ -238,6 +238,8 @@ pub const SCREEN_W: usize = 160;
 pub const SCREEN_H: usize = 144;
 
 pub struct Gpu {
+    glo: Rc<RefCell<Global>>,
+
     // Digital image with mode RGB. Size = 144 * 160 * 3.
     // 3---------
     // ----------
@@ -245,8 +247,6 @@ pub struct Gpu {
     // ---------- 160
     //        144
     pub data: [[[u8; 3]; SCREEN_W]; SCREEN_H],
-    pub intf: Rc<RefCell<Interrupt>>,
-    pub term: Term,
     pub h_blank: bool,
     pub v_blank: bool,
 
@@ -353,11 +353,10 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub fn power_up(term: Term, intf: Rc<RefCell<Interrupt>>) -> Self {
+    pub fn power_up(glo: Rc<RefCell<Global>>) -> Self {
         Self {
+            glo,
             data: [[[0xffu8; 3]; SCREEN_W]; SCREEN_H],
-            intf,
-            term,
             h_blank: false,
             v_blank: false,
 
@@ -442,7 +441,7 @@ impl Gpu {
         }
         let new_level = self.stat_irq_level();
         if new_level && !self.stat_irq {
-            self.intf.borrow_mut().raise(InterruptFlag::LCD);
+            Interrupt::owned(self.glo.clone()).raise(InterruptFlag::LCD);
         }
         self.stat_irq = new_level;
     }
@@ -525,13 +524,13 @@ impl Gpu {
                 self.stat.mode = 1;
                 self.stat_lyc_match = self.ly == self.lc;
                 self.v_blank = true;
-                self.intf.borrow_mut().raise(InterruptFlag::VBlank);
+                Interrupt::owned(self.glo.clone()).raise(InterruptFlag::VBlank);
                 // DMG quirk: at line 144, a Mode 2 OAM pulse is generated simultaneously
                 // with Mode 1 (VBlank) entry.  If the M2 interrupt is enabled and the
                 // STAT signal was LOW, fire a rising edge now (before stat_irq_update
                 // sets the persistent level based on Mode 1 / LYC).
                 if self.stat.enable_m2_interrupt && !self.stat_irq {
-                    self.intf.borrow_mut().raise(InterruptFlag::LCD);
+                    Interrupt::owned(self.glo.clone()).raise(InterruptFlag::LCD);
                 }
                 self.stat_irq_update();
             } else if self.dots < 80 {
@@ -562,7 +561,7 @@ impl Gpu {
                 self.h_blank = true;
                 self.stat_irq_update();
                 // Render scanline
-                if self.term == Term::CGB || self.lcdc.bit0() {
+                if self.glo.borrow().term == Term::CGB || self.lcdc.bit0() {
                     self.draw_bg();
                 }
                 if self.lcdc.bit1() {
@@ -792,7 +791,7 @@ impl Gpu {
             let tile_attr = Attr::from(self.get_ram1(tile_addr));
 
             let tile_y = if tile_attr.yflip { 7 - py % 8 } else { py % 8 };
-            let tile_y_data: [u8; 2] = if self.term == Term::CGB && tile_attr.bank {
+            let tile_y_data: [u8; 2] = if self.glo.borrow().term == Term::CGB && tile_attr.bank {
                 let a = self.get_ram1(tile_location + u16::from(tile_y * 2));
                 let b = self.get_ram1(tile_location + u16::from(tile_y * 2) + 1);
                 [a, b]
@@ -811,7 +810,7 @@ impl Gpu {
             // Priority
             self.prio[x] = (tile_attr.priority, color);
 
-            if self.term == Term::CGB {
+            if self.glo.borrow().term == Term::CGB {
                 let r = self.cbgpd[tile_attr.palette_number_1][color][0];
                 let g = self.cbgpd[tile_attr.palette_number_1][color][1];
                 let b = self.cbgpd[tile_attr.palette_number_1][color][2];
@@ -879,7 +878,7 @@ impl Gpu {
             let tile_y =
                 if tile_attr.yflip { sprite_size - 1 - self.ly.wrapping_sub(py) } else { self.ly.wrapping_sub(py) };
             let tile_y_addr = 0x8000u16 + u16::from(tile_number) * 16 + u16::from(tile_y) * 2;
-            let tile_y_data: [u8; 2] = if self.term == Term::CGB && tile_attr.bank {
+            let tile_y_data: [u8; 2] = if self.glo.borrow().term == Term::CGB && tile_attr.bank {
                 let b1 = self.get_ram1(tile_y_addr);
                 let b2 = self.get_ram1(tile_y_addr + 1);
                 [b1, b2]
@@ -905,7 +904,7 @@ impl Gpu {
 
                 // Confirm the priority of background and sprite.
                 let prio = self.prio[px.wrapping_add(x) as usize];
-                let skip = if self.term == Term::CGB && !self.lcdc.bit0() {
+                let skip = if self.glo.borrow().term == Term::CGB && !self.lcdc.bit0() {
                     prio.1 == 0
                 } else if prio.0 {
                     prio.1 != 0
@@ -916,7 +915,7 @@ impl Gpu {
                     continue;
                 }
 
-                if self.term == Term::CGB {
+                if self.glo.borrow().term == Term::CGB {
                     let r = self.cobpd[tile_attr.palette_number_1][color][0];
                     let g = self.cobpd[tile_attr.palette_number_1][color][1];
                     let b = self.cobpd[tile_attr.palette_number_1][color][2];

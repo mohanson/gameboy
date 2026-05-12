@@ -1,4 +1,4 @@
-use crate::convention::{CLOCK_FREQUENCY, Memory, Term};
+use crate::convention::{CLOCK_FREQUENCY, Global, Memory, Term};
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -611,8 +611,6 @@ struct ChannelWave {
     blip: Blip,
     waveram: [u8; 16],
     waveidx: usize,
-    #[allow(dead_code)]
-    term: Term,
     // DMG wave-RAM corruption timing state.
     // trigger_sdiv: sdiv at the last first-trigger (was_active=false).
     trigger_sdiv: u16,
@@ -628,7 +626,7 @@ struct ChannelWave {
 }
 
 impl ChannelWave {
-    fn power_up(blip: BlipBuf, term: Term) -> ChannelWave {
+    fn power_up(blip: BlipBuf) -> ChannelWave {
         let reg = Rc::new(RefCell::new(Register::power_up(Channel::Wave)));
         ChannelWave {
             reg: reg.clone(),
@@ -637,7 +635,6 @@ impl ChannelWave {
             blip: Blip::power_up(blip),
             waveram: [0x00; 16],
             waveidx: 0x00,
-            term,
             trigger_sdiv: 0,
             p1_half: 0,
             d1_2mhz: 0,
@@ -892,6 +889,7 @@ impl Memory for ChannelNoise {
 }
 
 pub struct Apu {
+    glo: Rc<RefCell<Global>>,
     pub buffer: Arc<Mutex<Vec<(f32, f32)>>>,
     reg: Register,
     timer: Clock,
@@ -908,10 +906,6 @@ pub struct Apu {
     // When the APU is powered on while sdiv bit 12 is high, the hardware skips
     // the very first DIV-APU event (SameBoy "APU glitch").
     skip_next_fs_tick: bool,
-    // DMG vs CGB: on DMG, NR11/NR21/NR31/NR41 are writable when APU is off
-    // (length counters can be loaded), and lc.n is preserved through power-on.
-    // On CGB, all channel writes are blocked when APU is off.
-    term: Term,
     // Monotonically-increasing counter incremented once per 8192-T-cycle APU frame.
     // Used together with trigger_frame/trigger_apu_n in ChannelWave to compute the
     // live wave position for wave-RAM reads without disturbing the audio state.
@@ -919,24 +913,24 @@ pub struct Apu {
 }
 
 impl Apu {
-    pub fn power_up(sample_rate: u32, term: Term) -> Self {
+    pub fn power_up(glo: Rc<RefCell<Global>>, sample_rate: u32) -> Self {
         let blipbuf1 = create_blipbuf(sample_rate);
         let blipbuf2 = create_blipbuf(sample_rate);
         let blipbuf3 = create_blipbuf(sample_rate);
         let blipbuf4 = create_blipbuf(sample_rate);
         Self {
+            glo,
             buffer: Arc::new(Mutex::new(Vec::new())),
             reg: Register::power_up(Channel::Mixer),
             timer: Clock::power_up(CLOCK_FREQUENCY / 512),
             fs: FrameSequencer::power_up(),
             channel1: ChannelSquare::power_up(blipbuf1, Channel::Square1),
             channel2: ChannelSquare::power_up(blipbuf2, Channel::Square2),
-            channel3: ChannelWave::power_up(blipbuf3, term),
+            channel3: ChannelWave::power_up(blipbuf3),
             channel4: ChannelNoise::power_up(blipbuf4),
             sample_rate,
             sdiv_cache: 0,
             skip_next_fs_tick: false,
-            term,
             frame_count: 0,
         }
     }
@@ -1143,7 +1137,7 @@ impl Memory for Apu {
                     // DMG: wave RAM is only readable in a ~2-T-cycle window right after a
                     // wave advance.  Outside that window (or before the first advance),
                     // the read returns 0xFF.
-                    if self.term == Term::DMG {
+                    if self.glo.borrow().term == Term::DMG {
                         if fires == 0 {
                             0xff
                         } else {
@@ -1171,7 +1165,7 @@ impl Memory for Apu {
             // writable even when the APU is powered off.  This allows games
             // to pre-load length counters before enabling the APU.
             // On CGB all channel writes are blocked when APU is off.
-            if self.term == Term::DMG {
+            if self.glo.borrow().term == Term::DMG {
                 match a {
                     // NR11 / NR21: update lc.n; store only lower 6 bits
                     // (duty-cycle field in bits 7-6 is NOT written when off)
@@ -1215,7 +1209,7 @@ impl Memory for Apu {
             0xff1d => {
                 // On DMG: record d1_2mhz (2MHz cycles from first trigger to this NR33 write)
                 // for use in the SameBoy-accurate wave corruption model.
-                if self.term == Term::DMG {
+                if self.glo.borrow().term == Term::DMG {
                     let is_active =
                         self.channel3.reg.borrow().get_trigger() && self.channel3.reg.borrow().get_dac_power();
                     if is_active {
@@ -1232,7 +1226,7 @@ impl Memory for Apu {
                 // corruption fires only when sample_countdown == 0 at the exact trigger moment.
                 // The SameBoy wave timer starts at (P1/2 + 2) in 2MHz cycles after trigger
                 // and resets to (P/2 - 1) after each fire (where P is the current period in T-cycles).
-                let dmg_corruption_offset = if v & 0x80 != 0 && was_active && self.term == Term::DMG {
+                let dmg_corruption_offset = if v & 0x80 != 0 && was_active && self.glo.borrow().term == Term::DMG {
                     let elapsed_t = sdiv.wrapping_sub(self.channel3.trigger_sdiv) as u32;
                     let elapsed_2mhz = elapsed_t / 2;
                     let d1_2mhz = self.channel3.d1_2mhz;
@@ -1306,7 +1300,7 @@ impl Memory for Apu {
                     self.reg.nrx4 = 0x00;
                     // On CGB, length counters are also cleared when APU powers off.
                     // On DMG (monochrome), length counters survive power-off (Pan Docs NR52 footnote 1).
-                    if self.term == Term::CGB {
+                    if self.glo.borrow().term == Term::CGB {
                         self.channel1.lc.n = 0;
                         self.channel2.lc.n = 0;
                         self.channel3.lc.n = 0;
@@ -1341,7 +1335,7 @@ impl Memory for Apu {
                     let t_first = trigger_period + 6;
                     let fires = if elapsed < t_first { 0u64 } else { 1 + (elapsed - t_first) / wave_period };
                     let live_waveidx = (fires % 32) as usize;
-                    if self.term == Term::DMG {
+                    if self.glo.borrow().term == Term::DMG {
                         // DMG: write redirects to live position only within 2-cycle window
                         if fires > 0 {
                             let t_last = t_first + (fires - 1) * wave_period;
