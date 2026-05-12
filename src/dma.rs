@@ -21,7 +21,7 @@ pub enum HdmaMode {
     Hdma,
 }
 
-pub struct Hdma {
+pub struct H {
     // These two registers specify the address at which the transfer will read data from. Normally, this should be
     // either in ROM, SRAM or WRAM, thus either in range 0000-7FF0 or A000-DFF0. [Note : this has yet to be tested on
     // Echo RAM, OAM, FEXX, IO and HRAM]. Trying to specify a source address in VRAM will cause garbage to be copied.
@@ -35,13 +35,13 @@ pub struct Hdma {
     pub remain: u8,
 }
 
-impl Hdma {
+impl H {
     pub fn power_up() -> Self {
         Self { src: 0x0000, dst: 0x8000, active: false, mode: HdmaMode::Gdma, remain: 0x00 }
     }
 }
 
-impl Memory for Hdma {
+impl Memory for H {
     fn lb(&self, a: u16) -> u8 {
         match a {
             0xff51 => hi(self.src),
@@ -76,11 +76,11 @@ impl Memory for Hdma {
 }
 
 pub struct Dma {
-    pub h: Hdma,
+    pub h: H,
 }
 
 impl Dma {
     pub fn power_up() -> Self {
-        Self { h: Hdma::power_up() }
+        Self { h: H::power_up() }
     }
 }
