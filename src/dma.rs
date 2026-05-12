@@ -72,7 +72,7 @@ impl Memory for H {
 
 pub struct O {
     pub reg: u8,
-    pub cnt: u32,
+    pub cnt: u16,
     pub sig: u8,
 }
 
@@ -91,7 +91,7 @@ impl Memory for O {
 
 impl O {
     pub fn power_up() -> Self {
-        Self { reg: 0xff, cnt: 0x00000000, sig: 0x00 }
+        Self { reg: 0xff, cnt: 0x0000, sig: 0x00 }
     }
 
     pub fn is_active(&self) -> bool {

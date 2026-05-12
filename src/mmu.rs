@@ -207,7 +207,7 @@ impl Mmu {
         }
     }
 
-    fn odma(&mut self, cycles: u32) {
+    fn odma(&mut self, cycles: u16) {
         let old_cnt = self.dma.o.cnt;
         if self.dma.o.sig != 0x00 {
             self.dma.o.sig = 0x00;
@@ -221,8 +221,8 @@ impl Mmu {
         if old_cnt == 0 || old_cnt.min(640) <= self.dma.o.cnt {
             return;
         }
-        let first = (640u32.saturating_sub(old_cnt.min(640)) + 3) / 4;
-        let last = (640u32.saturating_sub(self.dma.o.cnt) + 3) / 4;
+        let first = (640u16.saturating_sub(old_cnt.min(640)) + 3) / 4;
+        let last = (640u16.saturating_sub(self.dma.o.cnt) + 3) / 4;
         let src_page = (self.dma.o.reg as u16) << 8;
         let wram_bank = self.wram_bank;
         let gpu = &mut self.gpu;
@@ -275,7 +275,7 @@ impl Mmu {
         let video_cycles = self.video_cycles(cycles);
         self.gpu.next(video_cycles);
         self.apu.next(video_cycles);
-        self.odma(cycles);
+        self.odma(cycles as u16);
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
