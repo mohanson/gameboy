@@ -55,7 +55,7 @@ impl Mmu {
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
         };
-        r.sb(0xff26, 0xf1); // Must be first: enables APU power so subsequent channel writes are not blocked.
+        r.sb(0xff26, 0xf1);
         r.sb(0xff10, 0x80);
         r.sb(0xff11, 0xbf);
         r.sb(0xff12, 0xf3);
@@ -64,7 +64,7 @@ impl Mmu {
         r.sb(0xff16, 0x3f);
         r.sb(0xff17, 0x00);
         r.sb(0xff18, 0xff);
-        r.sb(0xff19, 0x3f); // No trigger (bit 7 = 0): Channel 2 is inactive post-boot.
+        r.sb(0xff19, 0x3f);
         r.sb(0xff1a, 0x7f);
         r.sb(0xff1b, 0xff);
         r.sb(0xff1c, 0x9f);
@@ -73,7 +73,7 @@ impl Mmu {
         r.sb(0xff20, 0xff);
         r.sb(0xff21, 0x00);
         r.sb(0xff22, 0x00);
-        r.sb(0xff23, 0x3f); // No trigger (bit 7 = 0): Channel 4 is inactive post-boot.
+        r.sb(0xff23, 0x3f);
         r.sb(0xff24, 0x77);
         r.sb(0xff25, 0xf3);
         r.sb(0xff40, 0x91);
@@ -88,6 +88,97 @@ impl Mmu {
         r.sb(0xff4a, 0x00);
         r.sb(0xff4b, 0x00);
         r
+    }
+}
+
+impl Memory for Mmu {
+    fn lb(&self, a: u16) -> u8 {
+        match a {
+            0x0000..=0x7fff => self.rom.lb(a),
+            0x8000..=0x9fff => self.gpu.lb(a),
+            0xa000..=0xbfff => self.rom.lb(a),
+            0xc000..=0xcfff => self.wram[a as usize - 0xc000],
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
+            0xe000..=0xfdff => self.lb(a - 0x2000),
+            0xfe00..=0xfe9f => self.lb_odma(a),
+            0xfea0..=0xfeff => 0xff,
+            0xff00 => self.joypad.lb(a),
+            0xff01..=0xff02 => self.serial.lb(a),
+            0xff04..=0xff07 => self.timer.lb(a),
+            0xff0f => self.intr.lb(0xff0f),
+            0xff10..=0xff3f => self.apu.lb(a),
+            0xff40..=0xff45 => self.gpu.lb(a),
+            0xff46 => self.oam_dma_reg,
+            0xff47..=0xff4b => self.gpu.lb(a),
+            0xff4c..=0xff70 => match self.glo.borrow().term {
+                Term::DMG => 0xff,
+                Term::CGB => match a {
+                    0xff4d => 0x7e | ((self.speed == 2) as u8) << 7 | self.speed_switch as u8,
+                    0xff4f => self.gpu.lb(a),
+                    0xff51..=0xff55 => self.dma.h.lb(a),
+                    0xff68..=0xff6b => self.gpu.lb(a),
+                    0xff70 => self.wram_bank as u8,
+                    _ => 0xff,
+                },
+            },
+            0xff80..=0xfffe => self.hram[a as usize - 0xff80],
+            0xffff => self.intr.lb(0xffff),
+            _ => 0xff,
+        }
+    }
+
+    fn sb(&mut self, a: u16, v: u8) {
+        match a {
+            0x0000..=0x7fff => self.rom.sb(a, v),
+            0x8000..=0x9fff => self.gpu.sb(a, v),
+            0xa000..=0xbfff => self.rom.sb(a, v),
+            0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
+            0xe000..=0xfdff => self.sb(a - 0x2000, v),
+            0xfe00..=0xfe9f => {
+                // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
+                if self.oam_dma_is_active() {
+                    return;
+                }
+                self.gpu.sb(a, v);
+            }
+            0xfea0..=0xfeff => {}
+            0xff00 => self.joypad.sb(a, v),
+            0xff01..=0xff02 => self.serial.sb(a, v),
+            0xff04..=0xff07 => self.timer.sb(a, v),
+            0xff0f => self.intr.sb(0xff0f, v),
+            0xff10..=0xff3f => {
+                self.apu.sdiv_cache = self.glo.borrow().sdiv;
+                self.apu.sb(a, v);
+            }
+            0xff40..=0xff45 => self.gpu.sb(a, v),
+            0xff46 => {
+                self.oam_dma_reg = v;
+                self.oam_dma_pending = true;
+            }
+            0xff47..=0xff4b => self.gpu.sb(a, v),
+            0xff4c..=0xff70 => match self.glo.borrow().term {
+                Term::DMG => {}
+                Term::CGB => match a {
+                    0xff4d => self.speed_switch = v & 0x01 != 0,
+                    0xff4f => self.gpu.sb(a, v),
+                    0xff51..=0xff55 => self.dma.h.sb(a, v),
+                    0xff68..=0xff6b => self.gpu.sb(a, v),
+                    0xff70 => self.wram_bank = (v as usize & 0x7).max(1),
+                    _ => {}
+                },
+            },
+            0xff80..=0xfffe => self.hram[a as usize - 0xff80] = v,
+            0xffff => self.intr.sb(0xffff, v),
+            _ => {}
+        }
+    }
+}
+
+impl Ticker for Mmu {
+    fn tick(&mut self, cycles: u16) {
+        self.advance_clock(cycles as u32);
+        self.next();
     }
 }
 
@@ -217,96 +308,7 @@ impl Mmu {
     }
 }
 
-impl Memory for Mmu {
-    fn lb(&self, a: u16) -> u8 {
-        match a {
-            0x0000..=0x7fff => self.rom.lb(a),
-            0x8000..=0x9fff => self.gpu.lb(a),
-            0xa000..=0xbfff => self.rom.lb(a),
-            0xc000..=0xcfff => self.wram[a as usize - 0xc000],
-            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
-            0xe000..=0xfdff => self.lb(a - 0x2000),
-            0xfe00..=0xfe9f => self.lb_odma(a),
-            0xfea0..=0xfeff => 0xff,
-            0xff00 => self.joypad.lb(a),
-            0xff01..=0xff02 => self.serial.lb(a),
-            0xff04..=0xff07 => self.timer.lb(a),
-            0xff0f => self.intr.lb(0xff0f),
-            0xff10..=0xff3f => self.apu.lb(a),
-            0xff40..=0xff45 => self.gpu.lb(a),
-            0xff46 => self.oam_dma_reg,
-            0xff47..=0xff4b => self.gpu.lb(a),
-            0xff4c..=0xff70 => match self.glo.borrow().term {
-                Term::DMG => 0xff,
-                Term::CGB => match a {
-                    0xff4d => 0x7e | ((self.speed == 2) as u8) << 7 | self.speed_switch as u8,
-                    0xff4f => self.gpu.lb(a),
-                    0xff51..=0xff55 => self.dma.h.lb(a),
-                    0xff68..=0xff6b => self.gpu.lb(a),
-                    0xff70 => self.wram_bank as u8,
-                    _ => 0xff,
-                },
-            },
-            0xff80..=0xfffe => self.hram[a as usize - 0xff80],
-            0xffff => self.intr.lb(0xffff),
-            _ => 0xff,
-        }
-    }
-
-    fn sb(&mut self, a: u16, v: u8) {
-        match a {
-            0x0000..=0x7fff => self.rom.sb(a, v),
-            0x8000..=0x9fff => self.gpu.sb(a, v),
-            0xa000..=0xbfff => self.rom.sb(a, v),
-            0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
-            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
-            0xe000..=0xfdff => self.sb(a - 0x2000, v),
-            0xfe00..=0xfe9f => {
-                // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
-                if self.oam_dma_is_active() {
-                    return;
-                }
-                self.gpu.sb(a, v);
-            }
-            0xfea0..=0xfeff => {}
-            0xff00 => self.joypad.sb(a, v),
-            0xff01..=0xff02 => self.serial.sb(a, v),
-            0xff04..=0xff07 => self.timer.sb(a, v),
-            0xff0f => self.intr.sb(0xff0f, v),
-            0xff10..=0xff3f => {
-                self.apu.sdiv_cache = self.glo.borrow().sdiv;
-                self.apu.sb(a, v);
-            }
-            0xff40..=0xff45 => self.gpu.sb(a, v),
-            0xff46 => {
-                self.oam_dma_reg = v;
-                self.oam_dma_pending = true;
-            }
-            0xff47..=0xff4b => self.gpu.sb(a, v),
-            0xff4c..=0xff70 => match self.glo.borrow().term {
-                Term::DMG => {}
-                Term::CGB => match a {
-                    0xff4d => self.speed_switch = v & 0x01 != 0,
-                    0xff4f => self.gpu.sb(a, v),
-                    0xff51..=0xff55 => self.dma.h.sb(a, v),
-                    0xff68..=0xff6b => self.gpu.sb(a, v),
-                    0xff70 => self.wram_bank = (v as usize & 0x7).max(1),
-                    _ => {}
-                },
-            },
-            0xff80..=0xfffe => self.hram[a as usize - 0xff80] = v,
-            0xffff => self.intr.sb(0xffff, v),
-            _ => {}
-        }
-    }
-}
-
 impl Mmu {
-    pub fn tick(&mut self, cycles: u32) {
-        self.advance_clock(cycles);
-        self.next();
-    }
-
     fn run_dma(&mut self) -> u32 {
         match self.dma.h.status {
             DmaStatus::None => 0,

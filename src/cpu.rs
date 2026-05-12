@@ -1,5 +1,5 @@
 // The chip behind the NINTENDO GAME BOY: The sharp LR35902.
-use crate::convention::{Global, Memory, Term, hi, lo};
+use crate::convention::{Global, Memory, Term, Ticker, hi, lo};
 use crate::mmu::Mmu;
 use crate::register::Flag::{C, H, N, Z};
 use crate::register::Register;
