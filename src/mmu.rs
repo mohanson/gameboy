@@ -4,7 +4,7 @@
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
 use crate::convention::{Global, Memory, Term, Ticker};
-use crate::dma::{Dma, HdmaMode};
+use crate::dma::{Dma, DmaStatus};
 use crate::gpu::Gpu;
 use crate::interrupt::Interrupt;
 use crate::joypad::Joypad;
@@ -308,26 +308,20 @@ impl Mmu {
     }
 
     fn run_dma(&mut self) -> u32 {
-        if !self.dma.h.active {
-            return 0;
-        }
-        match self.dma.h.mode {
-            HdmaMode::Gdma => {
+        match self.dma.h.status {
+            DmaStatus::None => 0,
+            DmaStatus::Gdma => {
                 let len = u32::from(self.dma.h.remain) + 1;
                 for _ in 0..len {
                     self.run_dma_hrampart();
                 }
-                self.dma.h.active = false;
                 len * 8
             }
-            HdmaMode::Hdma => {
+            DmaStatus::Hdma => {
                 if !self.gpu.h_blank {
                     return 0;
                 }
                 self.run_dma_hrampart();
-                if self.dma.h.remain == 0x7f {
-                    self.dma.h.active = false;
-                }
                 8
             }
         }
@@ -342,7 +336,7 @@ impl Mmu {
         self.dma.h.src += 0x10;
         self.dma.h.dst += 0x10;
         if self.dma.h.remain == 0 {
-            self.dma.h.remain = 0x7f;
+            self.dma.h.status = DmaStatus::None;
         } else {
             self.dma.h.remain -= 1;
         }
