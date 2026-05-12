@@ -168,17 +168,26 @@ impl Memory for Mmu {
 
 impl Ticker for Mmu {
     fn tick(&mut self, cycles: u16) {
-        self.timer.tick(cycles);
-        self.serial.tick(cycles);
-        let video_cycles = self.video_cycles(cycles as u32);
-        self.gpu.next(video_cycles);
-        self.apu.next(video_cycles);
+        self.next(cycles);
         self.odma(cycles);
-        self.next();
+        let cycles = self.hdma();
+        self.gpu.h_blank = false;
+        if cycles != 0 {
+            self.next(cycles);
+            self.gpu.h_blank = false;
+        }
     }
 }
 
 impl Mmu {
+    fn next(&mut self, cycles: u16) {
+        self.timer.tick(cycles);
+        self.serial.tick(cycles);
+        let vcycles = if self.speed == 2 { cycles / 2 } else { cycles };
+        self.gpu.next(vcycles as u32);
+        self.apu.next(vcycles as u32);
+    }
+
     fn hdma(&mut self) -> u16 {
         match self.dma.h.status {
             DmaStatus::None => 0,
@@ -249,29 +258,10 @@ impl Mmu {
 }
 
 impl Mmu {
-    fn video_cycles(&self, cycles: u32) -> u32 {
-        if self.speed == 2 { cycles / 2 } else { cycles }
-    }
-
     pub fn notify_spd(&mut self) -> bool {
         self.speed = 3 - self.speed;
         self.speed_switch = false;
         true
-    }
-
-    /// Called once per CPU instruction after all per-M-cycle ticks have already advanced
-    /// timer/GPU/APU. Runs HDMA and resets the h_blank edge signal.
-    pub fn next(&mut self) -> u32 {
-        let hdma_cycles = self.hdma();
-        self.gpu.h_blank = false;
-        if hdma_cycles > 0 {
-            self.timer.tick(hdma_cycles as u16);
-            let video_cycles = self.video_cycles(hdma_cycles as u32);
-            self.gpu.next(video_cycles);
-            self.apu.next(video_cycles);
-            self.gpu.h_blank = false;
-        }
-        hdma_cycles as u32
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
