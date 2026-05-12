@@ -183,6 +183,41 @@ impl Ticker for Mmu {
 }
 
 impl Mmu {
+    fn hdma(&mut self) -> u16 {
+        match self.dma.h.status {
+            DmaStatus::None => 0,
+            DmaStatus::Gdma => {
+                let len = u16::from(self.dma.h.remain) + 1;
+                for _ in 0..len {
+                    self.bdma();
+                }
+                len * 8
+            }
+            DmaStatus::Hdma => {
+                if !self.gpu.h_blank {
+                    return 0;
+                }
+                self.bdma();
+                8
+            }
+        }
+    }
+
+    fn bdma(&mut self) {
+        for _ in 0x00..0x10 {
+            let b = self.lb(self.dma.h.src);
+            self.gpu.sb(self.dma.h.dst, b);
+            self.dma.h.src = self.dma.h.src.wrapping_add(1);
+            self.dma.h.dst = self.dma.h.dst.wrapping_add(1);
+        }
+        self.dma.h.remain = self.dma.h.remain.wrapping_sub(1);
+        if self.dma.h.remain == 0xff {
+            self.dma.h.status = DmaStatus::None;
+        }
+    }
+}
+
+impl Mmu {
     fn video_cycles(&self, cycles: u32) -> u32 {
         if self.speed == 2 { cycles / 2 } else { cycles }
     }
@@ -196,16 +231,16 @@ impl Mmu {
     /// Called once per CPU instruction after all per-M-cycle ticks have already advanced
     /// timer/GPU/APU. Runs HDMA and resets the h_blank edge signal.
     pub fn next(&mut self) -> u32 {
-        let hdma_cycles = self.run_dma();
+        let hdma_cycles = self.hdma();
         self.gpu.h_blank = false;
         if hdma_cycles > 0 {
             self.timer.tick(hdma_cycles as u16);
-            let video_cycles = self.video_cycles(hdma_cycles);
+            let video_cycles = self.video_cycles(hdma_cycles as u32);
             self.gpu.next(video_cycles);
             self.apu.next(video_cycles);
             self.gpu.h_blank = false;
         }
-        hdma_cycles
+        hdma_cycles as u32
     }
 
     fn advance_clock(&mut self, cycles: u32) {
@@ -304,43 +339,6 @@ impl Mmu {
     fn oam_rdi_corrupt(&mut self) {
         if self.glo.borrow().term == Term::DMG {
             self.gpu.oam_rdi_corrupt();
-        }
-    }
-}
-
-impl Mmu {
-    fn run_dma(&mut self) -> u32 {
-        match self.dma.h.status {
-            DmaStatus::None => 0,
-            DmaStatus::Gdma => {
-                let len = u32::from(self.dma.h.remain) + 1;
-                for _ in 0..len {
-                    self.run_dma_hrampart();
-                }
-                len * 8
-            }
-            DmaStatus::Hdma => {
-                if !self.gpu.h_blank {
-                    return 0;
-                }
-                self.run_dma_hrampart();
-                8
-            }
-        }
-    }
-
-    fn run_dma_hrampart(&mut self) {
-        let mmu_src = self.dma.h.src;
-        for i in 0..0x10 {
-            let b: u8 = self.lb(mmu_src + i);
-            self.gpu.sb(self.dma.h.dst + i, b);
-        }
-        self.dma.h.src += 0x10;
-        self.dma.h.dst += 0x10;
-        if self.dma.h.remain == 0 {
-            self.dma.h.status = DmaStatus::None;
-        } else {
-            self.dma.h.remain -= 1;
         }
     }
 }
