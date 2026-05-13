@@ -223,37 +223,35 @@ impl Mmu {
     }
 
     fn odma(&mut self, cycles: u16) {
-        let old_cnt = self.dma.o.cnt;
+        let since = self.dma.o.cnt;
         if self.dma.o.sig != 0x00 {
             self.dma.o.sig = 0x00;
             if self.dma.o.cnt <= 639 {
-                self.dma.o.cnt = 648; // 2 M-cycle startup delay (fresh start or restart mid-copy)
+                // 2 M-cycle startup delay (fresh start or restart mid-copy).
+                self.dma.o.cnt = 648;
             }
         }
         if self.dma.o.cnt != 0 {
             self.dma.o.cnt = self.dma.o.cnt.saturating_sub(cycles);
         }
-        if old_cnt == 0 || old_cnt.min(640) <= self.dma.o.cnt {
+        if since == 0 || since.min(640) <= self.dma.o.cnt {
             return;
         }
-        let first = (640u16.saturating_sub(old_cnt.min(640)) + 3) / 4;
-        let last = (640u16.saturating_sub(self.dma.o.cnt) + 3) / 4;
+        let src_byte = (640u16.saturating_sub(since.min(640)) + 3) / 4;
+        let end_byte = (640u16.saturating_sub(self.dma.o.cnt) + 3) / 4;
         let src_page = (self.dma.o.reg as u16) << 8;
-        let wram_bank = self.wram_bank;
-        let gpu = &mut self.gpu;
-        let rom = &self.rom;
-        let wram = &self.wram;
-        for i in first..last.min(160) {
+        for i in src_byte..end_byte.min(160) {
             let src = src_page | i as u16;
             let src = if src <= 0xdfff { src } else { src - 0x2000 };
             let b = match src {
-                0x0000..=0x7fff | 0xa000..=0xbfff => rom.lb(src),
-                0x8000..=0x9fff => gpu.lb(src),
-                0xc000..=0xcfff => wram[src as usize - 0xc000],
-                0xd000..=0xdfff => wram[src as usize - 0xd000 + 0x1000 * wram_bank],
+                0x0000..=0x7fff => self.rom.lb(src),
+                0x8000..=0x9fff => self.gpu.lb(src),
+                0xa000..=0xbfff => self.rom.lb(src),
+                0xc000..=0xcfff => self.wram[src as usize - 0xc000],
+                0xd000..=0xdfff => self.wram[src as usize - 0xd000 + 0x1000 * self.wram_bank],
                 _ => 0xff,
             };
-            gpu.sb(0xfe00 + i as u16, b);
+            self.gpu.sb(0xfe00 + i as u16, b);
         }
     }
 }
