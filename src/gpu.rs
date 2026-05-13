@@ -11,7 +11,7 @@ pub struct Lcdc {
 #[rustfmt::skip]
 impl Lcdc {
     pub fn power_up() -> Self {
-        Self { data: 0b0100_1000 }
+        Self { data: 0x48 }
     }
 
     // LCDC.7 - LCD Display Enable
@@ -65,32 +65,29 @@ impl Lcdc {
 
 // LCD Status Register.
 pub struct Stat {
-    // Bit 6 - LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
-    enable_ly_interrupt: bool,
-    // Bit 5 - Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
-    enable_m2_interrupt: bool,
-    // Bit 4 - Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
-    enable_m1_interrupt: bool,
-    // Bit 3 - Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
-    enable_m0_interrupt: bool,
-    // Bit 1-0 - Mode Flag       (Mode 0-3, see below) (Read Only)
-    //    0: During H-Blank
-    //    1: During V-Blank
-    //    2: During Searching OAM
-    //    3: During Transferring Data to LCD Driver
-    mode: u8,
+    data: u8,
 }
 
+#[rustfmt::skip]
 impl Stat {
     pub fn power_up() -> Self {
-        Self {
-            enable_ly_interrupt: false,
-            enable_m2_interrupt: false,
-            enable_m1_interrupt: false,
-            enable_m0_interrupt: false,
-            mode: 0x00,
-        }
+        Self { data: 0x00 }
     }
+
+    // Stat.6 - LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
+    fn bit6(&self) -> bool { self.data & 0b0100_0000 != 0x00 }
+
+    // Stat.5 - Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
+    fn bit5(&self) -> bool { self.data & 0b0010_0000 != 0x00 }
+
+    // Stat.4 - Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
+    fn bit4(&self) -> bool { self.data & 0b0001_0000 != 0x00 }
+
+    // Stat.3 - Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
+    fn bit3(&self) -> bool { self.data & 0b0000_1000 != 0x00 }
+
+    // Stat.0 - PPU Mode (0=HBlank, 1=VBlank, 2=OAM Scan, 3=Pixel Transfer) (Read Only)
+    fn mode(&self) -> u8 { self.data & 0x03 }
 }
 
 // This register is used to address a byte in the CGBs Background Palette Memory. Each two byte in that memory define a
@@ -346,10 +343,10 @@ impl Gpu {
         if !self.lcdc.bit7() {
             return false;
         }
-        (self.stat.enable_m0_interrupt && self.stat.mode == 0)
-            || (self.stat.enable_m1_interrupt && self.stat.mode == 1)
-            || (self.stat.enable_m2_interrupt && self.stat.mode == 2)
-            || (self.stat.enable_ly_interrupt && self.stat_lyc_match)
+        (self.stat.bit3() && self.stat.mode() == 0)
+            || (self.stat.bit4() && self.stat.mode() == 1)
+            || (self.stat.bit5() && self.stat.mode() == 2)
+            || (self.stat.bit6() && self.stat_lyc_match)
     }
 
     // Recompute the STAT IRQ signal and raise an LCD interrupt on a 0→1 rising edge.
@@ -418,7 +415,7 @@ impl Gpu {
     ///
     /// The first row (row 0, objects 0–1) is immune.
     pub fn oam_write_corrupt(&mut self) {
-        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+        if !self.lcdc.bit7() || self.stat.mode() != 2 || self.ly >= 144 {
             return;
         }
         let row = (self.dots / 4) as usize;
@@ -453,7 +450,7 @@ impl Gpu {
     ///
     /// Row 0 is immune (same as write corruption).
     pub fn oam_read_corrupt(&mut self) {
-        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+        if !self.lcdc.bit7() || self.stat.mode() != 2 || self.ly >= 144 {
             return;
         }
         let row = (self.dots / 4) as usize;
@@ -490,7 +487,7 @@ impl Gpu {
     ///
     /// A normal read corruption is then applied to the current row regardless.
     pub fn oam_rdi_corrupt(&mut self) {
-        if !self.lcdc.bit7() || self.stat.mode != 2 || self.ly >= 144 {
+        if !self.lcdc.bit7() || self.stat.mode() != 2 || self.ly >= 144 {
             return;
         }
         let row_cur = (self.dots / 4) as usize;
@@ -766,7 +763,7 @@ impl Memory for Gpu {
                 // VRAM is locked during mode 3, and also during the 4T pre-mode-3 period
                 // (mode 2, dots >= 76) where the bus is already claimed by the GPU,
                 // matching real DMG hardware bus timing.
-                let vram_locked = self.stat.mode == 3 || (self.stat.mode == 2 && self.dots >= 76);
+                let vram_locked = self.stat.mode() == 3 || (self.stat.mode() == 2 && self.dots >= 76);
                 if vram_locked { 0xff } else { self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] }
             }
             0xfe00..=0xfe9f => {
@@ -774,18 +771,14 @@ impl Memory for Gpu {
                 // It is also locked from dot 452 onward (LY increment / OAM scan preparation),
                 // even though STAT still reports mode 0 at that dot.
                 let oam_locked =
-                    self.stat.mode == 2 || self.stat.mode == 3 || (self.stat.mode == 0 && self.dots >= 452);
+                    self.stat.mode() == 2 || self.stat.mode() == 3 || (self.stat.mode() == 0 && self.dots >= 452);
                 if oam_locked { 0xff } else { self.oam[a as usize - 0xfe00] }
             }
             0xff40 => self.lcdc.data,
             0xff41 => {
-                let bit6 = if self.stat.enable_ly_interrupt { 0x40 } else { 0x00 };
-                let bit5 = if self.stat.enable_m2_interrupt { 0x20 } else { 0x00 };
-                let bit4 = if self.stat.enable_m1_interrupt { 0x10 } else { 0x00 };
-                let bit3 = if self.stat.enable_m0_interrupt { 0x08 } else { 0x00 };
                 let bit2 = if self.stat_lyc_match { 0x04 } else { 0x00 };
                 // Bit 7 is unused and always reads as 1
-                0x80 | bit6 | bit5 | bit4 | bit3 | bit2 | self.stat.mode
+                0x80 | (self.stat.data & 0x78) | bit2 | self.stat.mode()
             }
             0xff42 => self.sy,
             0xff43 => self.sx,
@@ -833,7 +826,7 @@ impl Memory for Gpu {
         match a {
             0x8000..=0x9fff => {
                 // VRAM writes are ignored during mode 3 (pixel transfer).
-                if self.stat.mode != 3 {
+                if self.stat.mode() != 3 {
                     self.ram[self.ram_bank * 0x2000 + a as usize - 0x8000] = v;
                 }
             }
@@ -841,7 +834,7 @@ impl Memory for Gpu {
                 // OAM writes are ignored during mode 3 (pixel transfer) and during mode 2
                 // (OAM scan) while dots < 76. The last 4T of mode 2 (dots 76-79) the OAM
                 // scan is already complete and the CPU can write to OAM again.
-                let oam_write_blocked = self.stat.mode == 3 || (self.stat.mode == 2 && self.dots < 76);
+                let oam_write_blocked = self.stat.mode() == 3 || (self.stat.mode() == 2 && self.dots < 76);
                 if !oam_write_blocked {
                     self.oam[a as usize - 0xfe00] = v;
                 }
@@ -852,7 +845,7 @@ impl Memory for Gpu {
                 if !self.lcdc.bit7() {
                     self.dots = 0;
                     self.ly = 0;
-                    self.stat.mode = 0;
+                    self.stat.data &= !0x03;
                     // Clean screen.
                     self.data = [[[0xffu8; 3]; SCREEN_W]; SCREEN_H];
                     self.v_blank = true;
@@ -867,10 +860,8 @@ impl Memory for Gpu {
                 }
             }
             0xff41 => {
-                self.stat.enable_ly_interrupt = v & 0x40 != 0x00;
-                self.stat.enable_m2_interrupt = v & 0x20 != 0x00;
-                self.stat.enable_m1_interrupt = v & 0x10 != 0x00;
-                self.stat.enable_m0_interrupt = v & 0x08 != 0x00;
+                // Bits 3-6 are writable; bits 0-1 (mode) are read-only (PPU-controlled).
+                self.stat.data = (self.stat.data & 0x07) | (v & 0x78);
                 // Enabling a source that is currently active generates a rising edge.
                 self.stat_irq_update();
             }
@@ -977,10 +968,10 @@ impl Ticker for Gpu {
                 continue;
             }
             if self.ly >= 144 {
-                if self.stat.mode == 1 {
+                if self.stat.mode() == 1 {
                     continue;
                 }
-                self.stat.mode = 1;
+                self.stat.data = (self.stat.data & !0x03) | 1;
                 self.stat_lyc_match = self.ly == self.lc;
                 self.v_blank = true;
                 Interrupt::owned(self.glo.clone()).raise(InterruptFlag::VBlank);
@@ -988,7 +979,7 @@ impl Ticker for Gpu {
                 // with Mode 1 (VBlank) entry.  If the M2 interrupt is enabled and the
                 // STAT signal was LOW, fire a rising edge now (before stat_irq_update
                 // sets the persistent level based on Mode 1 / LYC).
-                if self.stat.enable_m2_interrupt && !self.stat_irq {
+                if self.stat.bit5() && !self.stat_irq {
                     Interrupt::owned(self.glo.clone()).raise(InterruptFlag::LCD);
                 }
                 self.stat_irq_update();
@@ -997,10 +988,10 @@ impl Ticker for Gpu {
                     // Line 0 after LCD enable: stay in Mode 0, skip Mode 2 entirely.
                     continue;
                 }
-                if self.stat.mode == 2 {
+                if self.stat.mode() == 2 {
                     continue;
                 }
-                self.stat.mode = 2;
+                self.stat.data = (self.stat.data & !0x03) | 2;
                 self.stat_lyc_match = self.ly == self.lc;
                 // Compute sprite timing penalty for this scanline's mode3 window
                 let t_pen = self.compute_sprite_penalty();
@@ -1008,15 +999,15 @@ impl Ticker for Gpu {
                 self.stat_irq_update();
             } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 + self.sprite_penalty {
                 self.lcdon_first_line = false;
-                self.stat.mode = 3;
+                self.stat.data = (self.stat.data & !0x03) | 3;
                 // Mode 3 has no STAT interrupt source; the signal may fall to LOW here
                 // unless LYC=LY keeps it high.  Update to track any falling edge.
                 self.stat_irq_update();
             } else {
-                if self.stat.mode == 0 {
+                if self.stat.mode() == 0 {
                     continue;
                 }
-                self.stat.mode = 0;
+                self.stat.data &= !0x03;
                 self.h_blank = true;
                 self.stat_irq_update();
                 // Render scanline
