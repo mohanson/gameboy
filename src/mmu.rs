@@ -92,7 +92,12 @@ impl Memory for Mmu {
             0xc000..=0xcfff => self.wram[a as usize - 0xc000],
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wvbk],
             0xe000..=0xfdff => self.lb(a - 0x2000),
-            0xfe00..=0xfe9f => self.lb_odma(a),
+            0xfe00..=0xfe9f => {
+                if self.dma.o.is_active() {
+                    return 0xff;
+                }
+                self.gpu.lb(a)
+            }
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
@@ -128,7 +133,6 @@ impl Memory for Mmu {
             0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wvbk] = v,
             0xe000..=0xfdff => self.sb(a - 0x2000, v),
             0xfe00..=0xfe9f => {
-                // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
                 if self.dma.o.is_active() {
                     return;
                 }
@@ -255,64 +259,35 @@ impl Mmu {
 }
 
 impl Mmu {
+    pub fn notify_idu(&mut self, addr: u16) {
+        if addr >> 8 == 0xfe {
+            match self.glo.borrow().term {
+                Term::DMG => self.gpu.oam_write_corrupt(),
+                Term::CGB => {}
+            }
+        }
+    }
+
+    pub fn notify_rdi(&mut self, addr: u16) {
+        if addr >> 8 == 0xfe {
+            match self.glo.borrow().term {
+                Term::DMG => self.gpu.oam_rdi_corrupt(),
+                Term::CGB => {}
+            }
+        }
+    }
+
+    pub fn notify_seq(&mut self, addr: u16) {
+        if addr >> 8 == 0xfe {
+            match self.glo.borrow().term {
+                Term::DMG => self.gpu.oam_read_corrupt(),
+                Term::CGB => {}
+            }
+        }
+    }
+
     pub fn notify_spd(&mut self) {
         self.spd ^= 0x80;
         self.spd &= 0xfe;
-    }
-
-    pub fn lb_odma(&self, a: u16) -> u8 {
-        match a {
-            0xfe00..=0xfe9f => {
-                if self.dma.o.is_active() {
-                    0xff
-                } else {
-                    self.gpu.lb(a)
-                }
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    /// Called by the CPU when its IDU (Increment/Decrement Unit) operates with
-    /// `addr` as the current register-pair value. The MMU applies any address-
-    /// range-specific bus side effects (e.g. OAM corruption on DMG) internally.
-    pub fn notify_idu(&mut self, addr: u16) {
-        if addr >> 8 == 0xfe {
-            self.oam_write_corrupt();
-        }
-    }
-
-    /// Called by the CPU when a bus read occurs simultaneously with an IDU
-    /// operation (Read-During-IDU), e.g. LDI/LDD or the first byte of POP.
-    pub fn notify_rdi(&mut self, addr: u16) {
-        if addr >> 8 == 0xfe {
-            self.oam_rdi_corrupt();
-        }
-    }
-
-    /// Called by the CPU when a sequential (non-IDU) bus read occurs, e.g.
-    /// the second byte of a POP instruction.
-    pub fn notify_seq(&mut self, addr: u16) {
-        if addr >> 8 == 0xfe {
-            self.oam_read_corrupt();
-        }
-    }
-
-    fn oam_write_corrupt(&mut self) {
-        if self.glo.borrow().term == Term::DMG {
-            self.gpu.oam_write_corrupt();
-        }
-    }
-
-    fn oam_read_corrupt(&mut self) {
-        if self.glo.borrow().term == Term::DMG {
-            self.gpu.oam_read_corrupt();
-        }
-    }
-
-    fn oam_rdi_corrupt(&mut self) {
-        if self.glo.borrow().term == Term::DMG {
-            self.gpu.oam_rdi_corrupt();
-        }
     }
 }
