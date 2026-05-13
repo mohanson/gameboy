@@ -1,4 +1,4 @@
-use crate::convention::{Global, Memory, Term};
+use crate::convention::{Global, Memory, Term, Ticker};
 use crate::interrupt::{Interrupt, InterruptFlag};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -395,105 +395,6 @@ impl Gpu {
         let lg = ((g * 3 + b) << 1) as u8;
         let lb = ((r * 3 + g * 2 + b * 11) >> 1) as u8;
         self.data[self.ly as usize][x] = [lr, lg, lb];
-    }
-
-    pub fn next(&mut self, cycles: u32) {
-        if !self.lcdc.bit7() {
-            return;
-        }
-        // h_blank is NOT reset here; it is reset by Mmu::next() after HDMA has checked it.
-
-        // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots,
-        // or 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456
-        // dots. Scanlines 144 through 153 are mode 1.
-        //
-        // 1 scanline = 456 dots
-        //
-        // The following are typical when the display is enabled:
-        // Mode 2  2_____2_____2_____2_____2_____2___________________2____
-        // Mode 3  _33____33____33____33____33____33__________________3___
-        // Mode 0  ___000___000___000___000___000___000________________000
-        // Mode 1  ____________________________________11111111111111_____
-        // When LCD is disabled the PPU is completely halted; dots and LY freeze.
-        if !self.lcdc.bit7() {
-            return;
-        }
-        if cycles == 0 {
-            return;
-        }
-        let c = (cycles - 1) / 80 + 1;
-        for i in 0..c {
-            if i == (c - 1) {
-                self.dots += cycles % 80
-            } else {
-                self.dots += 80
-            }
-            let d = self.dots;
-            self.dots %= 456;
-            if d == 452 {
-                // LY increments 4T before the end of the scanline.
-                // The STAT LYC=LY bit is cleared immediately: it will be re-evaluated
-                // when the new scanline starts (dots=0), matching DMG hardware behaviour.
-                self.ly = (self.ly + 1) % 154;
-                self.stat_lyc_match = false;
-                // Update the STAT IRQ signal — the LYC=LY source just went inactive.
-                // The new LY's LYC coincidence is re-evaluated at mode-2 start (dots=0).
-                self.stat_irq_update();
-                // Skip mode transitions; they fire on the next tick when dots=0
-                continue;
-            }
-            if self.ly >= 144 {
-                if self.stat.mode == 1 {
-                    continue;
-                }
-                self.stat.mode = 1;
-                self.stat_lyc_match = self.ly == self.lc;
-                self.v_blank = true;
-                Interrupt::owned(self.glo.clone()).raise(InterruptFlag::VBlank);
-                // DMG quirk: at line 144, a Mode 2 OAM pulse is generated simultaneously
-                // with Mode 1 (VBlank) entry.  If the M2 interrupt is enabled and the
-                // STAT signal was LOW, fire a rising edge now (before stat_irq_update
-                // sets the persistent level based on Mode 1 / LYC).
-                if self.stat.enable_m2_interrupt && !self.stat_irq {
-                    Interrupt::owned(self.glo.clone()).raise(InterruptFlag::LCD);
-                }
-                self.stat_irq_update();
-            } else if self.dots < 80 {
-                if self.lcdon_first_line {
-                    // Line 0 after LCD enable: stay in Mode 0, skip Mode 2 entirely.
-                    continue;
-                }
-                if self.stat.mode == 2 {
-                    continue;
-                }
-                self.stat.mode = 2;
-                self.stat_lyc_match = self.ly == self.lc;
-                // Compute sprite timing penalty for this scanline's mode3 window
-                let t_pen = self.compute_sprite_penalty();
-                self.sprite_penalty = (t_pen / 4) * 4;
-                self.stat_irq_update();
-            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 + self.sprite_penalty {
-                self.lcdon_first_line = false;
-                self.stat.mode = 3;
-                // Mode 3 has no STAT interrupt source; the signal may fall to LOW here
-                // unless LYC=LY keeps it high.  Update to track any falling edge.
-                self.stat_irq_update();
-            } else {
-                if self.stat.mode == 0 {
-                    continue;
-                }
-                self.stat.mode = 0;
-                self.h_blank = true;
-                self.stat_irq_update();
-                // Render scanline
-                if self.glo.borrow().term == Term::CGB || self.lcdc.bit0() {
-                    self.draw_bg();
-                }
-                if self.lcdc.bit1() {
-                    self.draw_sprites();
-                }
-            }
-        }
     }
 
     pub fn check_and_reset_gpu_updated(&mut self) -> bool {
@@ -1025,6 +926,107 @@ impl Memory for Gpu {
                 }
             }
             _ => panic!(""),
+        }
+    }
+}
+
+impl Ticker for Gpu {
+    fn tick(&mut self, cycles: u16) {
+        if !self.lcdc.bit7() {
+            return;
+        }
+        // h_blank is NOT reset here; it is reset by Mmu::next() after HDMA has checked it.
+
+        // The LCD controller operates on a 222 Hz = 4.194 MHz dot clock. An entire frame is 154 scanlines, 70224 dots,
+        // or 16.74 ms. On scanlines 0 through 143, the LCD controller cycles through modes 2, 3, and 0 once every 456
+        // dots. Scanlines 144 through 153 are mode 1.
+        //
+        // 1 scanline = 456 dots
+        //
+        // The following are typical when the display is enabled:
+        // Mode 2  2_____2_____2_____2_____2_____2___________________2____
+        // Mode 3  _33____33____33____33____33____33__________________3___
+        // Mode 0  ___000___000___000___000___000___000________________000
+        // Mode 1  ____________________________________11111111111111_____
+        // When LCD is disabled the PPU is completely halted; dots and LY freeze.
+        if !self.lcdc.bit7() {
+            return;
+        }
+        if cycles == 0 {
+            return;
+        }
+        let c = (cycles - 1) / 80 + 1;
+        for i in 0..c {
+            if i == (c - 1) {
+                self.dots += cycles as u32 % 80
+            } else {
+                self.dots += 80
+            }
+            let d = self.dots;
+            self.dots %= 456;
+            if d == 452 {
+                // LY increments 4T before the end of the scanline.
+                // The STAT LYC=LY bit is cleared immediately: it will be re-evaluated
+                // when the new scanline starts (dots=0), matching DMG hardware behaviour.
+                self.ly = (self.ly + 1) % 154;
+                self.stat_lyc_match = false;
+                // Update the STAT IRQ signal — the LYC=LY source just went inactive.
+                // The new LY's LYC coincidence is re-evaluated at mode-2 start (dots=0).
+                self.stat_irq_update();
+                // Skip mode transitions; they fire on the next tick when dots=0
+                continue;
+            }
+            if self.ly >= 144 {
+                if self.stat.mode == 1 {
+                    continue;
+                }
+                self.stat.mode = 1;
+                self.stat_lyc_match = self.ly == self.lc;
+                self.v_blank = true;
+                Interrupt::owned(self.glo.clone()).raise(InterruptFlag::VBlank);
+                // DMG quirk: at line 144, a Mode 2 OAM pulse is generated simultaneously
+                // with Mode 1 (VBlank) entry.  If the M2 interrupt is enabled and the
+                // STAT signal was LOW, fire a rising edge now (before stat_irq_update
+                // sets the persistent level based on Mode 1 / LYC).
+                if self.stat.enable_m2_interrupt && !self.stat_irq {
+                    Interrupt::owned(self.glo.clone()).raise(InterruptFlag::LCD);
+                }
+                self.stat_irq_update();
+            } else if self.dots < 80 {
+                if self.lcdon_first_line {
+                    // Line 0 after LCD enable: stay in Mode 0, skip Mode 2 entirely.
+                    continue;
+                }
+                if self.stat.mode == 2 {
+                    continue;
+                }
+                self.stat.mode = 2;
+                self.stat_lyc_match = self.ly == self.lc;
+                // Compute sprite timing penalty for this scanline's mode3 window
+                let t_pen = self.compute_sprite_penalty();
+                self.sprite_penalty = (t_pen / 4) * 4;
+                self.stat_irq_update();
+            } else if self.dots <= (80 + 172 + ((self.sx as u32 % 8 + 3) / 4) * 4) - 4 + self.sprite_penalty {
+                self.lcdon_first_line = false;
+                self.stat.mode = 3;
+                // Mode 3 has no STAT interrupt source; the signal may fall to LOW here
+                // unless LYC=LY keeps it high.  Update to track any falling edge.
+                self.stat_irq_update();
+            } else {
+                if self.stat.mode == 0 {
+                    continue;
+                }
+                self.stat.mode = 0;
+                self.h_blank = true;
+                self.stat_irq_update();
+                // Render scanline
+                if self.glo.borrow().term == Term::CGB || self.lcdc.bit0() {
+                    self.draw_bg();
+                }
+                if self.lcdc.bit1() {
+                    self.draw_sprites();
+                }
+            }
         }
     }
 }

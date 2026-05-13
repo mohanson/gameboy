@@ -1,4 +1,4 @@
-use crate::convention::{CLOCK_FREQUENCY, Global, Memory, Term};
+use crate::convention::{CLOCK_FREQUENCY, Global, Memory, Term, Ticker};
 use blip_buf::BlipBuf;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -948,62 +948,6 @@ impl Apu {
         }
     }
 
-    pub fn next(&mut self, cycles: u32) {
-        // Count ticks first so the timer state is consumed regardless of power state.
-        let ticks = self.timer.next(cycles);
-
-        if !self.reg.get_power() {
-            // The frame sequencer (DIV-APU) keeps running even when the APU is powered off.
-            for _ in 0..ticks {
-                if self.skip_next_fs_tick {
-                    self.skip_next_fs_tick = false;
-                    continue;
-                }
-                self.fs.next();
-            }
-            return;
-        }
-
-        for _ in 0..ticks {
-            if self.skip_next_fs_tick {
-                self.skip_next_fs_tick = false;
-                continue;
-            }
-            self.channel1.next(self.timer.period);
-            self.channel2.next(self.timer.period);
-            self.channel3.next(self.timer.period);
-            self.channel4.next(self.timer.period);
-
-            let step = self.fs.next();
-            if step == 0 || step == 2 || step == 4 || step == 6 {
-                self.channel1.lc.next();
-                self.channel2.lc.next();
-                self.channel3.lc.next();
-                self.channel4.lc.next();
-            }
-            if step == 7 {
-                self.channel1.ve.next();
-                self.channel2.ve.next();
-                self.channel4.ve.next();
-            }
-            if step == 2 || step == 6 {
-                self.channel1.fs.next();
-                self.channel1.timer.period = period(self.channel1.reg.clone());
-            }
-
-            self.channel1.blip.data.end_frame(self.timer.period);
-            self.channel2.blip.data.end_frame(self.timer.period);
-            self.channel3.blip.data.end_frame(self.timer.period);
-            self.channel4.blip.data.end_frame(self.timer.period);
-            self.channel1.blip.from = self.channel1.blip.from.wrapping_sub(self.timer.period);
-            self.channel2.blip.from = self.channel2.blip.from.wrapping_sub(self.timer.period);
-            self.channel3.blip.from = self.channel3.blip.from.wrapping_sub(self.timer.period);
-            self.channel4.blip.from = self.channel4.blip.from.wrapping_sub(self.timer.period);
-            self.mix();
-            self.frame_count = self.frame_count.wrapping_add(1);
-        }
-    }
-
     fn mix(&mut self) {
         let sc1 = self.channel1.blip.data.samples_avail();
         let sc2 = self.channel2.blip.data.samples_avail();
@@ -1355,6 +1299,64 @@ impl Memory for Apu {
                 }
             }
             _ => unreachable!(),
+        }
+    }
+}
+
+impl Ticker for Apu {
+    fn tick(&mut self, cycles: u16) {
+        // Count ticks first so the timer state is consumed regardless of power state.
+        let ticks = self.timer.next(cycles as u32);
+
+        if !self.reg.get_power() {
+            // The frame sequencer (DIV-APU) keeps running even when the APU is powered off.
+            for _ in 0..ticks {
+                if self.skip_next_fs_tick {
+                    self.skip_next_fs_tick = false;
+                    continue;
+                }
+                self.fs.next();
+            }
+            return;
+        }
+
+        for _ in 0..ticks {
+            if self.skip_next_fs_tick {
+                self.skip_next_fs_tick = false;
+                continue;
+            }
+            self.channel1.next(self.timer.period);
+            self.channel2.next(self.timer.period);
+            self.channel3.next(self.timer.period);
+            self.channel4.next(self.timer.period);
+
+            let step = self.fs.next();
+            if step == 0 || step == 2 || step == 4 || step == 6 {
+                self.channel1.lc.next();
+                self.channel2.lc.next();
+                self.channel3.lc.next();
+                self.channel4.lc.next();
+            }
+            if step == 7 {
+                self.channel1.ve.next();
+                self.channel2.ve.next();
+                self.channel4.ve.next();
+            }
+            if step == 2 || step == 6 {
+                self.channel1.fs.next();
+                self.channel1.timer.period = period(self.channel1.reg.clone());
+            }
+
+            self.channel1.blip.data.end_frame(self.timer.period);
+            self.channel2.blip.data.end_frame(self.timer.period);
+            self.channel3.blip.data.end_frame(self.timer.period);
+            self.channel4.blip.data.end_frame(self.timer.period);
+            self.channel1.blip.from = self.channel1.blip.from.wrapping_sub(self.timer.period);
+            self.channel2.blip.from = self.channel2.blip.from.wrapping_sub(self.timer.period);
+            self.channel3.blip.from = self.channel3.blip.from.wrapping_sub(self.timer.period);
+            self.channel4.blip.from = self.channel4.blip.from.wrapping_sub(self.timer.period);
+            self.mix();
+            self.frame_count = self.frame_count.wrapping_add(1);
         }
     }
 }

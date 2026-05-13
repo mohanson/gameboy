@@ -187,8 +187,8 @@ impl Mmu {
         self.ticker.tick(cycles);
         self.serial.tick(cycles);
         let cycles = if self.spd & 0x80 != 0 { cycles / 2 } else { cycles };
-        self.gpu.next(cycles as u32);
-        self.apu.next(cycles as u32);
+        self.gpu.tick(cycles);
+        self.apu.tick(cycles);
     }
 
     fn hdma(&mut self) -> u16 {
