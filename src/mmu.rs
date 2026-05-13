@@ -184,9 +184,9 @@ impl Mmu {
     fn next(&mut self, cycles: u16) {
         self.timer.tick(cycles);
         self.serial.tick(cycles);
-        let vcycles = if self.speed == 2 { cycles / 2 } else { cycles };
-        self.gpu.next(vcycles as u32);
-        self.apu.next(vcycles as u32);
+        let cycles = if self.speed == 2 { cycles / 2 } else { cycles };
+        self.gpu.next(cycles as u32);
+        self.apu.next(cycles as u32);
     }
 
     fn hdma(&mut self) -> u16 {
