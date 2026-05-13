@@ -27,7 +27,7 @@ pub struct Mmu {
     pub spd: u8,
     pub ticker: Timer,
     pub wram: [u8; 0x8000],
-    pub wram_bank: usize,
+    pub wvbk: usize,
 }
 
 impl Mmu {
@@ -45,7 +45,7 @@ impl Mmu {
             spd: 0x00,
             ticker: Timer::power_up(glo.clone()),
             wram: [0x00; 0x8000],
-            wram_bank: 0x01,
+            wvbk: 0x01,
         };
         r.sb(0xff26, 0xf1);
         r.sb(0xff10, 0x80);
@@ -90,7 +90,7 @@ impl Memory for Mmu {
             0x8000..=0x9fff => self.gpu.lb(a),
             0xa000..=0xbfff => self.rom.lb(a),
             0xc000..=0xcfff => self.wram[a as usize - 0xc000],
-            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank],
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wvbk],
             0xe000..=0xfdff => self.lb(a - 0x2000),
             0xfe00..=0xfe9f => self.lb_odma(a),
             0xfea0..=0xfeff => 0xff,
@@ -109,7 +109,7 @@ impl Memory for Mmu {
                     0xff4f => self.gpu.lb(a),
                     0xff51..=0xff55 => self.dma.h.lb(a),
                     0xff68..=0xff6b => self.gpu.lb(a),
-                    0xff70 => self.wram_bank as u8,
+                    0xff70 => self.wvbk as u8,
                     _ => 0xff,
                 },
             },
@@ -125,7 +125,7 @@ impl Memory for Mmu {
             0x8000..=0x9fff => self.gpu.sb(a, v),
             0xa000..=0xbfff => self.rom.sb(a, v),
             0xc000..=0xcfff => self.wram[a as usize - 0xc000] = v,
-            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wram_bank] = v,
+            0xd000..=0xdfff => self.wram[a as usize - 0xd000 + 0x1000 * self.wvbk] = v,
             0xe000..=0xfdff => self.sb(a - 0x2000, v),
             0xfe00..=0xfe9f => {
                 // CPU writes to OAM are blocked while OAM DMA is active (bus conflict).
@@ -153,7 +153,7 @@ impl Memory for Mmu {
                     0xff4f => self.gpu.sb(a, v),
                     0xff51..=0xff55 => self.dma.h.sb(a, v),
                     0xff68..=0xff6b => self.gpu.sb(a, v),
-                    0xff70 => self.wram_bank = (v as usize & 0x7).max(1),
+                    0xff70 => self.wvbk = (v as usize & 0x7).max(1),
                     _ => {}
                 },
             },
@@ -246,7 +246,7 @@ impl Mmu {
                 0x8000..=0x9fff => self.gpu.lb(src),
                 0xa000..=0xbfff => self.rom.lb(src),
                 0xc000..=0xcfff => self.wram[src as usize - 0xc000],
-                0xd000..=0xdfff => self.wram[src as usize - 0xd000 + 0x1000 * self.wram_bank],
+                0xd000..=0xdfff => self.wram[src as usize - 0xd000 + 0x1000 * self.wvbk],
                 _ => 0xff,
             };
             self.gpu.sb(0xfe00 + i as u16, b);
