@@ -24,8 +24,7 @@ pub struct Mmu {
     pub joypad: Joypad,
     pub rom: Cartridge,
     pub serial: Serial,
-    pub speed: u8,
-    pub speed_switch: bool,
+    pub spd: u8,
     pub ticker: Timer,
     pub wram: [u8; 0x8000],
     pub wram_bank: usize,
@@ -43,8 +42,7 @@ impl Mmu {
             joypad: Joypad::power_up(glo.clone()),
             rom,
             serial: Serial::power_up(glo.clone()),
-            speed: 1,
-            speed_switch: false,
+            spd: 0x00,
             ticker: Timer::power_up(glo.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
@@ -107,7 +105,7 @@ impl Memory for Mmu {
             0xff4c..=0xff70 => match self.glo.borrow().term {
                 Term::DMG => 0xff,
                 Term::CGB => match a {
-                    0xff4d => 0x7e | ((self.speed == 2) as u8) << 7 | self.speed_switch as u8,
+                    0xff4d => 0x7e | self.spd,
                     0xff4f => self.gpu.lb(a),
                     0xff51..=0xff55 => self.dma.h.lb(a),
                     0xff68..=0xff6b => self.gpu.lb(a),
@@ -151,7 +149,7 @@ impl Memory for Mmu {
             0xff4c..=0xff70 => match self.glo.borrow().term {
                 Term::DMG => {}
                 Term::CGB => match a {
-                    0xff4d => self.speed_switch = v & 0x01 != 0,
+                    0xff4d => self.spd = (self.spd & 0x80) | (v & 0x01),
                     0xff4f => self.gpu.sb(a, v),
                     0xff51..=0xff55 => self.dma.h.sb(a, v),
                     0xff68..=0xff6b => self.gpu.sb(a, v),
@@ -184,7 +182,7 @@ impl Mmu {
     fn next(&mut self, cycles: u16) {
         self.ticker.tick(cycles);
         self.serial.tick(cycles);
-        let cycles = if self.speed == 2 { cycles / 2 } else { cycles };
+        let cycles = if self.spd & 0x80 != 0 { cycles / 2 } else { cycles };
         self.gpu.next(cycles as u32);
         self.apu.next(cycles as u32);
     }
@@ -257,10 +255,9 @@ impl Mmu {
 }
 
 impl Mmu {
-    pub fn notify_spd(&mut self) -> bool {
-        self.speed = 3 - self.speed;
-        self.speed_switch = false;
-        true
+    pub fn notify_spd(&mut self) {
+        self.spd ^= 0x80;
+        self.spd &= 0xfe;
     }
 
     pub fn lb_odma(&self, a: u16) -> u8 {
