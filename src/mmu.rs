@@ -26,7 +26,7 @@ pub struct Mmu {
     pub serial: Serial,
     pub speed: u8,
     pub speed_switch: bool,
-    pub timer: Timer,
+    pub ticker: Timer,
     pub wram: [u8; 0x8000],
     pub wram_bank: usize,
 }
@@ -45,7 +45,7 @@ impl Mmu {
             serial: Serial::power_up(glo.clone()),
             speed: 1,
             speed_switch: false,
-            timer: Timer::power_up(glo.clone()),
+            ticker: Timer::power_up(glo.clone()),
             wram: [0x00; 0x8000],
             wram_bank: 0x01,
         };
@@ -98,7 +98,7 @@ impl Memory for Mmu {
             0xfea0..=0xfeff => 0xff,
             0xff00 => self.joypad.lb(a),
             0xff01..=0xff02 => self.serial.lb(a),
-            0xff04..=0xff07 => self.timer.lb(a),
+            0xff04..=0xff07 => self.ticker.lb(a),
             0xff0f => self.intr.lb(0xff0f),
             0xff10..=0xff3f => self.apu.lb(a),
             0xff40..=0xff45 => self.gpu.lb(a),
@@ -139,7 +139,7 @@ impl Memory for Mmu {
             0xfea0..=0xfeff => {}
             0xff00 => self.joypad.sb(a, v),
             0xff01..=0xff02 => self.serial.sb(a, v),
-            0xff04..=0xff07 => self.timer.sb(a, v),
+            0xff04..=0xff07 => self.ticker.sb(a, v),
             0xff0f => self.intr.sb(0xff0f, v),
             0xff10..=0xff3f => {
                 self.apu.sdiv_cache = self.glo.borrow().sdiv;
@@ -182,7 +182,7 @@ impl Ticker for Mmu {
 
 impl Mmu {
     fn next(&mut self, cycles: u16) {
-        self.timer.tick(cycles);
+        self.ticker.tick(cycles);
         self.serial.tick(cycles);
         let cycles = if self.speed == 2 { cycles / 2 } else { cycles };
         self.gpu.next(cycles as u32);
