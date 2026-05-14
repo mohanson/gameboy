@@ -153,32 +153,35 @@ impl From<u8> for GrayShades {
     }
 }
 
-// Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
-//     (Used for both BG and Window. BG color 0 is always behind OBJ)
-// Bit6   Y flip          (0=Normal, 1=Vertically mirrored)
-// Bit5   X flip          (0=Normal, 1=Horizontally mirrored)
-// Bit4   Palette number  **Non CGB Mode Only** (0=OBP0, 1=OBP1)
-// Bit3   Tile VRAM-Bank  **CGB Mode Only**     (0=Bank 0, 1=Bank 1)
-// Bit2-0 Palette number  **CGB Mode Only**     (OBP0-7)
+// See: https://gbdev.io/pandocs/OAM.html#byte-3--attributesflags
 struct Attr {
-    priority: bool,
-    yflip: bool,
-    xflip: bool,
-    palette_number_0: usize,
-    bank: bool,
-    palette_number_1: usize,
+    data: u8,
+}
+
+#[rustfmt::skip]
+impl Attr {
+    // Attr.7 - OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
+    fn bit7(&self) -> bool { self.data & 0b1000_0000 != 0x00 }
+
+    // Attr.6 - Y Flip (0=Normal, 1=Vertically mirrored)
+    fn bit6(&self) -> bool { self.data & 0b0100_0000 != 0x00 }
+
+    // Attr.5 - X Flip (0=Normal, 1=Horizontally mirrored)
+    fn bit5(&self) -> bool { self.data & 0b0010_0000 != 0x00 }
+
+    // Attr.4 - DMG Palette [Non-CGB only] (0=OBP0, 1=OBP1)
+    fn bit4(&self) -> bool { self.data & 0b0001_0000 != 0x00 }
+
+    // Attr.3 - Tile VRAM Bank [CGB only] (0=Bank 0, 1=Bank 1)
+    fn bit3(&self) -> bool { self.data & 0b0000_1000 != 0x00 }
+
+    // Attr.2-0 - CGB Palette Number [CGB only] (OBP0-7)
+    fn paln(&self) -> usize { (self.data & 0x07) as usize }
 }
 
 impl From<u8> for Attr {
     fn from(u: u8) -> Self {
-        Self {
-            priority: u & (1 << 7) != 0,
-            yflip: u & (1 << 6) != 0,
-            xflip: u & (1 << 5) != 0,
-            palette_number_0: u as usize & (1 << 4),
-            bank: u & (1 << 3) != 0,
-            palette_number_1: u as usize & 0x07,
-        }
+        Self { data: u }
     }
 }
 
@@ -634,8 +637,8 @@ impl Gpu {
             let tile_location = tile_base + tile_offset;
             let tile_attr = Attr::from(self.get_ram1(tile_addr));
 
-            let tile_y = if tile_attr.yflip { 7 - py % 8 } else { py % 8 };
-            let tile_y_data: [u8; 2] = if self.glo.borrow().term == Term::CGB && tile_attr.bank {
+            let tile_y = if tile_attr.bit6() { 7 - py % 8 } else { py % 8 };
+            let tile_y_data: [u8; 2] = if self.glo.borrow().term == Term::CGB && tile_attr.bit3() {
                 let a = self.get_ram1(tile_location + u16::from(tile_y * 2));
                 let b = self.get_ram1(tile_location + u16::from(tile_y * 2) + 1);
                 [a, b]
@@ -644,7 +647,7 @@ impl Gpu {
                 let b = self.get_ram0(tile_location + u16::from(tile_y * 2) + 1);
                 [a, b]
             };
-            let tile_x = if tile_attr.xflip { 7 - px % 8 } else { px % 8 };
+            let tile_x = if tile_attr.bit5() { 7 - px % 8 } else { px % 8 };
 
             // Palettes
             let color_l = if tile_y_data[0] & (0x80 >> tile_x) != 0 { 1 } else { 0 };
@@ -652,12 +655,12 @@ impl Gpu {
             let color = color_h | color_l;
 
             // Priority
-            self.prio[x] = (tile_attr.priority, color);
+            self.prio[x] = (tile_attr.bit7(), color);
 
             if self.glo.borrow().term == Term::CGB {
-                let r = self.cbgpd[tile_attr.palette_number_1][color][0];
-                let g = self.cbgpd[tile_attr.palette_number_1][color][1];
-                let b = self.cbgpd[tile_attr.palette_number_1][color][2];
+                let r = self.cbgpd[tile_attr.paln()][color][0];
+                let g = self.cbgpd[tile_attr.paln()][color][1];
+                let b = self.cbgpd[tile_attr.paln()][color][2];
                 self.set_rgb(x as usize, r, g, b);
             } else {
                 let color = Self::get_gray_shades(self.bgp, color) as u8;
@@ -720,9 +723,9 @@ impl Gpu {
             }
 
             let tile_y =
-                if tile_attr.yflip { sprite_size - 1 - self.ly.wrapping_sub(py) } else { self.ly.wrapping_sub(py) };
+                if tile_attr.bit6() { sprite_size - 1 - self.ly.wrapping_sub(py) } else { self.ly.wrapping_sub(py) };
             let tile_y_addr = 0x8000u16 + u16::from(tile_number) * 16 + u16::from(tile_y) * 2;
-            let tile_y_data: [u8; 2] = if self.glo.borrow().term == Term::CGB && tile_attr.bank {
+            let tile_y_data: [u8; 2] = if self.glo.borrow().term == Term::CGB && tile_attr.bit3() {
                 let b1 = self.get_ram1(tile_y_addr);
                 let b2 = self.get_ram1(tile_y_addr + 1);
                 [b1, b2]
@@ -736,7 +739,7 @@ impl Gpu {
                 if px.wrapping_add(x) >= (SCREEN_W as u8) {
                     continue;
                 }
-                let tile_x = if tile_attr.xflip { 7 - x } else { x };
+                let tile_x = if tile_attr.bit5() { 7 - x } else { x };
 
                 // Palettes
                 let color_l = if tile_y_data[0] & (0x80 >> tile_x) != 0 { 1 } else { 0 };
@@ -753,19 +756,19 @@ impl Gpu {
                 } else if prio.0 {
                     prio.1 != 0
                 } else {
-                    tile_attr.priority && prio.1 != 0
+                    tile_attr.bit7() && prio.1 != 0
                 };
                 if skip {
                     continue;
                 }
 
                 if self.glo.borrow().term == Term::CGB {
-                    let r = self.cobpd[tile_attr.palette_number_1][color][0];
-                    let g = self.cobpd[tile_attr.palette_number_1][color][1];
-                    let b = self.cobpd[tile_attr.palette_number_1][color][2];
+                    let r = self.cobpd[tile_attr.paln()][color][0];
+                    let g = self.cobpd[tile_attr.paln()][color][1];
+                    let b = self.cobpd[tile_attr.paln()][color][2];
                     self.set_rgb(px.wrapping_add(x) as usize, r, g, b);
                 } else {
-                    let color = if tile_attr.palette_number_0 == 1 {
+                    let color = if tile_attr.bit4() {
                         Self::get_gray_shades(self.op1, color) as u8
                     } else {
                         Self::get_gray_shades(self.op0, color) as u8
