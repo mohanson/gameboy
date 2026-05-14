@@ -86,6 +86,12 @@ impl Stat {
     // Stat.3 - Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
     pub fn bit3(&self) -> bool { self.data & 0b0000_1000 != 0x00 }
 
+    // Stat.2 - LYC=LY Coincidence Flag (0=Different, 1=Equal) (Read Only)
+    pub fn bit2(&self) -> bool { self.data & 0b0000_0100 != 0x00 }
+
+    // Set or clear the LYC=LY coincidence flag (Stat.2).
+    pub fn lyeq(&mut self, v: bool) { if v { self.data |= 0b0000_0100 } else { self.data &= !0b0000_0100 } }
+
     // Stat.0 - PPU Mode (0=HBlank, 1=VBlank, 2=OAM Scan, 3=Pixel Transfer) (Read Only)
     pub fn mode(&self) -> u8 { self.data & 0x03 }
 }
@@ -290,11 +296,6 @@ pub struct Gpu {
     // Set when LCDC bit 7 transitions 0->1. Line 0 after LCD enable starts in Mode 0
     // (not Mode 2) and jumps directly to Mode 3 at dot 80.
     lcdon_first_line: bool,
-    // Latched LYC=LY coincidence bit for STAT register bit 2.
-    // This is cleared at dot 452 (when LY increments) and re-evaluated at the
-    // start of each new scanline (dots=0) and when LYC is written, matching
-    // real DMG hardware timing where STAT bit 2 lags LY by one M-cycle.
-    stat_lyc_match: bool,
     // Tracks the STAT IRQ signal level (the OR of all enabled STAT interrupt sources).
     // The LCD interrupt (IF bit 1) is only raised on a 0→1 RISING EDGE of this signal.
     // This implements the "STAT IRQ blocking" behaviour: if one source (e.g. LYC=LY)
@@ -332,7 +333,6 @@ impl Gpu {
             dots: 0,
             sprite_penalty: 0,
             lcdon_first_line: false,
-            stat_lyc_match: false,
             stat_irq: false,
         }
     }
@@ -369,12 +369,12 @@ impl Gpu {
         (self.stat.bit3() && self.stat.mode() == 0)
             || (self.stat.bit4() && self.stat.mode() == 1)
             || (self.stat.bit5() && self.stat.mode() == 2)
-            || (self.stat.bit6() && self.stat_lyc_match)
+            || (self.stat.bit6() && self.stat.bit2())
     }
 
     // Recompute the STAT IRQ signal and raise an LCD interrupt on a 0→1 rising edge.
     // Must be called after any change that could affect the signal:
-    //   mode transitions, stat_lyc_match changes, STAT enable-bit writes, LCDC writes.
+    //   mode transitions, stat.bit2() changes, STAT enable-bit writes, LCDC writes.
     // When LCD is OFF this is a no-op: stat_irq is "frozen" at the level it had when
     // the LCD was last on.  This ensures that re-enabling the LCD only fires an interrupt
     // if the comparison result actually changes (0→1), not just because the off-state
@@ -799,7 +799,7 @@ impl Memory for Gpu {
             }
             0xff40 => self.lcdc.data,
             0xff41 => {
-                let bit2 = if self.stat_lyc_match { 0x04 } else { 0x00 };
+                let bit2 = if self.stat.bit2() { 0x04 } else { 0x00 };
                 // Bit 7 is unused and always reads as 1
                 0x80 | (self.stat.data & 0x78) | bit2 | self.stat.mode()
             }
@@ -878,7 +878,7 @@ impl Memory for Gpu {
                     // LCD just enabled: line 0 starts in Mode 0, not Mode 2.
                     // Evaluate LYC=LY coincidence for the initial display state.
                     self.lcdon_first_line = true;
-                    self.stat_lyc_match = self.ly == self.lc;
+                    self.stat.lyeq(self.ly == self.lc);
                     self.stat_irq_update();
                 }
             }
@@ -894,10 +894,10 @@ impl Memory for Gpu {
             0xff45 => {
                 self.lc = v;
                 // The comparison clock only runs while the LCD is on.
-                // Writing LYC while LCD is off must not change stat_lyc_match
+                // Writing LYC while LCD is off must not change stat.bit2()
                 // (STAT bit 2 is frozen during LCD-off).
                 if self.lcdc.bit7() {
-                    self.stat_lyc_match = self.ly == self.lc;
+                    self.stat.lyeq(self.ly == self.lc);
                     self.stat_irq_update();
                 }
             }
@@ -976,7 +976,7 @@ impl Ticker for Gpu {
                 // The STAT LYC=LY bit is cleared immediately: it will be re-evaluated
                 // when the new scanline starts (dots=0), matching DMG hardware behaviour.
                 self.ly = (self.ly + 1) % 154;
-                self.stat_lyc_match = false;
+                self.stat.lyeq(false);
                 // Update the STAT IRQ signal — the LYC=LY source just went inactive.
                 // The new LY's LYC coincidence is re-evaluated at mode-2 start (dots=0).
                 self.stat_irq_update();
@@ -988,7 +988,7 @@ impl Ticker for Gpu {
                     continue;
                 }
                 self.stat.data = (self.stat.data & !0x03) | 1;
-                self.stat_lyc_match = self.ly == self.lc;
+                self.stat.lyeq(self.ly == self.lc);
                 self.v_blank = true;
                 Interrupt::owned(self.glo.clone()).raise(InterruptFlag::VBlank);
                 // DMG quirk: at line 144, a Mode 2 OAM pulse is generated simultaneously
@@ -1008,7 +1008,7 @@ impl Ticker for Gpu {
                     continue;
                 }
                 self.stat.data = (self.stat.data & !0x03) | 2;
-                self.stat_lyc_match = self.ly == self.lc;
+                self.stat.lyeq(self.ly == self.lc);
                 // Compute sprite timing penalty for this scanline's mode3 window
                 let t_pen = self.compute_sprite_penalty();
                 self.sprite_penalty = (t_pen / 4) * 4;
