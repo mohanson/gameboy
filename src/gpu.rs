@@ -17,39 +17,39 @@ impl Lcdc {
     // LCDC.7 - LCD Display Enable
     // This bit controls whether the LCD is on and the PPU is active. Setting it to 0 turns both off, which grants
     // immediate and full access to VRAM, OAM, etc.
-    fn bit7(&self) -> bool { self.data & 0b1000_0000 != 0x00 }
+    pub fn bit7(&self) -> bool { self.data & 0b1000_0000 != 0x00 }
 
     // LCDC.6 - Window Tile Map Display Select
     // This bit controls which background map the Window uses for rendering. When it's reset, the $9800 tilemap is used,
     // otherwise it's the $9C00 one.
-    fn bit6(&self) -> bool { self.data & 0b0100_0000 != 0x00 }
+    pub fn bit6(&self) -> bool { self.data & 0b0100_0000 != 0x00 }
 
     // LCDC.5 - Window Display Enable
     // This bit controls whether the window shall be displayed or not. (TODO : what happens when toggling this
     // mid-scanline ?) This bit is overridden on DMG by bit 0 if that bit is reset.
     // Note that on CGB models, setting this bit to 0 then back to 1 mid-frame may cause the second write to be ignored.
-    fn bit5(&self) -> bool { self.data & 0b0010_0000 != 0x00 }
+    pub fn bit5(&self) -> bool { self.data & 0b0010_0000 != 0x00 }
 
     // LCDC.4 - BG & Window Tile Data Select
     // This bit controls which addressing mode the BG and Window use to pick tiles.
     // Sprites aren't affected by this, and will always use $8000 addressing mode.
-    fn bit4(&self) -> bool { self.data & 0b0001_0000 != 0x00 }
+    pub fn bit4(&self) -> bool { self.data & 0b0001_0000 != 0x00 }
 
     // LCDC.3 - BG Tile Map Display Select
     // This bit works similarly to bit 6: if the bit is reset, the BG uses tilemap $9800, otherwise tilemap $9C00.
-    fn bit3(&self) -> bool { self.data & 0b0000_1000 != 0x00 }
+    pub fn bit3(&self) -> bool { self.data & 0b0000_1000 != 0x00 }
 
     // LCDC.2 - OBJ Size
     // This bit controls the sprite size (1 tile or 2 stacked vertically).
     // Be cautious when changing this mid-frame from 8x8 to 8x16 : "remnants" of the sprites intended for 8x8 could
     // "leak" into the 8x16 zone and cause artifacts.
-    fn bit2(&self) -> bool { self.data & 0b0000_0100 != 0x00 }
+    pub fn bit2(&self) -> bool { self.data & 0b0000_0100 != 0x00 }
 
     // LCDC.1 - OBJ Display Enable
     // This bit toggles whether sprites are displayed or not.
     // This can be toggled mid-frame, for example to avoid sprites being displayed on top of a status bar or text box.
     // (Note: toggling mid-scanline might have funky results on DMG? Investigation needed.)
-    fn bit1(&self) -> bool { self.data & 0b0000_0010 != 0x00 }
+    pub fn bit1(&self) -> bool { self.data & 0b0000_0010 != 0x00 }
 
 
     // LCDC.0 - BG/Window Display/Priority
@@ -60,7 +60,7 @@ impl Lcdc {
     // CGB in CGB Mode: BG and Window Master Priority
     // When Bit 0 is cleared, the background and window lose their priority - the sprites will be always displayed on
     // top of background and window, independently of the priority flags in OAM and BG Map attributes.
-    fn bit0(&self) -> bool { self.data & 0b0000_0001 != 0x00 }
+    pub fn bit0(&self) -> bool { self.data & 0b0000_0001 != 0x00 }
 }
 
 // LCD Status Register.
@@ -75,19 +75,19 @@ impl Stat {
     }
 
     // Stat.6 - LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
-    fn bit6(&self) -> bool { self.data & 0b0100_0000 != 0x00 }
+    pub fn bit6(&self) -> bool { self.data & 0b0100_0000 != 0x00 }
 
     // Stat.5 - Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
-    fn bit5(&self) -> bool { self.data & 0b0010_0000 != 0x00 }
+    pub fn bit5(&self) -> bool { self.data & 0b0010_0000 != 0x00 }
 
     // Stat.4 - Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
-    fn bit4(&self) -> bool { self.data & 0b0001_0000 != 0x00 }
+    pub fn bit4(&self) -> bool { self.data & 0b0001_0000 != 0x00 }
 
     // Stat.3 - Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
-    fn bit3(&self) -> bool { self.data & 0b0000_1000 != 0x00 }
+    pub fn bit3(&self) -> bool { self.data & 0b0000_1000 != 0x00 }
 
     // Stat.0 - PPU Mode (0=HBlank, 1=VBlank, 2=OAM Scan, 3=Pixel Transfer) (Read Only)
-    fn mode(&self) -> u8 { self.data & 0x03 }
+    pub fn mode(&self) -> u8 { self.data & 0x03 }
 }
 
 // This register is used to address a byte in the CGBs Background Palette Memory. Each two byte in that memory define a
@@ -99,32 +99,58 @@ impl Stat {
 // <reading> from FF69, so the index must be manually incremented in that case. Writing to FF69 during rendering still
 // causes auto-increment to occur.
 // Unlike the following, this register can be accessed outside V-Blank and H-Blank.
-struct Bgpi {
-    i: u8,
-    auto_increment: bool,
+pub struct Bgpi {
+    data: u8,
 }
 
 impl Bgpi {
-    fn power_up() -> Self {
-        Self { i: 0x00, auto_increment: false }
+    pub fn power_up() -> Self {
+        Self { data: 0x00 }
     }
 
-    fn get(&self) -> u8 {
-        let a = if self.auto_increment { 0x80 } else { 0x00 };
-        a | self.i
+    // Bgpi.5-0 - Palette Memory Address (00-3F)
+    pub fn addr(&self) -> u8 {
+        self.data & 0x3f
     }
 
-    fn set(&mut self, v: u8) {
-        self.auto_increment = v & 0x80 != 0x00;
-        self.i = v & 0x3f;
+    // Bgpi.7 - Auto Increment (0=Disabled, 1=Increment after Writing)
+    pub fn auto(&self) -> bool {
+        self.data & 0b1000_0000 != 0x00
+    }
+
+    // When the auto increment bit is set then the index is automatically incremented after each write to FF69.
+    pub fn incr(&mut self) {
+        self.data = (self.data & 0x80) | self.addr().wrapping_add(1) & 0x3f;
+    }
+}
+
+impl Memory for Bgpi {
+    fn lb(&self, _: u16) -> u8 {
+        self.data
+    }
+
+    fn sb(&mut self, _: u16, v: u8) {
+        self.data = v & 0xbf;
     }
 }
 
 pub enum GrayShades {
     White = 0xff,
     Light = 0xc0,
-    Dark = 0x60,
+    Dusky = 0x60,
     Black = 0x00,
+}
+
+impl From<u8> for GrayShades {
+    fn from(u: u8) -> Self {
+        match u {
+            0x00 => GrayShades::White,
+            0x01 => GrayShades::Light,
+            0x02 => GrayShades::Dusky,
+            0x03 => GrayShades::Black,
+            _ => unreachable!(),
+        }
+    }
 }
 
 // Bit7   OBJ-to-BG Priority (0=OBJ Above BG, 1=OBJ Behind BG color 1-3)
@@ -324,16 +350,11 @@ impl Gpu {
     // Bit 1-0 - Shade for Color Number 0
     // The four possible gray shades are:
     // 0  White
-    // 1  Light gray
-    // 2  Dark gray
+    // 1  Light
+    // 2  Dusky
     // 3  Black
     fn get_gray_shades(v: u8, i: usize) -> GrayShades {
-        match v >> (2 * i) & 0x03 {
-            0x00 => GrayShades::White,
-            0x01 => GrayShades::Light,
-            0x02 => GrayShades::Dark,
-            _ => GrayShades::Black,
-        }
+        GrayShades::from(v >> (2 * i) & 0x03)
     }
 
     // Compute the STAT IRQ signal level: HIGH if any enabled interrupt source is active.
@@ -790,11 +811,11 @@ impl Memory for Gpu {
             0xff4a => self.wy,
             0xff4b => self.wx,
             0xff4f => 0xfe | self.ram_bank as u8,
-            0xff68 => self.cbgpi.get(),
+            0xff68 => self.cbgpi.lb(0xff68),
             0xff69 => {
-                let r = self.cbgpi.i as usize >> 3;
-                let c = self.cbgpi.i as usize >> 1 & 0x3;
-                if self.cbgpi.i & 0x01 == 0x00 {
+                let r = self.cbgpi.addr() as usize >> 3;
+                let c = self.cbgpi.addr() as usize >> 1 & 0x3;
+                if self.cbgpi.addr() & 0x01 == 0x00 {
                     let a = self.cbgpd[r][c][0];
                     let b = self.cbgpd[r][c][1] << 5;
                     a | b
@@ -804,11 +825,11 @@ impl Memory for Gpu {
                     a | b
                 }
             }
-            0xff6a => self.cobpi.get(),
+            0xff6a => self.cobpi.lb(0xff6a),
             0xff6b => {
-                let r = self.cobpi.i as usize >> 3;
-                let c = self.cobpi.i as usize >> 1 & 0x3;
-                if self.cobpi.i & 0x01 == 0x00 {
+                let r = self.cobpi.addr() as usize >> 3;
+                let c = self.cobpi.addr() as usize >> 1 & 0x3;
+                if self.cobpi.addr() & 0x01 == 0x00 {
                     let a = self.cobpd[r][c][0];
                     let b = self.cobpd[r][c][1] << 5;
                     a | b
@@ -818,7 +839,7 @@ impl Memory for Gpu {
                     a | b
                 }
             }
-            _ => panic!(""),
+            _ => unreachable!(),
         }
     }
 
@@ -884,39 +905,37 @@ impl Memory for Gpu {
             0xff4a => self.wy = v,
             0xff4b => self.wx = v,
             0xff4f => self.ram_bank = (v & 0x01) as usize,
-            0xff68 => self.cbgpi.set(v),
+            0xff68 => self.cbgpi.sb(0xff68, v),
             0xff69 => {
-                let r = self.cbgpi.i as usize >> 3;
-                let c = self.cbgpi.i as usize >> 1 & 0x03;
-                if self.cbgpi.i & 0x01 == 0x00 {
+                let r = self.cbgpi.addr() as usize >> 3;
+                let c = self.cbgpi.addr() as usize >> 1 & 0x03;
+                if self.cbgpi.addr() & 0x01 == 0x00 {
                     self.cbgpd[r][c][0] = v & 0x1f;
                     self.cbgpd[r][c][1] = (self.cbgpd[r][c][1] & 0x18) | (v >> 5);
                 } else {
                     self.cbgpd[r][c][1] = (self.cbgpd[r][c][1] & 0x07) | ((v & 0x03) << 3);
                     self.cbgpd[r][c][2] = (v >> 2) & 0x1f;
                 }
-                if self.cbgpi.auto_increment {
-                    self.cbgpi.i += 0x01;
-                    self.cbgpi.i &= 0x3f;
+                if self.cbgpi.auto() {
+                    self.cbgpi.incr();
                 }
             }
-            0xff6a => self.cobpi.set(v),
+            0xff6a => self.cobpi.sb(0xff6a, v),
             0xff6b => {
-                let r = self.cobpi.i as usize >> 3;
-                let c = self.cobpi.i as usize >> 1 & 0x03;
-                if self.cobpi.i & 0x01 == 0x00 {
+                let r = self.cobpi.addr() as usize >> 3;
+                let c = self.cobpi.addr() as usize >> 1 & 0x03;
+                if self.cobpi.addr() & 0x01 == 0x00 {
                     self.cobpd[r][c][0] = v & 0x1f;
                     self.cobpd[r][c][1] = (self.cobpd[r][c][1] & 0x18) | (v >> 5);
                 } else {
                     self.cobpd[r][c][1] = (self.cobpd[r][c][1] & 0x07) | ((v & 0x03) << 3);
                     self.cobpd[r][c][2] = (v >> 2) & 0x1f;
                 }
-                if self.cobpi.auto_increment {
-                    self.cobpi.i += 0x01;
-                    self.cobpi.i &= 0x3f;
+                if self.cobpi.auto() {
+                    self.cobpi.incr();
                 }
             }
-            _ => panic!(""),
+            _ => unreachable!(),
         }
     }
 }
