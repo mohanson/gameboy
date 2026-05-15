@@ -132,14 +132,14 @@ fn mode_minifb(argu: &Argument) {
     if argu.audio {
         let host = cpal::default_host();
         let device = host.default_output_device().unwrap();
-        rog::debugln!("Open the audio player: {}", device.name().unwrap());
+        rog::debugln!("Open the audio player: {}", device.description().unwrap());
         let config = device.default_output_config().unwrap();
         let sample_format = config.sample_format();
         rog::debugln!("Sample format: {}", sample_format);
         let config: cpal::StreamConfig = config.into();
         rog::debugln!("Stream config: {:?}", config);
 
-        let apu = Apu::power_up(mbrd.mmu.borrow().glo.clone(), config.sample_rate.0);
+        let apu = Apu::power_up(mbrd.mmu.borrow().glo.clone(), config.sample_rate);
         let apu_data = apu.data.clone();
         mbrd.mmu.borrow_mut().apu = apu;
 

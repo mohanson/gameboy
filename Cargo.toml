@@ -7,6 +7,6 @@ edition = "2024"
 [dependencies]
 argparse = "0.2"
 blip_buf = "0.1"
-cpal = "0.15"
+cpal = "0.17"
 minifb = "0.28"
 rog = "0.1"
