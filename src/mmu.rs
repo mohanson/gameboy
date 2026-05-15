@@ -3,7 +3,7 @@
 // to physical addresses.
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
-use crate::convention::{Global, Memory, Term, Ticker};
+use crate::convention::{Global, Memory, OamBug, Term, Ticker};
 use crate::dma::{Dma, DmaStatus};
 use crate::gpu::Gpu;
 use crate::interrupt::Interrupt;
@@ -173,12 +173,10 @@ impl Ticker for Mmu {
         self.next(cycles);
         self.odma(cycles);
         let cycles = self.hdma();
-        self.gpu.h_blank = false;
         if cycles != 0 {
             return;
         }
         self.next(cycles);
-        self.gpu.h_blank = false;
     }
 }
 
@@ -192,6 +190,7 @@ impl Mmu {
     }
 
     fn hdma(&mut self) -> u16 {
+        let signal = self.gpu.sigh_censor();
         match self.dma.h.status {
             DmaStatus::None => 0,
             DmaStatus::Gdma => {
@@ -202,7 +201,7 @@ impl Mmu {
                 len * 8
             }
             DmaStatus::Hdma => {
-                if !self.gpu.h_blank {
+                if !signal {
                     return 0;
                 }
                 self.bdma();
@@ -262,7 +261,7 @@ impl Mmu {
     pub fn notify_idu(&mut self, addr: u16) {
         if addr >> 8 == 0xfe {
             match self.glo.borrow().term {
-                Term::DMG => self.gpu.oam_write_corrupt(),
+                Term::DMG => self.gpu.oam_corrupt(OamBug::Idu),
                 Term::CGB => {}
             }
         }
@@ -271,7 +270,7 @@ impl Mmu {
     pub fn notify_rdi(&mut self, addr: u16) {
         if addr >> 8 == 0xfe {
             match self.glo.borrow().term {
-                Term::DMG => self.gpu.oam_rdi_corrupt(),
+                Term::DMG => self.gpu.oam_corrupt(OamBug::Rdi),
                 Term::CGB => {}
             }
         }
@@ -280,7 +279,7 @@ impl Mmu {
     pub fn notify_seq(&mut self, addr: u16) {
         if addr >> 8 == 0xfe {
             match self.glo.borrow().term {
-                Term::DMG => self.gpu.oam_read_corrupt(),
+                Term::DMG => self.gpu.oam_corrupt(OamBug::Seq),
                 Term::CGB => {}
             }
         }

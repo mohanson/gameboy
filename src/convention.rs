@@ -16,7 +16,17 @@ impl std::fmt::Display for Term {
     }
 }
 
+// Which OAM-corruption flavour to apply (DMG only, mode 2).
+#[derive(Eq, PartialEq)]
+pub enum OamBug {
+    Idu, // IDU write to $FE00–$FEFF (INC/DEC rr)
+    Rdi, // read + IDU in same M-cycle (e.g. POP)
+    Seq, // CPU read from $FE00–$FEFF
+}
+
 pub const CLOCK_FREQUENCY: u32 = 4_194_304;
+pub const SCREEN_W: usize = 160;
+pub const SCREEN_H: usize = 144;
 pub const STEP_TIME: u32 = 16;
 pub const STEP_CYCLES: u32 = (STEP_TIME as f64 / (1000_f64 / CLOCK_FREQUENCY as f64)) as u32;
 
@@ -76,6 +86,26 @@ impl Global {
 
     pub fn share(self) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(self))
+    }
+}
+
+pub struct Signal {
+    s: u8,
+}
+
+impl Signal {
+    pub fn power_up() -> Self {
+        Self { s: 0x00 }
+    }
+
+    pub fn set(&mut self) {
+        self.s = 0x01;
+    }
+
+    pub fn get(&mut self) -> bool {
+        let r = self.s != 0x00;
+        self.s = 0x00;
+        r
     }
 }
 

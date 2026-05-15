@@ -3,9 +3,8 @@
 use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gameboy::apu::Apu;
-use gameboy::convention::{Memory, STEP_CYCLES, Stable};
+use gameboy::convention::{Memory, SCREEN_H, SCREEN_W, STEP_CYCLES, Stable};
 use gameboy::gameboy::GameBoy;
-use gameboy::gpu::{SCREEN_H, SCREEN_W};
 use std::io::Write;
 
 struct Argument {
@@ -191,9 +190,9 @@ fn mode_minifb(argu: &Argument) {
         cycles += mbrd.step();
 
         // Update the window
-        if mbrd.mmu.borrow_mut().gpu.check_and_reset_gpu_updated() {
+        if mbrd.mmu.borrow_mut().gpu.sigv_censor() {
             let mut i: usize = 0;
-            for l in mbrd.mmu.borrow().gpu.data.iter() {
+            for l in mbrd.mmu.borrow().gpu.image().iter() {
                 for w in l.iter() {
                     let b = u32::from(w[0]) << 16;
                     let g = u32::from(w[1]) << 8;
