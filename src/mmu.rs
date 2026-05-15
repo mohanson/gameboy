@@ -144,7 +144,7 @@ impl Memory for Mmu {
             0xff04..=0xff07 => self.ticker.sb(a, v),
             0xff0f => self.intr.sb(0xff0f, v),
             0xff10..=0xff3f => {
-                self.apu.sdiv_cache = self.glo.borrow().sdiv;
+                self.apu.sdiv = self.glo.borrow().sdiv;
                 self.apu.sb(a, v);
             }
             0xff40..=0xff45 => self.gpu.sb(a, v),
@@ -170,18 +170,18 @@ impl Memory for Mmu {
 
 impl Ticker for Mmu {
     fn tick(&mut self, cycles: u16) {
-        self.next(cycles);
+        self.step(cycles);
         self.odma(cycles);
         let cycles = self.hdma();
         if cycles != 0 {
             return;
         }
-        self.next(cycles);
+        self.step(cycles);
     }
 }
 
 impl Mmu {
-    fn next(&mut self, cycles: u16) {
+    fn step(&mut self, cycles: u16) {
         self.ticker.tick(cycles);
         self.serial.tick(cycles);
         let cycles = if self.spd & 0x80 != 0 { cycles / 2 } else { cycles };

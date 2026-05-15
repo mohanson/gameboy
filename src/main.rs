@@ -140,7 +140,7 @@ fn mode_minifb(argu: &Argument) {
         rog::debugln!("Stream config: {:?}", config);
 
         let apu = Apu::power_up(mbrd.mmu.borrow().glo.clone(), config.sample_rate.0);
-        let apu_data = apu.buffer.clone();
+        let apu_data = apu.data.clone();
         mbrd.mmu.borrow_mut().apu = apu;
 
         stream = match sample_format {

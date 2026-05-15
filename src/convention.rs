@@ -25,6 +25,7 @@ pub enum OamBug {
 }
 
 pub const CLOCK_FREQUENCY: u32 = 4_194_304;
+pub const SAMPLE_RATE: u32 = 48_000;
 pub const SCREEN_W: usize = 160;
 pub const SCREEN_H: usize = 144;
 pub const STEP_TIME: u32 = 16;
@@ -45,24 +46,6 @@ pub trait Memory {
         self.sb(a, v as u8);
         self.sb(a.wrapping_add(1), (v >> 8) as u8)
     }
-}
-
-// Hollow is a dummy memory that always reads 0xff and ignores writes. It can be used as a placeholder for components
-// that are not yet implemented, or for testing purposes.
-pub struct Hollow {}
-
-impl Hollow {
-    pub fn power_up() -> Self {
-        Self {}
-    }
-}
-
-impl Memory for Hollow {
-    fn lb(&self, _: u16) -> u8 {
-        0xff
-    }
-
-    fn sb(&mut self, _: u16, _: u8) {}
 }
 
 // Global is a struct that holds global state that may be needed by multiple components.
